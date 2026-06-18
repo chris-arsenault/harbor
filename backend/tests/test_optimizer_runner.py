@@ -75,6 +75,25 @@ def test_runner_records_pruned_trials_when_trade_floor_rejects_params() -> None:
     assert result.candidates == ()
 
 
+def test_runner_does_not_rank_zero_score_trials_as_candidates() -> None:
+    config = load_optimizer_config()
+
+    result = run_optimization(
+        candles=(
+            _candle("2026-01-15T01:00:00+00:00"),
+            _candle("2026-01-16T01:00:00+00:00"),
+        ),
+        base_strategy_config=strategy_config_from_defaults(load_default_config()),
+        instrument_rules=_rules(),
+        backtest_config=BacktestConfig(),
+        optimizer_config=config,
+        backtest_runner=lambda _: _result(pnl=Decimal("0"), r_multiple=Decimal("0")),
+    )
+
+    assert all(trial.status == OptimizationStatus.COMPLETED for trial in result.trials)
+    assert result.candidates == ()
+
+
 def _scoring_runner(backtest_input: BacktestInput) -> BacktestRunResult:
     fvg_window = backtest_input.strategy_config.fvg_window
     pnl = Decimal(fvg_window)

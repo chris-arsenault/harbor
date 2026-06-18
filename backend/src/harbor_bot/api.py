@@ -19,7 +19,9 @@ from harbor_bot.backtester.service import BacktestService
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.config.models import ConfigUpdateRequest
 from harbor_bot.config.service import ConfigService
+from harbor_bot.feed.source_service import CandleSourceService
 from harbor_bot.lab.service import LabService
+from harbor_bot.oanda.client import OandaApiError
 from harbor_bot.observability.service import ObservabilityService
 from harbor_bot.observability.websocket import WebSocketHub
 from harbor_bot.optimizer.service import OptimizerService
@@ -67,6 +69,10 @@ def get_product_query_service(connection: HTTPConnection) -> Any:
     return connection.app.state.product_query_service
 
 
+def get_candle_source_service(connection: HTTPConnection) -> CandleSourceService:
+    return connection.app.state.candle_source_service
+
+
 def get_config_service(connection: HTTPConnection) -> ConfigService:
     return connection.app.state.config_service
 
@@ -92,6 +98,7 @@ OPTIMIZER_SERVICE_DEPENDENCY = Depends(get_optimizer_service)
 LAB_SERVICE_DEPENDENCY = Depends(get_lab_service)
 PAPER_FORWARD_SERVICE_DEPENDENCY = Depends(get_paper_forward_service)
 PRODUCT_QUERY_SERVICE_DEPENDENCY = Depends(get_product_query_service)
+CANDLE_SOURCE_SERVICE_DEPENDENCY = Depends(get_candle_source_service)
 CONFIG_SERVICE_DEPENDENCY = Depends(get_config_service)
 CONTROL_SERVICE_DEPENDENCY = Depends(get_control_service)
 WEBSOCKET_HUB_DEPENDENCY = Depends(get_websocket_hub)
@@ -109,6 +116,7 @@ def create_app(
     lab_service: LabService | None = None,
     paper_forward_service: PaperForwardService | None = None,
     product_query_service: Any | None = None,
+    candle_source_service: CandleSourceService | None = None,
     config_service: ConfigService | None = None,
     control_service: Any | None = None,
     websocket_hub: WebSocketHub | None = None,
@@ -130,6 +138,7 @@ def create_app(
         or lab_service is None
         or paper_forward_service is None
         or product_query_service is None
+        or candle_source_service is None
         or config_service is None
         or readiness_checker is None
     ):
@@ -158,6 +167,12 @@ def create_app(
             paper_config=paper_config,
         )
     app.state.product_query_service = product_query_service
+    if candle_source_service is None:
+        candle_source_service = CandleSourceService(
+            engine=persistence_engine,
+            settings=app.state.settings,
+        )
+    app.state.candle_source_service = candle_source_service
     if config_service is None:
         config_service = ConfigService(
             engine=persistence_engine,
@@ -219,6 +234,25 @@ def create_app(
         service: ObservabilityService = OBSERVABILITY_SERVICE_DEPENDENCY,
     ) -> list[dict[str, Any]]:
         return _jsonable(await service.get_candles(instrument=instrument, start=start, end=end))
+
+    @app.get("/api/candles/source")
+    async def read_candle_source(
+        instrument: str | None = None,
+        service: CandleSourceService = CANDLE_SOURCE_SERVICE_DEPENDENCY,
+    ) -> dict[str, Any]:
+        return _jsonable(await service.get_status(instrument=instrument))
+
+    @app.post("/api/candles/import")
+    async def import_candles(
+        payload: dict[str, Any],
+        service: CandleSourceService = CANDLE_SOURCE_SERVICE_DEPENDENCY,
+    ) -> dict[str, Any]:
+        try:
+            return _jsonable(await service.import_historical(payload))
+        except OandaApiError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/markers")
     async def read_markers(

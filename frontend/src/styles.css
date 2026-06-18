@@ -681,6 +681,14 @@ p {
   font-size: 1rem;
 }
 
+.lab-panel__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .lab-scatter,
 .lab-equity {
   width: 100%;
@@ -760,6 +768,13 @@ p {
   border-color: #c8d2cc;
   background: #ffffff;
   color: #26312b;
+}
+
+.lab-button:disabled {
+  border-color: #c8d2cc;
+  background: #edf2ef;
+  color: #65736b;
+  cursor: not-allowed;
 }
 
 .lab-live-status {

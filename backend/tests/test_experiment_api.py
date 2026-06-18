@@ -30,6 +30,7 @@ def test_experiment_collection_routes_orchestrate_backtests_and_tuning() -> None
             optimizer_service=optimizer,
             lab_service=FakeLabService(),
             product_query_service=product,
+            candle_source_service=FakeCandleSourceService(),
         )
     )
 
@@ -58,6 +59,26 @@ def test_experiment_collection_routes_orchestrate_backtests_and_tuning() -> None
     assert backtests.started_payloads[0]["source"] == "persisted_candles"
     assert optimizer.started_payloads[0]["optimizer_config"]["trial_count"] == 2
     assert product.calls == [("backtests", 5), ("studies", 4)]
+
+
+def test_candle_source_routes_report_coverage_and_import_historical_data() -> None:
+    source = FakeCandleSourceService()
+    client = TestClient(
+        create_app(
+            backtest_service=FakeBacktestService(),
+            optimizer_service=FakeOptimizerService(),
+            lab_service=FakeLabService(),
+            product_query_service=FakeProductQueryService(),
+            candle_source_service=source,
+        )
+    )
+
+    status = client.get("/api/candles/source?instrument=EUR_USD")
+    imported = client.post("/api/candles/import", json={"instrument": "EUR_USD", "count": 500})
+
+    assert status.json()["coverage"]["candle_count"] == 0
+    assert imported.json()["imported_count"] == 500
+    assert source.import_payloads == [{"instrument": "EUR_USD", "count": 500}]
 
 
 def test_default_optimizer_service_loads_packaged_validation_fixture() -> None:
@@ -202,6 +223,43 @@ class FakeProductQueryService:
     async def list_optimizer_studies(self, *, limit: int) -> dict[str, Any]:
         self.calls.append(("studies", limit))
         return {"studies": [{"study_id": 3, "best_trial_id": 9}]}
+
+
+class FakeCandleSourceService:
+    def __init__(self) -> None:
+        self.import_payloads: list[dict[str, Any]] = []
+
+    async def get_status(self, *, instrument: str | None = None) -> dict[str, Any]:
+        return {
+            "instrument": instrument or "EUR_USD",
+            "primary_source": "persisted_candles",
+            "granularity": "M1",
+            "price_component": "midpoint",
+            "coverage": {
+                "instrument": instrument or "EUR_USD",
+                "candle_count": 0,
+                "from": None,
+                "to": None,
+            },
+            "source_methods": ["oanda_historical_import", "oanda_pricing_stream"],
+            "oanda_historical_import_configured": True,
+        }
+
+    async def import_historical(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.import_payloads.append(payload)
+        return {
+            "status": "completed",
+            "source": "oanda_historical_import",
+            "instrument": str(payload.get("instrument") or "EUR_USD"),
+            "requested_count": int(payload.get("count") or 0),
+            "imported_count": int(payload.get("count") or 0),
+            "coverage": {
+                "instrument": str(payload.get("instrument") or "EUR_USD"),
+                "candle_count": int(payload.get("count") or 0),
+                "from": "2026-01-15T00:00:00+00:00",
+                "to": "2026-01-16T23:59:00+00:00",
+            },
+        }
 
 
 class FakeLabService:

@@ -135,7 +135,10 @@ def _rank_candidates(
     completed = [
         trial
         for trial in trials
-        if trial.status == OptimizationStatus.COMPLETED and not trial.pruned
+        if trial.status == OptimizationStatus.COMPLETED
+        and not trial.pruned
+        and trial.score.in_sample_score > 0
+        and trial.score.out_of_sample_score > 0
     ]
     ranked = sorted(
         completed,

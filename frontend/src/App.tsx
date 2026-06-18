@@ -3,9 +3,11 @@ import { useMemo, useState, type ReactNode } from "react";
 import {
   useBacktestRunsQuery,
   useCandlesQuery,
+  useCandleSourceQuery,
   useConfigQuery,
   useCreatePaperVariantMutation,
   useEventsQuery,
+  useImportHistoricalCandlesMutation,
   useLabStudyQuery,
   useLevelsQuery,
   useMarkersQuery,
@@ -135,6 +137,7 @@ function useLabData(liveEquityCurves: VariantEquityCurve[], liveStatus: string |
   const selectedStudyId = studiesQuery.data?.studies[0]?.study_id ?? null;
   const labStudyQuery = useLabStudyQuery(selectedStudyId);
   const variantsQuery = useVariantsQuery();
+  const candleSource = useLabCandleSource();
   const startOptimizationMutation = useStartOptimizationMutation();
   const createVariantMutation = useCreatePaperVariantMutation();
   const retireVariantMutation = useRetirePaperVariantMutation();
@@ -147,11 +150,32 @@ function useLabData(liveEquityCurves: VariantEquityCurve[], liveStatus: string |
       liveEquityCurves
     ),
     liveStatus,
+    candleSource: candleSource.status,
+    candleSourcePending: candleSource.pending,
+    candleSourceError: candleSource.errorMessage,
+    importCandles: candleSource.importCandles,
     startOptimization: startOptimizationMutation.mutate,
     createPaperVariant: createVariantMutation.mutate,
     retireVariant: retireVariantMutation.mutate,
     promoteVariant: promoteVariantMutation.mutate,
   };
+}
+
+function useLabCandleSource() {
+  const candleSourceQuery = useCandleSourceQuery({ instrument: DEFAULT_INSTRUMENT });
+  const importCandlesMutation = useImportHistoricalCandlesMutation();
+
+  return {
+    status: candleSourceQuery.data ?? null,
+    pending: candleSourceQuery.isLoading || importCandlesMutation.isPending,
+    errorMessage: firstErrorMessage(candleSourceQuery.error, importCandlesMutation.error),
+    importCandles: importCandlesMutation.mutate,
+  };
+}
+
+function firstErrorMessage(...errors: unknown[]) {
+  const error = errors.find((item) => item instanceof Error);
+  return error instanceof Error ? error.message : null;
 }
 
 interface ProductPageProps {
@@ -250,6 +274,10 @@ function LabRoute({ lab }: ProductPageProps) {
       onCreatePaperVariant={lab.createPaperVariant}
       onRetireVariant={lab.retireVariant}
       onPromoteVariant={lab.promoteVariant}
+      candleSource={lab.candleSource}
+      candleSourcePending={lab.candleSourcePending}
+      candleSourceError={lab.candleSourceError}
+      onImportCandles={lab.importCandles}
     />
   );
 }

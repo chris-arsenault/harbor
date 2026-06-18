@@ -2,7 +2,10 @@ import type {
   BacktestRunDetail,
   BacktestRunsResponse,
   BacktestStartPayload,
+  CandleImportRequest,
+  CandleImportResult,
   CandlePoint,
+  CandleSourceStatus,
   ConfigSnapshot,
   ConfigUpdateRequest,
   ConfigUpdateResult,
@@ -15,6 +18,7 @@ import type {
   MarkersPayload,
   OptimizationStudiesResponse,
   OptimizationStartResponse,
+  OptimizationStartPayload,
   SessionLevelSnapshot,
   StatusSnapshot,
   TradingControlPayload,
@@ -77,6 +81,18 @@ export function fetchCandles(params: {
   return apiGet<CandlePoint[]>(withQuery("/api/candles", params));
 }
 
+export function fetchCandleSource(
+  params: { instrument?: string } = {}
+): Promise<CandleSourceStatus> {
+  return apiGet<CandleSourceStatus>(withQuery("/api/candles/source", params));
+}
+
+export function importHistoricalCandles(
+  payload: CandleImportRequest = {}
+): Promise<CandleImportResult> {
+  return apiPost<CandleImportResult>("/api/candles/import", payload);
+}
+
 export function fetchMarkers(params: {
   date: string;
   instrument: string;
@@ -120,7 +136,7 @@ export function fetchOptimizationStudies(
 }
 
 export function startOptimization(
-  payload: Record<string, unknown>
+  payload: OptimizationStartPayload
 ): Promise<OptimizationStartResponse> {
   return apiPost<OptimizationStartResponse>("/api/optimize", payload);
 }

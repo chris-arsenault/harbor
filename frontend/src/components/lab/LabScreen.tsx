@@ -1,5 +1,5 @@
-import type { LabVariantOverview } from "../../api/types";
-import { LabView } from "./LabView";
+import type { CandleSourceStatus, LabVariantOverview } from "../../api/types";
+import { CandleSourcePanel, LabView } from "./LabView";
 import { DEFAULT_TUNING_PAYLOAD } from "./tuningPayload";
 
 interface LabScreenProps {
@@ -10,6 +10,10 @@ interface LabScreenProps {
   readonly onCreatePaperVariant: Parameters<typeof LabView>[0]["onCreatePaperVariant"];
   readonly onRetireVariant: Parameters<typeof LabView>[0]["onRetireVariant"];
   readonly onPromoteVariant: Parameters<typeof LabView>[0]["onPromoteVariant"];
+  readonly candleSource: CandleSourceStatus | null;
+  readonly candleSourcePending: boolean;
+  readonly candleSourceError: string | null;
+  readonly onImportCandles: Parameters<typeof LabView>[0]["onImportCandles"];
 }
 
 export function LabScreen({
@@ -20,7 +24,12 @@ export function LabScreen({
   onCreatePaperVariant,
   onRetireVariant,
   onPromoteVariant,
+  candleSource,
+  candleSourcePending,
+  candleSourceError,
+  onImportCandles,
 }: LabScreenProps) {
+  const canStartOptimization = (candleSource?.coverage?.candle_count ?? 0) > 0;
   if (snapshot === null) {
     return (
       <section className="lab-view" aria-label="Lab">
@@ -29,11 +38,18 @@ export function LabScreen({
           <button
             type="button"
             className="lab-button"
+            disabled={!canStartOptimization}
             onClick={() => void onStartOptimization(DEFAULT_TUNING_PAYLOAD)}
           >
             Start tuning study
           </button>
         </section>
+        <CandleSourcePanel
+          source={candleSource}
+          pending={candleSourcePending}
+          errorMessage={candleSourceError}
+          onImportCandles={onImportCandles}
+        />
         <section className="lab-panel" aria-label="Lab empty state">
           <h2>No tuning studies yet</h2>
         </section>
@@ -54,6 +70,10 @@ export function LabScreen({
       onRetireVariant={onRetireVariant}
       onPromoteVariant={onPromoteVariant}
       liveStatus={liveStatus}
+      candleSource={candleSource}
+      candleSourcePending={candleSourcePending}
+      candleSourceError={candleSourceError}
+      onImportCandles={onImportCandles}
     />
   );
 }

@@ -42,6 +42,38 @@ export interface CandlePoint {
   complete: boolean;
 }
 
+export interface CandleCoverage {
+  instrument: string;
+  candle_count: number;
+  from: string | null;
+  to: string | null;
+}
+
+export interface CandleSourceStatus {
+  instrument: string;
+  primary_source: string;
+  granularity: string;
+  price_component: string;
+  coverage: CandleCoverage;
+  source_methods: string[];
+  oanda_historical_import_configured: boolean;
+}
+
+export interface CandleImportRequest {
+  instrument?: string;
+  count?: number;
+  from?: string;
+}
+
+export interface CandleImportResult {
+  status: string;
+  source: string;
+  instrument: string;
+  requested_count: number;
+  imported_count: number;
+  coverage: CandleCoverage;
+}
+
 export interface ChartMarker {
   kind: string;
   ts: string;
@@ -301,6 +333,17 @@ export interface BacktestStartPayload {
   candle_range?: { from: string; to: string };
   fixture?: string;
   candles?: Record<string, unknown>[];
+  backtest_config?: Record<string, unknown>;
+  instrument_rules?: Record<string, unknown>;
+}
+
+export interface OptimizationStartPayload {
+  source?: "persisted_candles";
+  instrument?: string;
+  candle_range?: { from: string; to: string };
+  fixture?: string;
+  candles?: Record<string, unknown>[];
+  optimizer_config?: Record<string, unknown>;
   backtest_config?: Record<string, unknown>;
   instrument_rules?: Record<string, unknown>;
 }

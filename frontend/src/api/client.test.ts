@@ -1,12 +1,14 @@
 import { afterEach, expect, test, vi } from "vitest";
 
 import {
+  fetchCandleSource,
   fetchCandles,
   fetchEvents,
   fetchLevels,
   fetchMarkers,
   fetchStatus,
   flattenNow,
+  importHistoricalCandles,
   promoteVariant,
   setTradingEnabled,
 } from "./client";
@@ -43,6 +45,22 @@ test("fetchLevels and fetchCandles encode query parameters", async () => {
     "/api/candles?instrument=EUR_USD&from=2026-01-15T14%3A00%3A00Z&to=2026-01-15T15%3A00%3A00Z",
     { headers: { Accept: "application/json" } }
   );
+});
+
+test("candle source clients read coverage and import historical candles", async () => {
+  const fetchMock = mockJsonFetch({ instrument: "EUR_USD" });
+
+  await fetchCandleSource({ instrument: "EUR_USD" });
+  await importHistoricalCandles({ instrument: "EUR_USD", count: 5000 });
+
+  expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/candles/source?instrument=EUR_USD", {
+    headers: { Accept: "application/json" },
+  });
+  expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/candles/import", {
+    body: JSON.stringify({ instrument: "EUR_USD", count: 5000 }),
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    method: "POST",
+  });
 });
 
 test("fetchMarkers preserves server-authored overlay payloads", async () => {

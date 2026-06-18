@@ -19,6 +19,10 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
       onStartOptimization={onStartOptimization}
       onPromoteVariant={onPromoteVariant}
       liveStatus="variant 7 closed trade"
+      candleSource={candleSource}
+      candleSourcePending={false}
+      candleSourceError={null}
+      onImportCandles={vi.fn()}
     />
   );
 
@@ -42,6 +46,8 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   expect(screen.getByText("fvg_window")).toBeInTheDocument();
   expect(screen.getByText("Data Separation")).toBeInTheDocument();
   expect(screen.getByText("optimizer_uses_variant_trades: false")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Import OANDA candles" })).toBeInTheDocument();
+  expect(screen.getByText("candles: 2880")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Start tuning study" }));
   fireEvent.change(screen.getByLabelText("Trial"), { target: { value: "2" } });
@@ -51,8 +57,8 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   fireEvent.click(screen.getByRole("button", { name: "Retire paper variant candidate-1" }));
 
   expect(onStartOptimization).toHaveBeenCalledWith({
-    fixture: "walkforward_validation.json",
-    optimizer_config: { trial_count: 4 },
+    source: "persisted_candles",
+    instrument: "EUR_USD",
   });
   expect(onCreatePaperVariant).toHaveBeenCalledWith({ trial_id: 2, label: "paper-trial-1" });
   expect(onPromoteVariant).toHaveBeenCalledWith(7);
@@ -86,6 +92,21 @@ const snapshot: LabSnapshot = {
     data_separation: { optimizer_uses_variant_trades: false },
   },
   data_separation: { optimizer_uses_variant_trades: false },
+};
+
+const candleSource = {
+  instrument: "EUR_USD",
+  primary_source: "persisted_candles",
+  granularity: "M1",
+  price_component: "midpoint",
+  coverage: {
+    instrument: "EUR_USD",
+    candle_count: 2880,
+    from: "2026-01-15T00:00:00+00:00",
+    to: "2026-01-16T23:59:00+00:00",
+  },
+  source_methods: ["oanda_historical_import", "oanda_pricing_stream"],
+  oanda_historical_import_configured: true,
 };
 
 const variantOverview: LabVariantOverview = {

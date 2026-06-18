@@ -29,13 +29,14 @@ test("does not request a fixed lab study when the empty deployment has no studie
   fireEvent.click(screen.getByRole("button", { name: "Lab" }));
 
   expect(screen.getByText("No tuning studies yet")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Start tuning study" }));
+  expect(screen.getByRole("button", { name: "Start tuning study" })).toBeDisabled();
+  expect(screen.getByText("candles: 0")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Import OANDA candles" }));
 
   await waitFor(() =>
-    expect(fetch).toHaveBeenCalledWith("/api/optimize", {
+    expect(fetch).toHaveBeenCalledWith("/api/candles/import", {
       body: JSON.stringify({
-        fixture: "walkforward_validation.json",
-        optimizer_config: { trial_count: 4 },
+        instrument: "EUR_USD",
       }),
       headers: { Accept: "application/json", "Content-Type": "application/json" },
       method: "POST",
@@ -67,6 +68,12 @@ function emptyDeploymentFetchResponse(input: FetchInput) {
   const url = requestUrl(input);
   if (url.startsWith("/api/levels")) {
     return Promise.resolve(new Response("null", { status: 200 }));
+  }
+  if (url.startsWith("/api/candles/source")) {
+    return Promise.resolve(new Response(JSON.stringify(candleSource(0)), { status: 200 }));
+  }
+  if (url.startsWith("/api/candles/import")) {
+    return Promise.resolve(new Response(JSON.stringify(candleImport()), { status: 200 }));
   }
   return Promise.resolve(
     new Response(JSON.stringify(emptyDeploymentRoutePayload(url)), { status: 200 })
@@ -109,6 +116,34 @@ function emptyDeploymentRoutePayload(url: string): unknown {
     return { variants: [], leaderboard: [], equity_curves: [], data_separation: null };
   }
   return {};
+}
+
+function candleImport() {
+  return {
+    status: "completed",
+    source: "oanda_historical_import",
+    instrument: "EUR_USD",
+    requested_count: 5000,
+    imported_count: 5000,
+    coverage: candleSource(5000).coverage,
+  };
+}
+
+function candleSource(count: number) {
+  return {
+    instrument: "EUR_USD",
+    primary_source: "persisted_candles",
+    granularity: "M1",
+    price_component: "midpoint",
+    coverage: {
+      instrument: "EUR_USD",
+      candle_count: count,
+      from: count > 0 ? "2026-01-15T00:00:00+00:00" : null,
+      to: count > 0 ? "2026-01-16T23:59:00+00:00" : null,
+    },
+    source_methods: ["oanda_historical_import", "oanda_pricing_stream"],
+    oanda_historical_import_configured: true,
+  };
 }
 
 interface FakeWebSocketInstance {

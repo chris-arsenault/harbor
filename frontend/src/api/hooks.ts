@@ -6,6 +6,7 @@ import {
   fetchBacktestRun,
   fetchBacktestRuns,
   fetchCandles,
+  fetchCandleSource,
   fetchConfig,
   fetchEvents,
   fetchLabStudy,
@@ -17,6 +18,7 @@ import {
   fetchVariantDetail,
   fetchVariants,
   flattenNow,
+  importHistoricalCandles,
   promoteVariant,
   retirePaperVariant,
   setTradingEnabled,
@@ -42,6 +44,13 @@ export function useCandlesQuery(params: { instrument: string; from: string; to: 
   return useQuery({
     queryKey: ["candles", params],
     queryFn: () => fetchCandles(params),
+  });
+}
+
+export function useCandleSourceQuery(params: { instrument?: string } = {}) {
+  return useQuery({
+    queryKey: ["candle-source", params],
+    queryFn: () => fetchCandleSource(params),
   });
 }
 
@@ -131,6 +140,17 @@ export function useStartOptimizationMutation() {
         await queryClient.invalidateQueries({ queryKey: ["lab-study", result.study_id] });
       }
       await queryClient.invalidateQueries({ queryKey: ["variants"] });
+    },
+  });
+}
+
+export function useImportHistoricalCandlesMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: importHistoricalCandles,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["candle-source"] });
+      await queryClient.invalidateQueries({ queryKey: ["candles"] });
     },
   });
 }

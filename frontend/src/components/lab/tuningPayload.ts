@@ -1,4 +1,6 @@
+import type { OptimizationStartPayload } from "../../api/types";
+
 export const DEFAULT_TUNING_PAYLOAD = {
-  fixture: "walkforward_validation.json",
-  optimizer_config: { trial_count: 4 },
-};
+  source: "persisted_candles",
+  instrument: "EUR_USD",
+} satisfies OptimizationStartPayload;

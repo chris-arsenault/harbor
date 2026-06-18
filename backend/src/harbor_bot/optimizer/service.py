@@ -14,13 +14,17 @@ from harbor_bot.config.defaults import load_default_config
 from harbor_bot.optimizer.config import load_optimizer_config, optimizer_config_from_mapping
 from harbor_bot.optimizer.models import OptimizationStatus
 from harbor_bot.optimizer.runner import OptimizationRunResult, run_optimization
-from harbor_bot.persistence.market_repository import list_candles_range
+from harbor_bot.persistence.market_repository import (
+    latest_complete_candle_window,
+    list_candles_range,
+)
 from harbor_bot.persistence.optimization_repository import append_optimization_run
 from harbor_bot.strategy.models import InstrumentRules, strategy_config_from_defaults
 
 OptimizationRunner = Callable[..., OptimizationRunResult]
 PersistenceWriter = Callable[..., Awaitable[int]]
 CandleRangeReader = Callable[..., Awaitable[list[dict[str, Any]]]]
+CandleWindowSelector = Callable[..., Awaitable[dict[str, Any] | None]]
 _UTC_OFFSET = timedelta(0)
 
 
@@ -31,12 +35,16 @@ class OptimizerService:
     optimization_runner: OptimizationRunner = run_optimization
     persistence_writer: PersistenceWriter = append_optimization_run
     candle_reader: CandleRangeReader = None
+    candle_window_selector: CandleWindowSelector = None
 
     async def start_optimization(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         payload = await _payload_with_persisted_candles(
             payload,
             engine=self.persistence_engine,
             candle_reader=self.candle_reader or read_persisted_candle_records,
+            candle_window_selector=(
+                self.candle_window_selector or select_latest_persisted_candle_window
+            ),
         )
         request = _request_from_payload(payload, fixture_base_path=self.fixture_base_path)
         result = self.optimization_runner(**request["runner_kwargs"])
@@ -51,13 +59,18 @@ class OptimizerService:
                 trials=result.trials,
                 candidates=result.candidates,
             )
-        return optimization_result_to_response(result, study_id=study_id)
+        return optimization_result_to_response(
+            result,
+            study_id=study_id,
+            candle_source=payload.get("_candle_source"),
+        )
 
 
 def optimization_result_to_response(
     result: OptimizationRunResult,
     *,
     study_id: int | None = None,
+    candle_source: Any = None,
 ) -> dict[str, Any]:
     return {
         "study_id": study_id,
@@ -88,7 +101,8 @@ def optimization_result_to_response(
             for trial in result.trials
         ],
         "data_separation": {
-            "source": "closed-candle offline dataset",
+            "source": _data_source_label(candle_source),
+            "candle_source": candle_source,
             "no_live_forward_data": True,
             "variant_trades_used": False,
             "oanda_streams_used": False,
@@ -131,11 +145,29 @@ async def read_persisted_candle_records(
     ]
 
 
+async def select_latest_persisted_candle_window(
+    engine: AsyncEngine | None,
+    *,
+    instrument: str,
+    required_days: int,
+) -> dict[str, Any] | None:
+    if engine is None:
+        msg = "persisted candle optimization requires a persistence engine"
+        raise ValueError(msg)
+    async with engine.connect() as connection:
+        return await latest_complete_candle_window(
+            connection,
+            instrument=instrument,
+            required_days=required_days,
+        )
+
+
 async def _payload_with_persisted_candles(
     payload: Mapping[str, Any],
     *,
     engine: AsyncEngine | None,
     candle_reader: CandleRangeReader,
+    candle_window_selector: CandleWindowSelector,
 ) -> dict[str, Any]:
     if "candles" in payload or "fixture" in payload:
         return dict(payload)
@@ -146,13 +178,48 @@ async def _payload_with_persisted_candles(
     instrument = str(payload.get("instrument") or strategy_config.instrument)
     raw_range = payload.get("candle_range")
     if not isinstance(raw_range, Mapping):
-        msg = "candle_range must include from and to"
-        raise TypeError(msg)
-    start = _parse_utc_ts(str(raw_range["from"]))
-    end = _parse_utc_ts(str(raw_range["to"]))
+        optimizer_config = _optimizer_config_from_payload(payload.get("optimizer_config", {}))
+        required_days = (
+            optimizer_config.walk_forward.train_window_days
+            + optimizer_config.walk_forward.oos_window_days
+        )
+        selected_window = await candle_window_selector(
+            engine,
+            instrument=instrument,
+            required_days=required_days,
+        )
+        if selected_window is None:
+            msg = (
+                f"no persisted closed-candle window is available for {instrument}; "
+                "import OANDA historical candles before starting a tuning study"
+            )
+            raise ValueError(msg)
+        start = selected_window["from"]
+        end = selected_window["to"]
+    else:
+        start = _parse_utc_ts(str(raw_range["from"]))
+        end = _parse_utc_ts(str(raw_range["to"]))
     candles = await candle_reader(engine, instrument=instrument, start=start, end=end)
+    if not candles:
+        msg = (
+            f"no persisted closed candles found for {instrument} from "
+            f"{start.isoformat()} to {end.isoformat()}; import OANDA historical candles first"
+        )
+        raise ValueError(msg)
     next_payload = dict(payload)
     next_payload["candles"] = candles
+    next_payload["candle_range"] = {
+        "from": start.isoformat(),
+        "to": end.isoformat(),
+    }
+    next_payload["_candle_source"] = {
+        "source": "persisted_candles",
+        "origin": "database",
+        "instrument": instrument,
+        "from": start.isoformat(),
+        "to": end.isoformat(),
+        "candle_count": len(candles),
+    }
     next_payload.pop("fixture", None)
     return next_payload
 
@@ -181,6 +248,12 @@ def _best_trial_history(result: OptimizationRunResult) -> list[dict[str, Any]]:
 
 def _score_string(value: Decimal) -> str:
     return str(value.quantize(Decimal("0.00000001")))
+
+
+def _data_source_label(candle_source: Any) -> str:
+    if isinstance(candle_source, Mapping) and candle_source.get("source") == "persisted_candles":
+        return "persisted closed candles"
+    return "closed-candle offline dataset"
 
 
 def _request_from_payload(

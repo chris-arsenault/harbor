@@ -211,6 +211,22 @@ function dashboardRoutePayload(url: string): unknown {
   if (url.startsWith("/api/levels")) {
     return levels;
   }
+  if (url.startsWith("/api/candles/source")) {
+    return {
+      instrument: "EUR_USD",
+      primary_source: "persisted_candles",
+      granularity: "M1",
+      price_component: "midpoint",
+      coverage: {
+        instrument: "EUR_USD",
+        candle_count: 2880,
+        from: "2026-01-15T00:00:00+00:00",
+        to: "2026-01-16T23:59:00+00:00",
+      },
+      source_methods: ["oanda_historical_import", "oanda_pricing_stream"],
+      oanda_historical_import_configured: true,
+    };
+  }
   if (url.startsWith("/api/candles")) {
     return [candle];
   }

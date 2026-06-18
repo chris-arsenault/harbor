@@ -1,9 +1,9 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from datetime import date as Date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import desc, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -103,6 +103,76 @@ async def list_candles_range(
     return [dict(row) for row in result.mappings()]
 
 
+async def get_candle_coverage(
+    connection: AsyncConnection,
+    *,
+    instrument: str,
+) -> dict[str, Any]:
+    result = await connection.execute(
+        select(
+            func.count(candles.c.id).label("candle_count"),
+            func.min(candles.c.ts).label("from_ts"),
+            func.max(candles.c.ts).label("to_ts"),
+        ).where(candles.c.instrument == instrument, candles.c.complete.is_(True))
+    )
+    row = result.mappings().one()
+    return {
+        "instrument": instrument,
+        "candle_count": int(row["candle_count"]),
+        "from": row["from_ts"],
+        "to": row["to_ts"],
+    }
+
+
+async def latest_complete_candle_window(
+    connection: AsyncConnection,
+    *,
+    instrument: str,
+    required_days: int,
+) -> dict[str, Any] | None:
+    if required_days <= 0:
+        msg = "required_days must be positive"
+        raise ValueError(msg)
+
+    result = await connection.execute(
+        select(func.date(candles.c.ts).label("candle_date"))
+        .where(candles.c.instrument == instrument, candles.c.complete.is_(True))
+        .group_by("candle_date")
+        .order_by(desc("candle_date"))
+        .limit(required_days * 8)
+    )
+    dates = [_date_value(row["candle_date"]) for row in result.mappings()]
+    if not dates:
+        return None
+
+    contiguous = [dates[0]]
+    for candle_date in dates[1:]:
+        if candle_date == contiguous[-1] - timedelta(days=1):
+            contiguous.append(candle_date)
+            if len(contiguous) >= required_days:
+                break
+        elif candle_date < contiguous[-1] - timedelta(days=1):
+            contiguous = [candle_date]
+
+    if len(contiguous) < required_days:
+        return None
+
+    latest = contiguous[0]
+    earliest = contiguous[required_days - 1]
+    start = datetime.combine(earliest, time.min, tzinfo=UTC)
+    end = datetime.combine(latest + timedelta(days=1), time.min, tzinfo=UTC) - timedelta(
+        microseconds=1
+    )
+    coverage = await get_candle_coverage(connection, instrument=instrument)
+    return {
+        "instrument": instrument,
+        "from": start,
+        "to": end,
+        "required_days": required_days,
+        "coverage": coverage,
+    }
+
+
 async def upsert_session_levels(
     connection: AsyncConnection,
     *,
@@ -163,3 +233,9 @@ def _require_aware_utc(value: datetime) -> datetime:
         msg = "candle timestamps must be timezone-aware UTC datetimes"
         raise ValueError(msg)
     return value.astimezone(UTC)
+
+
+def _date_value(value: Any) -> date:
+    if isinstance(value, date):
+        return value
+    return datetime.fromisoformat(str(value)).date()

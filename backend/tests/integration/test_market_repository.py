@@ -9,7 +9,9 @@ from alembic.config import Config
 
 from harbor_bot.persistence.database import create_engine, transaction
 from harbor_bot.persistence.market_repository import (
+    get_candle_coverage,
     get_session_levels,
+    latest_complete_candle_window,
     list_candles,
     upsert_candle,
     upsert_session_levels,
@@ -33,6 +35,12 @@ def test_candles_require_timezone_aware_utc_timestamps(postgres_url: str) -> Non
     command.upgrade(_alembic_config(postgres_url), "head")
 
     asyncio.run(_assert_timestamp_boundary(postgres_url))
+
+
+def test_candle_coverage_and_latest_contiguous_window(postgres_url: str) -> None:
+    command.upgrade(_alembic_config(postgres_url), "head")
+
+    asyncio.run(_assert_candle_coverage_and_window(postgres_url))
 
 
 async def _assert_candle_upsert(postgres_url: str) -> None:
@@ -148,6 +156,77 @@ async def _assert_timestamp_boundary(postgres_url: str) -> None:
                     volume=100,
                     complete=True,
                 )
+    finally:
+        await engine.dispose()
+
+
+async def _assert_candle_coverage_and_window(postgres_url: str) -> None:
+    engine = create_engine(Settings(DATABASE_URL=postgres_url))
+    try:
+        async with transaction(engine) as connection:
+            await upsert_candle(
+                connection,
+                instrument="EUR_USD",
+                ts=datetime(2026, 1, 15, 14, 30, tzinfo=UTC),
+                o=Decimal("1.1000"),
+                h=Decimal("1.1050"),
+                low=Decimal("1.0990"),
+                c=Decimal("1.1040"),
+                volume=100,
+                complete=True,
+            )
+            await upsert_candle(
+                connection,
+                instrument="EUR_USD",
+                ts=datetime(2026, 1, 16, 14, 30, tzinfo=UTC),
+                o=Decimal("1.1000"),
+                h=Decimal("1.1050"),
+                low=Decimal("1.0990"),
+                c=Decimal("1.1040"),
+                volume=100,
+                complete=True,
+            )
+            await upsert_candle(
+                connection,
+                instrument="EUR_USD",
+                ts=datetime(2026, 1, 18, 14, 30, tzinfo=UTC),
+                o=Decimal("1.1000"),
+                h=Decimal("1.1050"),
+                low=Decimal("1.0990"),
+                c=Decimal("1.1040"),
+                volume=100,
+                complete=True,
+            )
+
+        async with engine.connect() as connection:
+            coverage = await get_candle_coverage(connection, instrument="EUR_USD")
+            latest_two_days = await latest_complete_candle_window(
+                connection,
+                instrument="EUR_USD",
+                required_days=2,
+            )
+            latest_three_days = await latest_complete_candle_window(
+                connection,
+                instrument="EUR_USD",
+                required_days=3,
+            )
+
+        assert coverage["candle_count"] == 3
+        assert coverage["from"] == datetime(2026, 1, 15, 14, 30, tzinfo=UTC)
+        assert coverage["to"] == datetime(2026, 1, 18, 14, 30, tzinfo=UTC)
+        assert latest_two_days is not None
+        assert latest_two_days["from"] == datetime(2026, 1, 15, 0, 0, tzinfo=UTC)
+        assert latest_two_days["to"] == datetime(
+            2026,
+            1,
+            16,
+            23,
+            59,
+            59,
+            999999,
+            tzinfo=UTC,
+        )
+        assert latest_three_days is None
     finally:
         await engine.dispose()
 

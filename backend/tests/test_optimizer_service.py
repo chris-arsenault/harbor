@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
 import pytest
 
@@ -80,6 +81,74 @@ async def test_optimizer_service_rejects_requests_without_local_data() -> None:
         await service.start_optimization({"instrument": "EUR_USD"})
 
 
+@pytest.mark.asyncio
+async def test_optimizer_service_defaults_persisted_source_to_latest_candle_window() -> None:
+    calls = []
+
+    async def reader(
+        engine,
+        *,
+        instrument: str,
+        start: datetime,
+        end: datetime,
+    ) -> list[dict[str, Any]]:
+        calls.append((engine, instrument, start, end))
+        return [_record("2026-01-15T14:00:00+00:00"), _record("2026-01-16T14:00:00+00:00")]
+
+    async def selector(engine, *, instrument: str, required_days: int) -> dict[str, Any]:
+        assert engine == "engine"
+        assert instrument == "EUR_USD"
+        assert required_days == 2
+        return {
+            "instrument": instrument,
+            "from": datetime(2026, 1, 15, tzinfo=UTC),
+            "to": datetime(2026, 1, 16, 23, 59, tzinfo=UTC),
+        }
+
+    service = OptimizerService(
+        persistence_engine="engine",
+        candle_reader=reader,
+        candle_window_selector=selector,
+        optimization_runner=lambda **_: _run_result(),
+        persistence_writer=_writer,
+    )
+    response = await service.start_optimization({"source": "persisted_candles"})
+
+    assert response["study_id"] == 42
+    assert calls == [
+        (
+            "engine",
+            "EUR_USD",
+            datetime(2026, 1, 15, tzinfo=UTC),
+            datetime(2026, 1, 16, 23, 59, tzinfo=UTC),
+        )
+    ]
+    assert response["data_separation"]["source"] == "persisted closed candles"
+    assert response["data_separation"]["candle_source"] == {
+        "source": "persisted_candles",
+        "origin": "database",
+        "instrument": "EUR_USD",
+        "from": "2026-01-15T00:00:00+00:00",
+        "to": "2026-01-16T23:59:00+00:00",
+        "candle_count": 2,
+    }
+
+
+@pytest.mark.asyncio
+async def test_optimizer_service_rejects_persisted_source_without_candle_window() -> None:
+    async def selector(engine, *, instrument: str, required_days: int) -> None:
+        return None
+
+    service = OptimizerService(
+        candle_reader=lambda **_: [],
+        candle_window_selector=selector,
+        optimization_runner=lambda **_: _run_result(),
+    )
+
+    with pytest.raises(ValueError, match="import OANDA historical candles"):
+        await service.start_optimization({"source": "persisted_candles"})
+
+
 def _run_result() -> OptimizationRunResult:
     return OptimizationRunResult(
         status=OptimizationStatus.COMPLETED,
@@ -100,6 +169,10 @@ def _run_result() -> OptimizationRunResult:
         sampler_name="TPESampler",
         pruner_name="MedianPruner",
     )
+
+
+async def _writer(engine, **kwargs) -> int:
+    return 42
 
 
 def _record(ts: str) -> dict[str, object]:
