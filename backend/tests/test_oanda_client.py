@@ -75,6 +75,29 @@ async def test_client_requests_historical_m1_midpoint_candles() -> None:
 
 
 @pytest.mark.asyncio
+async def test_client_omits_include_first_without_from_time() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=_load_json("candles.json"))
+
+    async with _client(handler) as client:
+        await client.get_historical_candles(
+            instrument="EUR_USD",
+            count=500,
+            include_first=True,
+        )
+
+    params = requests[0].url.params
+    assert params["granularity"] == "M1"
+    assert params["price"] == "M"
+    assert params["count"] == "500"
+    assert "from" not in params
+    assert "includeFirst" not in params
+
+
+@pytest.mark.asyncio
 async def test_client_opens_pricing_and_transaction_stream_lines() -> None:
     paths: list[str] = []
 

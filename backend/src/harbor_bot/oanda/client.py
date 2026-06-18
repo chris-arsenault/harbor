@@ -127,12 +127,12 @@ class OandaClient:
         params: dict[str, str | int] = {
             "granularity": "M1",
             "price": "M",
-            "includeFirst": _bool_param(include_first),
         }
         if count is not None:
             params["count"] = count
         if from_time is not None:
             params["from"] = _format_rfc3339(from_time)
+            params["includeFirst"] = _bool_param(include_first)
 
         payload = await self._request_json(
             self._rest_client,
