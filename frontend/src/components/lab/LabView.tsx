@@ -5,6 +5,7 @@ import { LabActions } from "./LabActions";
 import { StudyProgress } from "./StudyProgress";
 import { VariantEquityChart } from "./VariantEquityChart";
 import { VariantLeaderboard } from "./VariantLeaderboard";
+import { DEFAULT_TUNING_PAYLOAD } from "./tuningPayload";
 
 interface LabViewProps {
   readonly snapshot: LabSnapshot;
@@ -37,12 +38,7 @@ export function LabView({
         <button
           type="button"
           className="lab-button"
-          onClick={() =>
-            void onStartOptimization({
-              fixture: "clean_signal_day.json",
-              optimizer_config: { trial_count: 25 },
-            })
-          }
+          onClick={() => void onStartOptimization(DEFAULT_TUNING_PAYLOAD)}
         >
           Start tuning study
         </button>

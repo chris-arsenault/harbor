@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
 import {
@@ -122,7 +122,17 @@ export function useConfigQuery() {
 }
 
 export function useStartOptimizationMutation() {
-  return useMutation({ mutationFn: startOptimization });
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: startOptimization,
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ["optimization-studies"] });
+      if (result.study_id !== null) {
+        await queryClient.invalidateQueries({ queryKey: ["lab-study", result.study_id] });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["variants"] });
+    },
+  });
 }
 
 export function useStartBacktestMutation() {

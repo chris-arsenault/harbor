@@ -1,5 +1,6 @@
 import type { LabVariantOverview } from "../../api/types";
 import { LabView } from "./LabView";
+import { DEFAULT_TUNING_PAYLOAD } from "./tuningPayload";
 
 interface LabScreenProps {
   readonly snapshot: Parameters<typeof LabView>[0]["snapshot"] | null;
@@ -23,7 +24,24 @@ export function LabScreen({
   if (snapshot === null) {
     return (
       <section className="lab-view" aria-label="Lab">
-        <p className="lab-live-status">Loading Lab</p>
+        <section className="lab-actions" aria-label="Tuning controls">
+          <span>Optimizer</span>
+          <button
+            type="button"
+            className="lab-button"
+            onClick={() => void onStartOptimization(DEFAULT_TUNING_PAYLOAD)}
+          >
+            Start tuning study
+          </button>
+        </section>
+        <section className="lab-panel" aria-label="Lab empty state">
+          <h2>No tuning studies yet</h2>
+        </section>
+        {liveStatus ? (
+          <p className="lab-live-status" aria-live="polite">
+            {liveStatus}
+          </p>
+        ) : null}
       </section>
     );
   }

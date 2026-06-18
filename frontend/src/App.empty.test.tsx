@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { App } from "./App";
@@ -25,6 +25,22 @@ test("does not request a fixed lab study when the empty deployment has no studie
     expect(fetch).toHaveBeenCalledWith("/api/optimize?limit=50", expect.anything())
   );
   expect(fetch).not.toHaveBeenCalledWith("/api/optimize/1", expect.anything());
+
+  fireEvent.click(screen.getByRole("button", { name: "Lab" }));
+
+  expect(screen.getByText("No tuning studies yet")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Start tuning study" }));
+
+  await waitFor(() =>
+    expect(fetch).toHaveBeenCalledWith("/api/optimize", {
+      body: JSON.stringify({
+        fixture: "clean_signal_day.json",
+        optimizer_config: { trial_count: 25 },
+      }),
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      method: "POST",
+    })
+  );
 });
 
 function renderWithClient(ui: React.ReactElement) {
