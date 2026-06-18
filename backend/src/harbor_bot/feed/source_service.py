@@ -56,7 +56,7 @@ class CandleSourceService:
                 from_time=from_time,
                 count=count,
                 page_size=self.settings.oanda_historical_candle_page_size,
-                include_first=False,
+                include_first=from_time is None,
             )
 
         status = await self.get_status(instrument=instrument)

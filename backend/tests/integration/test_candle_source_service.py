@@ -46,8 +46,30 @@ async def _assert_candle_source_service(postgres_url: str) -> None:
     finally:
         await engine.dispose()
 
+    resume_engine = create_engine(settings)
+    resume_client = _FakeHistoricalClient()
+    resume_service = CandleSourceService(
+        engine=resume_engine,
+        settings=settings,
+        client_factory=lambda _: resume_client,
+    )
+    try:
+        await resume_service.import_historical(
+            {
+                "instrument": "EUR_USD",
+                "count": 2,
+                "from": "2026-01-15T14:30:00+00:00",
+            }
+        )
+        assert resume_client.include_first_values == [False]
+    finally:
+        await resume_engine.dispose()
+
 
 class _FakeHistoricalClient:
+    def __init__(self) -> None:
+        self.include_first_values: list[bool] = []
+
     async def __aenter__(self):
         return self
 
@@ -63,9 +85,13 @@ class _FakeHistoricalClient:
         include_first: bool,
     ) -> list[HistoricalCandle]:
         assert instrument == "EUR_USD"
-        assert from_time is None
         assert count == 2
-        assert include_first is False
+        self.include_first_values.append(include_first)
+        if from_time is None:
+            assert include_first is True
+        else:
+            assert from_time == datetime(2026, 1, 15, 14, 30, tzinfo=UTC)
+            assert include_first is False
         return [
             HistoricalCandle(
                 instrument=instrument,
