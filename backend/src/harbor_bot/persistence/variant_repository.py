@@ -146,6 +146,8 @@ async def get_study_with_trials(
             opt_trials.c.oos_score,
             opt_trials.c.robustness_score,
             opt_trials.c.pruned,
+            opt_trials.c.status,
+            opt_trials.c.failure_reason,
         )
         .where(opt_trials.c.study_id == study_id)
         .order_by(opt_trials.c.trial_no)

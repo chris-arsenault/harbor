@@ -10,25 +10,16 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   const onStartOptimization = vi.fn();
   const onPromoteVariant = vi.fn();
 
-  render(
-    <LabView
-      snapshot={snapshot}
-      variants={variantOverview}
-      tuningRun={{ pending: false, errorMessage: null, result: null }}
-      onCreatePaperVariant={onCreatePaperVariant}
-      onRetireVariant={onRetireVariant}
-      onStartOptimization={onStartOptimization}
-      onPromoteVariant={onPromoteVariant}
-      liveStatus="variant 7 closed trade"
-      candleSource={candleSource}
-      candleSourcePending={false}
-      candleSourceError={null}
-      candleImportResult={candleImportResult}
-      onImportCandles={vi.fn()}
-    />
-  );
+  renderPopulatedLabView({
+    onCreatePaperVariant,
+    onRetireVariant,
+    onStartOptimization,
+    onPromoteVariant,
+  });
 
-  expect(screen.getByText("completed")).toBeInTheDocument();
+  expect(
+    screen.getByRole("region", { name: "Study progress" }).querySelector("strong")
+  ).toHaveTextContent("completed");
   expect(screen.getByText("2 trials")).toBeInTheDocument();
   expect(screen.getByLabelText("Candidate score scatter")).toHaveAttribute(
     "data-points",
@@ -84,6 +75,31 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   expect(onRetireVariant).toHaveBeenCalledWith(7);
 });
 
+function renderPopulatedLabView(handlers: {
+  readonly onCreatePaperVariant: (payload: { trial_id: number; label: string }) => void;
+  readonly onRetireVariant: (variantId: number) => void;
+  readonly onStartOptimization: (payload: Record<string, unknown>) => void;
+  readonly onPromoteVariant: (variantId: number) => void;
+}) {
+  render(
+    <LabView
+      snapshot={snapshot}
+      variants={variantOverview}
+      tuningRun={{ pending: false, errorMessage: null, result: null }}
+      onCreatePaperVariant={handlers.onCreatePaperVariant}
+      onRetireVariant={handlers.onRetireVariant}
+      onStartOptimization={handlers.onStartOptimization}
+      onPromoteVariant={handlers.onPromoteVariant}
+      liveStatus="variant 7 closed trade"
+      candleSource={candleSource}
+      candleSourcePending={false}
+      candleSourceError={null}
+      candleImportResult={candleImportResult}
+      onImportCandles={vi.fn()}
+    />
+  );
+}
+
 test("CandleSourcePanel explains unavailable OANDA historical imports", () => {
   render(
     <CandleSourcePanel
@@ -124,7 +140,7 @@ test("LabView shows completed zero-candidate studies instead of a blank leaderbo
         result: {
           study_id: 3,
           status: "completed",
-          trials: [{ trial_id: 1 }, { trial_id: 2 }, { trial_id: 3 }, { trial_id: 4 }],
+          trials: [zeroScoreTrial(0), zeroScoreTrial(1), zeroScoreTrial(2), zeroScoreTrial(3)],
           candidates: [],
           best_trial_history: [],
           data_separation: {},
@@ -145,8 +161,14 @@ test("LabView shows completed zero-candidate studies instead of a blank leaderbo
 
   expect(screen.getByText(/Study #3 completed: 4 trials, 0 candidates/)).toBeInTheDocument();
   expect(
-    screen.getByText(/No leaderboard row was created because no candidate passed the scoring gates/)
+    screen.getByText(
+      /All 4 trials had non-positive in-sample and out-of-sample scores; see Trial diagnostics/
+    )
   ).toBeInTheDocument();
+  expect(screen.getByLabelText("Trial diagnostics")).toBeInTheDocument();
+  expect(screen.getAllByText("in-sample and out-of-sample scores are not positive")).toHaveLength(
+    4
+  );
   expect(screen.getByText("No paper variants on the leaderboard.")).toBeInTheDocument();
   expect(screen.getByText("0 parameters")).toBeInTheDocument();
 });
@@ -169,6 +191,9 @@ const snapshot: LabSnapshot = {
       out_of_sample_score: "1.50",
       robustness_score: "1.40",
       pruned: false,
+      status: "completed",
+      failure_reason: null,
+      candidate_rejection_reason: null,
     },
   ],
   variants: {
@@ -198,6 +223,19 @@ const zeroCandidateSnapshot: LabSnapshot = {
   },
   data_separation: {},
 };
+
+function zeroScoreTrial(trialNo: number) {
+  return {
+    trial_no: trialNo,
+    params: { fvg_window: 8 + trialNo },
+    is_score: "0E-8",
+    oos_score: "0E-8",
+    robustness_score: "0E-8",
+    pruned: false,
+    status: "completed",
+    failure_reason: null,
+  };
+}
 
 const candleSource = {
   instrument: "EUR_USD",

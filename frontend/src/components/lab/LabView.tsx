@@ -9,6 +9,8 @@ import { displayValue } from "../../utils/format";
 import { CandidateScatter } from "./CandidateScatter";
 import { LabActions } from "./LabActions";
 import { StudyProgress } from "./StudyProgress";
+import { TrialDiagnostics } from "./TrialDiagnostics";
+import { noCandidateExplanation, trialDiagnosticRows } from "./trialDiagnosticsModel";
 import { VariantEquityChart } from "./VariantEquityChart";
 import { VariantLeaderboard } from "./VariantLeaderboard";
 import { DEFAULT_TUNING_PAYLOAD } from "./tuningPayload";
@@ -78,6 +80,7 @@ export function LabView({
       />
       <TuningRunNotice tuningRun={tuningRun} snapshot={snapshot} />
       <StudyProgress study={snapshot.study} />
+      <TrialDiagnostics candidates={snapshot.candidates} optimizationResult={tuningRun.result} />
       <div className="lab-grid">
         <CandidateScatter candidates={snapshot.candidates} />
         <VariantEquityChart curve={firstCurve} />
@@ -297,13 +300,14 @@ export function TuningRunNotice({
     const studyId = tuningRun.result.study_id;
     const trialCount = tuningRun.result.trials.length;
     const candidateCount = tuningRun.result.candidates.length;
+    const explanation = noCandidateExplanation(
+      trialDiagnosticRows({ candidates: [], optimizationResult: tuningRun.result })
+    );
     return (
       <p className="lab-run-notice" aria-live="polite">
         Study {studyId === null ? "completed" : `#${studyId} completed`}: {trialCount} trials,{" "}
         {candidateCount} candidates.
-        {candidateCount === 0
-          ? " No leaderboard row was created because no candidate passed the scoring gates."
-          : " Candidates are ready for paper variants."}
+        {candidateCount === 0 ? ` ${explanation}` : " Candidates are ready for paper variants."}
       </p>
     );
   }
@@ -312,10 +316,16 @@ export function TuningRunNotice({
     snapshot.study.status === "completed" &&
     snapshot.study.candidate_count === 0
   ) {
+    const explanation = noCandidateExplanation(
+      trialDiagnosticRows({
+        candidates: snapshot.candidates,
+        optimizationResult: null,
+      })
+    );
     return (
       <p className="lab-run-notice" aria-live="polite">
         Latest study #{snapshot.study.study_id} completed: {snapshot.study.trial_count} trials, 0
-        candidates. No leaderboard row was created because no candidate passed the scoring gates.
+        candidates. {explanation}
       </p>
     );
   }

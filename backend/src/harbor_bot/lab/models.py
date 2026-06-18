@@ -23,6 +23,8 @@ class CandidateScatterPoint:
     out_of_sample_score: Decimal
     robustness_score: Decimal
     pruned: bool
+    status: str = "completed"
+    failure_reason: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "params", dict(self.params))
@@ -31,6 +33,13 @@ class CandidateScatterPoint:
         object.__setattr__(self, "robustness_score", Decimal(str(self.robustness_score)))
 
     def to_jsonable(self) -> dict[str, Jsonable]:
+        rejection_reason = _candidate_rejection_reason(
+            status=self.status,
+            pruned=self.pruned,
+            failure_reason=self.failure_reason,
+            in_sample_score=self.in_sample_score,
+            out_of_sample_score=self.out_of_sample_score,
+        )
         return {
             "trial_id": self.trial_id,
             "trial_no": self.trial_no,
@@ -39,6 +48,9 @@ class CandidateScatterPoint:
             "out_of_sample_score": str(self.out_of_sample_score),
             "robustness_score": str(self.robustness_score),
             "pruned": self.pruned,
+            "status": self.status,
+            "failure_reason": self.failure_reason,
+            "candidate_rejection_reason": rejection_reason,
         }
 
 
@@ -125,3 +137,26 @@ def _json_safe(value: Any) -> Jsonable:
     if value is None or isinstance(value, str | int | bool):
         return value
     return str(value)
+
+
+def _candidate_rejection_reason(
+    *,
+    status: str,
+    pruned: bool,
+    failure_reason: str | None,
+    in_sample_score: Decimal,
+    out_of_sample_score: Decimal,
+) -> str | None:
+    if failure_reason:
+        return failure_reason
+    if status == "failed":
+        return "trial failed during evaluation"
+    if status == "pruned" or pruned:
+        return "trial was pruned"
+    if in_sample_score <= 0 and out_of_sample_score <= 0:
+        return "in-sample and out-of-sample scores are not positive"
+    if in_sample_score <= 0:
+        return "in-sample score is not positive"
+    if out_of_sample_score <= 0:
+        return "out-of-sample score is not positive"
+    return None

@@ -87,6 +87,9 @@ export const labSnapshot = {
       out_of_sample_score: "1.50",
       robustness_score: "1.40",
       pruned: false,
+      status: "completed",
+      failure_reason: null,
+      candidate_rejection_reason: null,
     },
   ],
   variants: {

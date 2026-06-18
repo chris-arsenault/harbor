@@ -70,7 +70,9 @@ test("renders Lab as a secondary view and applies variant live envelopes", async
 
   fireEvent.click(screen.getByRole("button", { name: "Lab" }));
 
-  expect(await screen.findByText("completed")).toBeInTheDocument();
+  expect(await screen.findByRole("region", { name: "Study progress" })).toHaveTextContent(
+    "completed"
+  );
   expect(screen.getByLabelText("Candidate score scatter")).toHaveAttribute(
     "data-points",
     "0:1.25:1.50"

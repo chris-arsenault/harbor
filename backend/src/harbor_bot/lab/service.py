@@ -172,6 +172,8 @@ def _candidate(row: dict[str, Any]) -> CandidateScatterPoint:
         out_of_sample_score=row["oos_score"],
         robustness_score=row["robustness_score"],
         pruned=bool(row["pruned"]),
+        status=str(row.get("status") or ("pruned" if row["pruned"] else "completed")),
+        failure_reason=row.get("failure_reason"),
     )
 
 

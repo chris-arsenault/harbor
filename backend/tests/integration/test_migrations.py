@@ -52,7 +52,7 @@ def test_migrations_apply_to_empty_postgres(postgres_url: str) -> None:
         )
     )
 
-    assert rows == [("0002_practice_execution_state",)]
+    assert rows == [("0003_opt_trial_diagnostics",)]
 
 
 def test_expected_tables_and_constraints_exist(postgres_url: str) -> None:

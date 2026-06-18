@@ -97,6 +97,7 @@ def optimization_result_to_response(
                 "robustness_score": str(trial.score.robustness_score),
                 "pruned": trial.pruned,
                 "status": trial.status.value,
+                "failure_reason": trial.failure_reason,
             }
             for trial in result.trials
         ],

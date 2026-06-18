@@ -146,10 +146,21 @@ export interface WebSocketEnvelope<TPayload = Record<string, unknown>> {
 export interface OptimizationStartResponse {
   study_id: number | null;
   status: string;
-  trials: unknown[];
+  trials: OptimizationTrialResult[];
   candidates: unknown[];
   best_trial_history: BestTrialPoint[];
   data_separation: Record<string, unknown>;
+}
+
+export interface OptimizationTrialResult {
+  trial_no: number;
+  params: Record<string, unknown>;
+  is_score: string;
+  oos_score: string;
+  robustness_score: string;
+  pruned: boolean;
+  status: string;
+  failure_reason: string | null;
 }
 
 export interface BestTrialPoint {
@@ -175,6 +186,9 @@ export interface CandidateScatterPoint {
   out_of_sample_score: string;
   robustness_score: string;
   pruned: boolean;
+  status: string;
+  failure_reason: string | null;
+  candidate_rejection_reason: string | null;
 }
 
 export interface PaperVariant {

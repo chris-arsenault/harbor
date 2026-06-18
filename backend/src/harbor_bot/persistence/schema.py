@@ -217,6 +217,8 @@ opt_trials = Table(
     Column("oos_score", score, nullable=False),
     Column("robustness_score", score, nullable=False),
     Column("pruned", Boolean, nullable=False),
+    Column("status", String(32), nullable=False),
+    Column("failure_reason", Text),
     UniqueConstraint("study_id", "trial_no", name="opt_trials_study_id_trial_no_key"),
 )
 

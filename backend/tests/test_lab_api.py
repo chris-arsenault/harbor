@@ -38,6 +38,9 @@ def test_lab_endpoints_read_study_variants_and_paper_only_actions() -> None:
     assert study.status_code == 200
     assert study.json()["study"]["study_id"] == 1
     assert study.json()["candidates"][0]["trial_no"] == 0
+    assert study.json()["candidates"][0]["status"] == "completed"
+    assert study.json()["candidates"][0]["failure_reason"] is None
+    assert study.json()["candidates"][0]["candidate_rejection_reason"] is None
     assert variants.status_code == 200
     assert variants.json()["variants"][0]["status"] == "paper"
     assert created.json() == {
@@ -69,6 +72,23 @@ def test_get_optimize_returns_404_for_unknown_study() -> None:
 
     assert response.status_code == 404
     assert response.json() == {"detail": "optimization study not found"}
+
+
+def test_candidate_scatter_point_explains_zero_score_rejection() -> None:
+    point = CandidateScatterPoint(
+        trial_id=7,
+        trial_no=3,
+        params={"fvg_window": 11},
+        in_sample_score=Decimal("0E-8"),
+        out_of_sample_score=Decimal("0E-8"),
+        robustness_score=Decimal("0E-8"),
+        pruned=False,
+    )
+
+    assert (
+        point.to_jsonable()["candidate_rejection_reason"]
+        == "in-sample and out-of-sample scores are not positive"
+    )
 
 
 class FakeOptimizerService:

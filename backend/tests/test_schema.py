@@ -72,6 +72,7 @@ def test_research_tables_have_json_and_relationship_constraints() -> None:
     assert _is_jsonb("opt_studies", "search_space_json")
     assert _is_jsonb("opt_studies", "walkforward_json")
     assert _is_jsonb("opt_trials", "params_json")
+    assert {"status", "failure_reason"} <= set(metadata.tables["opt_trials"].columns.keys())
     assert _has_unique_constraint(metadata.tables["opt_trials"], ["study_id", "trial_no"])
     assert _has_foreign_key(metadata.tables["opt_trials"], ["study_id"], "opt_studies")
 

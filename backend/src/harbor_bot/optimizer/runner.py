@@ -94,20 +94,22 @@ def run_optimization(
                 status=OptimizationStatus.COMPLETED,
             )
             return float(score.out_of_sample_score)
-        except InsufficientTradeCountError:
+        except InsufficientTradeCountError as exc:
             records[trial.number] = _record(
                 trial.number,
                 params,
                 status=OptimizationStatus.PRUNED,
                 pruned=True,
+                failure_reason=str(exc),
             )
             raise optuna.TrialPruned() from None
-        except Exception:
+        except Exception as exc:
             records[trial.number] = _record(
                 trial.number,
                 params,
                 status=OptimizationStatus.FAILED,
                 pruned=False,
+                failure_reason=str(exc) or exc.__class__.__name__,
             )
             raise
 
@@ -161,6 +163,7 @@ def _record(
     *,
     status: OptimizationStatus,
     pruned: bool,
+    failure_reason: str | None = None,
 ) -> TrialRecord:
     return TrialRecord(
         trial_no=trial_no,
@@ -172,4 +175,5 @@ def _record(
         ),
         pruned=pruned,
         status=status,
+        failure_reason=failure_reason,
     )

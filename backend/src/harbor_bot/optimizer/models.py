@@ -185,6 +185,7 @@ class TrialRecord:
     score: TrialScore
     pruned: bool = False
     status: OptimizationStatus = OptimizationStatus.COMPLETED
+    failure_reason: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "params", dict(self.params))

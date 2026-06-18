@@ -71,7 +71,13 @@ async def _assert_optimization_round_trip(postgres_url: str) -> None:
         assert stored["trials"][0]["is_score"] == Decimal("1.25000000")
         assert stored["trials"][0]["oos_score"] == Decimal("1.50000000")
         assert stored["trials"][0]["robustness_score"] == Decimal("1.40000000")
+        assert stored["trials"][0]["status"] == "completed"
+        assert stored["trials"][0]["failure_reason"] is None
         assert stored["trials"][1]["pruned"] is True
+        assert stored["trials"][1]["status"] == "pruned"
+        assert (
+            stored["trials"][1]["failure_reason"] == "in-sample trade count below configured floor"
+        )
         assert stored["variants"][0]["label"] == "candidate-1"
         assert stored["variants"][0]["status"] == "paper"
     finally:
@@ -131,6 +137,7 @@ def _trials() -> tuple[TrialRecord, ...]:
             ),
             pruned=True,
             status=OptimizationStatus.PRUNED,
+            failure_reason="in-sample trade count below configured floor",
         ),
     )
 

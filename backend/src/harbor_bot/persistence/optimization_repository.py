@@ -77,6 +77,8 @@ async def append_optimization_trial(
             oos_score=trial.score.out_of_sample_score,
             robustness_score=trial.score.robustness_score,
             pruned=trial.pruned,
+            status=trial.status.value,
+            failure_reason=trial.failure_reason,
         )
         .returning(opt_trials.c.id)
     )
@@ -130,6 +132,8 @@ async def get_optimization_study(
             opt_trials.c.oos_score,
             opt_trials.c.robustness_score,
             opt_trials.c.pruned,
+            opt_trials.c.status,
+            opt_trials.c.failure_reason,
         )
         .where(opt_trials.c.study_id == study_id)
         .order_by(opt_trials.c.trial_no)

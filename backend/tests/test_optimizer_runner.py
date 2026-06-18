@@ -72,6 +72,10 @@ def test_runner_records_pruned_trials_when_trade_floor_rejects_params() -> None:
         OptimizationStatus.PRUNED,
         OptimizationStatus.PRUNED,
     ]
+    assert [trial.failure_reason for trial in result.trials] == [
+        "in-sample trade count below configured floor",
+        "in-sample trade count below configured floor",
+    ]
     assert result.candidates == ()
 
 
@@ -91,6 +95,7 @@ def test_runner_does_not_rank_zero_score_trials_as_candidates() -> None:
     )
 
     assert all(trial.status == OptimizationStatus.COMPLETED for trial in result.trials)
+    assert all(trial.failure_reason is None for trial in result.trials)
     assert result.candidates == ()
 
 
