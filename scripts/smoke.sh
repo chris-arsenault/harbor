@@ -16,6 +16,7 @@ curl -fsSI "${BASE_URL}${ASSET_PATH}" | grep -qi '^Content-Type: application/jav
 grep -q 'proxy_set_header Upgrade $http_upgrade' "${ROOT_DIR}/frontend/nginx.conf"
 grep -q 'proxy_set_header Connection "upgrade"' "${ROOT_DIR}/frontend/nginx.conf"
 grep -q 'include /etc/nginx/mime.types' "${ROOT_DIR}/frontend/nginx.conf"
+grep -q 'proxy_read_timeout 10m' "${ROOT_DIR}/frontend/nginx.conf"
 grep -q '192.168.66.3:30091' "${ROOT_DIR}/compose.yaml"
 
 printf '%s\n' "Harbor smoke checks passed for ${BASE_URL}"
