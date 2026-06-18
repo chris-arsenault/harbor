@@ -94,6 +94,7 @@ export function CandleSourcePanel({
 }) {
   const facts = candleSourceFacts(source);
   const instrument = facts.instrument;
+  const importConfigured = facts.oandaHistoricalImportConfigured;
   return (
     <section className="lab-panel" aria-label="Candle source">
       <div className="lab-panel__header">
@@ -101,12 +102,13 @@ export function CandleSourcePanel({
         <button
           type="button"
           className="lab-button lab-button--quiet"
-          disabled={pending}
+          disabled={pending || !importConfigured}
           onClick={() => void onImportCandles({ instrument })}
         >
           Import OANDA candles
         </button>
       </div>
+      <p className="lab-source-note">{facts.guidance}</p>
       <ul className="fact-list">
         {facts.rows.map((row) => (
           <li key={row.label}>
@@ -127,9 +129,14 @@ function candleSourceFacts(source: CandleSourceStatus | null) {
   if (source === null) {
     return {
       instrument: "EUR_USD",
+      oandaHistoricalImportConfigured: false,
+      guidance:
+        "Candles come from OANDA practice REST into the persisted M1 midpoint candle store. Configure OANDA_ACCOUNT_ID and OANDA_API_TOKEN before importing.",
       rows: candleSourceRows({
         source: "persisted_candles",
         instrument: "EUR_USD",
+        granularity: "M1",
+        priceComponent: "midpoint",
         candleCount: 0,
         from: "none",
         to: "none",
@@ -139,11 +146,16 @@ function candleSourceFacts(source: CandleSourceStatus | null) {
   }
 
   const coverage = source.coverage;
+  const guidance = candleSourceGuidance(source);
   return {
     instrument: source.instrument,
+    oandaHistoricalImportConfigured: source.oanda_historical_import_configured,
+    guidance,
     rows: candleSourceRows({
       source: source.primary_source,
       instrument: source.instrument,
+      granularity: source.granularity,
+      priceComponent: source.price_component,
       candleCount: coverage.candle_count,
       from: coverage.from ?? "none",
       to: coverage.to ?? "none",
@@ -155,20 +167,35 @@ function candleSourceFacts(source: CandleSourceStatus | null) {
 function candleSourceRows(input: {
   readonly source: string;
   readonly instrument: string;
+  readonly granularity: string;
+  readonly priceComponent: string;
   readonly candleCount: number;
   readonly from: string;
   readonly to: string;
   readonly configured: boolean;
 }) {
   return [
+    { label: "path", value: "OANDA practice REST -> persisted candles -> Lab optimizer" },
     { label: "source", value: input.source },
     { label: "method", value: "oanda_historical_import" },
     { label: "instrument", value: input.instrument },
+    { label: "granularity", value: input.granularity },
+    { label: "price", value: input.priceComponent },
     { label: "candles", value: String(input.candleCount) },
     { label: "from", value: input.from },
     { label: "to", value: input.to },
     { label: "configured", value: String(input.configured) },
   ];
+}
+
+function candleSourceGuidance(source: CandleSourceStatus) {
+  if (!source.oanda_historical_import_configured) {
+    return "Configure OANDA_ACCOUNT_ID and OANDA_API_TOKEN in the stack environment, then import historical M1 midpoint candles.";
+  }
+  if (source.coverage.candle_count === 0) {
+    return "Click Import OANDA candles to load historical M1 midpoint candles before starting a tuning study.";
+  }
+  return "Lab tuning uses persisted M1 midpoint candles. Import again to extend coverage.";
 }
 
 function CandidateParameters({ snapshot }: { readonly snapshot: LabSnapshot }) {

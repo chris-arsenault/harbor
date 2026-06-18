@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import type { LabSnapshot, LabVariantOverview } from "../../api/types";
-import { LabView } from "./LabView";
+import { CandleSourcePanel, LabView } from "./LabView";
 
 test("LabView renders backend study facts, leaderboard, equity, and paper actions", () => {
   const onCreatePaperVariant = vi.fn();
@@ -47,6 +47,16 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   expect(screen.getByText("Data Separation")).toBeInTheDocument();
   expect(screen.getByText("optimizer_uses_variant_trades: false")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Import OANDA candles" })).toBeInTheDocument();
+  expect(
+    screen.getByText("path: OANDA practice REST -> persisted candles -> Lab optimizer")
+  ).toBeInTheDocument();
+  expect(screen.getByText("granularity: M1")).toBeInTheDocument();
+  expect(screen.getByText("price: midpoint")).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Lab tuning uses persisted M1 midpoint candles. Import again to extend coverage."
+    )
+  ).toBeInTheDocument();
   expect(screen.getByText("candles: 2880")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Start tuning study" }));
@@ -63,6 +73,34 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   expect(onCreatePaperVariant).toHaveBeenCalledWith({ trial_id: 2, label: "paper-trial-1" });
   expect(onPromoteVariant).toHaveBeenCalledWith(7);
   expect(onRetireVariant).toHaveBeenCalledWith(7);
+});
+
+test("CandleSourcePanel explains unavailable OANDA historical imports", () => {
+  render(
+    <CandleSourcePanel
+      source={{
+        ...candleSource,
+        coverage: {
+          ...candleSource.coverage,
+          candle_count: 0,
+          from: null,
+          to: null,
+        },
+        oanda_historical_import_configured: false,
+      }}
+      pending={false}
+      errorMessage={null}
+      onImportCandles={vi.fn()}
+    />
+  );
+
+  expect(screen.getByRole("button", { name: "Import OANDA candles" })).toBeDisabled();
+  expect(
+    screen.getByText(
+      "Configure OANDA_ACCOUNT_ID and OANDA_API_TOKEN in the stack environment, then import historical M1 midpoint candles."
+    )
+  ).toBeInTheDocument();
+  expect(screen.getByText("configured: false")).toBeInTheDocument();
 });
 
 const snapshot: LabSnapshot = {

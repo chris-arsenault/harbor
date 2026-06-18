@@ -681,6 +681,13 @@ p {
   font-size: 1rem;
 }
 
+.lab-source-note {
+  margin: 0;
+  color: #26312b;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .lab-panel__header {
   display: flex;
   flex-wrap: wrap;
