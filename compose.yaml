@@ -16,10 +16,6 @@ services:
       OANDA_ACCOUNT_ID: "${OANDA_ACCOUNT_ID}"
       OANDA_API_TOKEN: "${OANDA_API_TOKEN}"
       OANDA_ENV: "practice"
-      NTFY_TOPIC: "${NTFY_TOPIC}"
-      NTFY_URL: "${NTFY_URL}"
-      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
-      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID}"
     healthcheck:
       test:
         [
