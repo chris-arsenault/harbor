@@ -8,10 +8,12 @@ ENV PATH="/app/.venv/bin:${PATH}" \
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
+COPY alembic.ini ./
+COPY db ./db
 COPY src ./src
 
 RUN uv sync --frozen --no-dev
 
 EXPOSE 8080
 
-CMD ["uvicorn", "harbor_bot.api:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn harbor_bot.api:app --host 0.0.0.0 --port 8080"]

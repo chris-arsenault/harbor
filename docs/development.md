@@ -1,6 +1,6 @@
 # Development
 
-Harbor uses the Ahara project layout with a Python backend in `backend/`, a TypeScript React frontend in `frontend/`, migrations in `db/migrations/`, and platform/deploy files at the repository root.
+Harbor uses the Ahara project layout with a Python backend in `backend/`, a TypeScript React frontend in `frontend/`, migrations in `backend/db/migrations/`, and platform/deploy files at the repository root.
 
 ## Canonical Verification
 
@@ -14,7 +14,7 @@ Harbor uses the Ahara project layout with a Python backend in `backend/`, a Type
 
 ## Persistence
 
-Backend persistence uses SQLAlchemy Core with async PostgreSQL connections and Alembic migrations in `db/migrations/`. Repository integration tests use real Postgres containers through the Docker CLI so constraints, transactions, JSONB, and migrations are verified against PostgreSQL rather than SQLite.
+Backend persistence uses SQLAlchemy Core with async PostgreSQL connections and Alembic migrations in `backend/db/migrations/`. Repository integration tests use real Postgres containers through the Docker CLI so constraints, transactions, JSONB, and migrations are verified against PostgreSQL rather than SQLite.
 
 Useful backend commands:
 

@@ -37,7 +37,7 @@ Harbor is a TrueNAS-hosted OANDA practice-trading research system with a Python 
 | `HARBOR-PLAN.md` | Milestone-level implementation plan |
 | `backend/` | Python FastAPI bot process scaffold |
 | `frontend/` | React observability dashboard scaffold |
-| `db/migrations/` | PostgreSQL migration home |
+| `backend/db/migrations/` | PostgreSQL migration home |
 | `docs/` | Current-state project documentation |
 | `docs/adr/` | Architecture decisions and trade-offs |
 | `infrastructure/` | Platform notes for Ahara/TrueNAS integration |

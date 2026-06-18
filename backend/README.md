@@ -87,4 +87,4 @@ uv run --extra dev pytest tests/test_paper_engine_models.py tests/test_paper_eng
 uv run --extra dev pytest tests/integration/test_variant_repository.py tests/test_lab_service.py tests/test_lab_api.py
 ```
 
-Alembic is configured by `alembic.ini` with migration scripts in `../db/migrations`.
+Alembic is configured by `alembic.ini` with migration scripts in `db/migrations`.
