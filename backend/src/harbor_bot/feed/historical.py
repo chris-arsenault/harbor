@@ -55,6 +55,4 @@ async def ingest_historical_candles(
             break
         cursor = newest
         next_include_first = False
-        if len(candles) < request_count:
-            break
     return persisted

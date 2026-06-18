@@ -19,6 +19,12 @@ def test_historical_ingestion_persists_only_complete_m1_candles(postgres_url: st
     asyncio.run(_assert_historical_ingestion(postgres_url))
 
 
+def test_historical_ingestion_continues_after_short_advanced_page(postgres_url: str) -> None:
+    command.upgrade(_alembic_config(postgres_url), "head")
+
+    asyncio.run(_assert_short_advanced_page_ingestion(postgres_url))
+
+
 async def _assert_historical_ingestion(postgres_url: str) -> None:
     engine = create_engine(Settings(DATABASE_URL=postgres_url))
     client = _FakeHistoricalClient()
@@ -83,6 +89,49 @@ async def _assert_historical_ingestion(postgres_url: str) -> None:
                 "volume": 132,
                 "complete": True,
             },
+        ]
+    finally:
+        await engine.dispose()
+
+
+async def _assert_short_advanced_page_ingestion(postgres_url: str) -> None:
+    engine = create_engine(Settings(DATABASE_URL=postgres_url))
+    client = _ShortPageHistoricalClient()
+    from_time = datetime(2026, 1, 15, 14, 29, tzinfo=UTC)
+    try:
+        persisted = await ingest_historical_candles(
+            client=client,
+            engine=engine,
+            instrument="EUR_USD",
+            from_time=from_time,
+            count=4,
+            page_size=3,
+            include_first=False,
+        )
+
+        async with engine.connect() as connection:
+            candles = await list_candles(connection, instrument="EUR_USD")
+
+        assert persisted == 4
+        assert client.calls == [
+            {
+                "instrument": "EUR_USD",
+                "from_time": from_time,
+                "count": 3,
+                "include_first": False,
+            },
+            {
+                "instrument": "EUR_USD",
+                "from_time": datetime(2026, 1, 15, 14, 31, tzinfo=UTC),
+                "count": 2,
+                "include_first": False,
+            },
+        ]
+        assert [candle["ts"] for candle in candles] == [
+            datetime(2026, 1, 15, 14, 30, tzinfo=UTC),
+            datetime(2026, 1, 15, 14, 31, tzinfo=UTC),
+            datetime(2026, 1, 15, 14, 32, tzinfo=UTC),
+            datetime(2026, 1, 15, 14, 33, tzinfo=UTC),
         ]
     finally:
         await engine.dispose()
@@ -153,6 +202,76 @@ class _FakeHistoricalClient:
         if from_time is None:
             return candles[:count]
         return [candle for candle in candles if candle.time > from_time][:count]
+
+
+class _ShortPageHistoricalClient:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+        self._candles = [
+            HistoricalCandle(
+                instrument="EUR_USD",
+                time=datetime(2026, 1, 15, 14, 30, tzinfo=UTC),
+                o=Decimal("1.09000"),
+                h=Decimal("1.09100"),
+                low=Decimal("1.08950"),
+                c=Decimal("1.09050"),
+                volume=128,
+                complete=True,
+            ),
+            HistoricalCandle(
+                instrument="EUR_USD",
+                time=datetime(2026, 1, 15, 14, 31, tzinfo=UTC),
+                o=Decimal("1.09050"),
+                h=Decimal("1.09150"),
+                low=Decimal("1.09000"),
+                c=Decimal("1.09100"),
+                volume=130,
+                complete=True,
+            ),
+            HistoricalCandle(
+                instrument="EUR_USD",
+                time=datetime(2026, 1, 15, 14, 32, tzinfo=UTC),
+                o=Decimal("1.09100"),
+                h=Decimal("1.09200"),
+                low=Decimal("1.09050"),
+                c=Decimal("1.09150"),
+                volume=132,
+                complete=True,
+            ),
+            HistoricalCandle(
+                instrument="EUR_USD",
+                time=datetime(2026, 1, 15, 14, 33, tzinfo=UTC),
+                o=Decimal("1.09150"),
+                h=Decimal("1.09250"),
+                low=Decimal("1.09100"),
+                c=Decimal("1.09200"),
+                volume=134,
+                complete=True,
+            ),
+        ]
+
+    async def get_historical_candles(
+        self,
+        *,
+        instrument: str,
+        from_time: datetime | None,
+        count: int,
+        include_first: bool,
+    ) -> list[HistoricalCandle]:
+        self.calls.append(
+            {
+                "instrument": instrument,
+                "from_time": from_time,
+                "count": count,
+                "include_first": include_first,
+            }
+        )
+        candles = [
+            candle for candle in self._candles if from_time is None or candle.time > from_time
+        ]
+        if len(self.calls) == 1:
+            return candles[:2]
+        return candles[:count]
 
 
 def _alembic_config(database_url: str) -> Config:
