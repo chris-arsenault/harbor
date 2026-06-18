@@ -14,6 +14,7 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
     <LabView
       snapshot={snapshot}
       variants={variantOverview}
+      tuningRun={{ pending: false, errorMessage: null, result: null }}
       onCreatePaperVariant={onCreatePaperVariant}
       onRetireVariant={onRetireVariant}
       onStartOptimization={onStartOptimization}
@@ -22,6 +23,7 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
       candleSource={candleSource}
       candleSourcePending={false}
       candleSourceError={null}
+      candleImportResult={candleImportResult}
       onImportCandles={vi.fn()}
     />
   );
@@ -42,11 +44,13 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   expect(screen.getByText("variant 7 closed trade")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /live/i })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Start tuning study" })).toBeInTheDocument();
-  expect(screen.getByText("Candidate Parameters")).toBeInTheDocument();
-  expect(screen.getByText("fvg_window")).toBeInTheDocument();
+  expect(screen.getByText("1 parameter")).toBeInTheDocument();
+  expect(screen.getByText("fvg_window")).not.toBeVisible();
+  fireEvent.click(screen.getByText("Candidate Parameters"));
+  expect(screen.getByText("fvg_window")).toBeVisible();
   expect(screen.getByText("Data Separation")).toBeInTheDocument();
   expect(screen.getByText("optimizer_uses_variant_trades: false")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Import OANDA candles" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Import/refresh OANDA candles" })).toBeInTheDocument();
   expect(
     screen.getByText("path: OANDA practice REST -> persisted candles -> Lab optimizer")
   ).toBeInTheDocument();
@@ -54,7 +58,12 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   expect(screen.getByText("price: midpoint")).toBeInTheDocument();
   expect(
     screen.getByText(
-      "Lab tuning uses persisted M1 midpoint candles. Import again to extend coverage."
+      "Lab tuning reads this persisted candle dataset. Import/refresh updates the OANDA M1 midpoint history before rerunning studies."
+    )
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Imported 4999 candles. Coverage 2026-06-15T08:21:00+00:00 to 2026-06-18T19:58:00+00:00."
     )
   ).toBeInTheDocument();
   expect(screen.getByText("candles: 2880")).toBeInTheDocument();
@@ -90,17 +99,56 @@ test("CandleSourcePanel explains unavailable OANDA historical imports", () => {
       }}
       pending={false}
       errorMessage={null}
+      importResult={null}
       onImportCandles={vi.fn()}
     />
   );
 
-  expect(screen.getByRole("button", { name: "Import OANDA candles" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Import/refresh OANDA candles" })).toBeDisabled();
   expect(
     screen.getByText(
-      "Configure OANDA_ACCOUNT_ID and OANDA_API_TOKEN in the stack environment, then import historical M1 midpoint candles."
+      "OANDA credentials are missing. Import would load practice M1 midpoint candles into Harbor's database for Lab studies."
     )
   ).toBeInTheDocument();
   expect(screen.getByText("configured: false")).toBeInTheDocument();
+});
+
+test("LabView shows completed zero-candidate studies instead of a blank leaderboard", () => {
+  render(
+    <LabView
+      snapshot={zeroCandidateSnapshot}
+      variants={{ variants: [], leaderboard: [], equity_curves: [], data_separation: {} }}
+      tuningRun={{
+        pending: false,
+        errorMessage: null,
+        result: {
+          study_id: 3,
+          status: "completed",
+          trials: [{ trial_id: 1 }, { trial_id: 2 }, { trial_id: 3 }, { trial_id: 4 }],
+          candidates: [],
+          best_trial_history: [],
+          data_separation: {},
+        },
+      }}
+      onCreatePaperVariant={vi.fn()}
+      onRetireVariant={vi.fn()}
+      onStartOptimization={vi.fn()}
+      onPromoteVariant={vi.fn()}
+      liveStatus={null}
+      candleSource={candleSource}
+      candleSourcePending={false}
+      candleSourceError={null}
+      candleImportResult={null}
+      onImportCandles={vi.fn()}
+    />
+  );
+
+  expect(screen.getByText(/Study #3 completed: 4 trials, 0 candidates/)).toBeInTheDocument();
+  expect(
+    screen.getByText(/No leaderboard row was created because no candidate passed the scoring gates/)
+  ).toBeInTheDocument();
+  expect(screen.getByText("No paper variants on the leaderboard.")).toBeInTheDocument();
+  expect(screen.getByText("0 parameters")).toBeInTheDocument();
 });
 
 const snapshot: LabSnapshot = {
@@ -132,6 +180,25 @@ const snapshot: LabSnapshot = {
   data_separation: { optimizer_uses_variant_trades: false },
 };
 
+const zeroCandidateSnapshot: LabSnapshot = {
+  study: {
+    study_id: 3,
+    status: "completed",
+    trial_count: 4,
+    candidate_count: 0,
+    paper_variant_count: 0,
+    created_ts: "2026-06-18T19:59:43Z",
+  },
+  candidates: [],
+  variants: {
+    variants: [],
+    leaderboard: [],
+    equity_curves: [],
+    data_separation: {},
+  },
+  data_separation: {},
+};
+
 const candleSource = {
   instrument: "EUR_USD",
   primary_source: "persisted_candles",
@@ -145,6 +212,20 @@ const candleSource = {
   },
   source_methods: ["oanda_historical_import", "oanda_pricing_stream"],
   oanda_historical_import_configured: true,
+};
+
+const candleImportResult = {
+  status: "completed",
+  source: "oanda_historical_import",
+  instrument: "EUR_USD",
+  requested_count: 5000,
+  imported_count: 4999,
+  coverage: {
+    instrument: "EUR_USD",
+    candle_count: 4999,
+    from: "2026-06-15T08:21:00+00:00",
+    to: "2026-06-18T19:58:00+00:00",
+  },
 };
 
 const variantOverview: LabVariantOverview = {

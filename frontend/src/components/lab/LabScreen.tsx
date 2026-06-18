@@ -1,11 +1,12 @@
 import type { CandleSourceStatus, LabVariantOverview } from "../../api/types";
-import { CandleSourcePanel, LabView } from "./LabView";
+import { CandleSourcePanel, LabView, TuningRunNotice } from "./LabView";
 import { DEFAULT_TUNING_PAYLOAD } from "./tuningPayload";
 
 interface LabScreenProps {
   readonly snapshot: Parameters<typeof LabView>[0]["snapshot"] | null;
   readonly variants: LabVariantOverview;
   readonly liveStatus: string | null;
+  readonly tuningRun: Parameters<typeof LabView>[0]["tuningRun"];
   readonly onStartOptimization: Parameters<typeof LabView>[0]["onStartOptimization"];
   readonly onCreatePaperVariant: Parameters<typeof LabView>[0]["onCreatePaperVariant"];
   readonly onRetireVariant: Parameters<typeof LabView>[0]["onRetireVariant"];
@@ -13,6 +14,7 @@ interface LabScreenProps {
   readonly candleSource: CandleSourceStatus | null;
   readonly candleSourcePending: boolean;
   readonly candleSourceError: string | null;
+  readonly candleImportResult: Parameters<typeof LabView>[0]["candleImportResult"];
   readonly onImportCandles: Parameters<typeof LabView>[0]["onImportCandles"];
 }
 
@@ -20,6 +22,7 @@ export function LabScreen({
   snapshot,
   variants,
   liveStatus,
+  tuningRun,
   onStartOptimization,
   onCreatePaperVariant,
   onRetireVariant,
@@ -27,6 +30,7 @@ export function LabScreen({
   candleSource,
   candleSourcePending,
   candleSourceError,
+  candleImportResult,
   onImportCandles,
 }: LabScreenProps) {
   const canStartOptimization = (candleSource?.coverage?.candle_count ?? 0) > 0;
@@ -38,18 +42,20 @@ export function LabScreen({
           <button
             type="button"
             className="lab-button"
-            disabled={!canStartOptimization}
+            disabled={!canStartOptimization || tuningRun.pending}
             onClick={() => void onStartOptimization(DEFAULT_TUNING_PAYLOAD)}
           >
-            Start tuning study
+            {tuningRun.pending ? "Running tuning study" : "Start tuning study"}
           </button>
         </section>
         <CandleSourcePanel
           source={candleSource}
           pending={candleSourcePending}
           errorMessage={candleSourceError}
+          importResult={candleImportResult}
           onImportCandles={onImportCandles}
         />
+        <TuningRunNotice tuningRun={tuningRun} snapshot={null} />
         <section className="lab-panel" aria-label="Lab empty state">
           <h2>No tuning studies yet</h2>
         </section>
@@ -70,9 +76,11 @@ export function LabScreen({
       onRetireVariant={onRetireVariant}
       onPromoteVariant={onPromoteVariant}
       liveStatus={liveStatus}
+      tuningRun={tuningRun}
       candleSource={candleSource}
       candleSourcePending={candleSourcePending}
       candleSourceError={candleSourceError}
+      candleImportResult={candleImportResult}
       onImportCandles={onImportCandles}
     />
   );

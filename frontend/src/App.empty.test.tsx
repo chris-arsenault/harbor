@@ -31,7 +31,7 @@ test("does not request a fixed lab study when the empty deployment has no studie
   expect(screen.getByText("No tuning studies yet")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Start tuning study" })).toBeDisabled();
   expect(screen.getByText("candles: 0")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Import OANDA candles" }));
+  fireEvent.click(screen.getByRole("button", { name: "Import/refresh OANDA candles" }));
 
   await waitFor(() =>
     expect(fetch).toHaveBeenCalledWith("/api/candles/import", {

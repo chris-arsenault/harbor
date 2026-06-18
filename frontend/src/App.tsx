@@ -134,11 +134,11 @@ function useDashboardData(windowParams: ReturnType<typeof dashboardWindow>, live
 
 function useLabData(liveEquityCurves: VariantEquityCurve[], liveStatus: string | null) {
   const studiesQuery = useOptimizationStudiesQuery({ limit: 50 });
-  const selectedStudyId = studiesQuery.data?.studies[0]?.study_id ?? null;
+  const startOptimizationMutation = useStartOptimizationMutation();
+  const selectedStudyId = latestLabStudyId(studiesQuery.data, startOptimizationMutation.data);
   const labStudyQuery = useLabStudyQuery(selectedStudyId);
   const variantsQuery = useVariantsQuery();
   const candleSource = useLabCandleSource();
-  const startOptimizationMutation = useStartOptimizationMutation();
   const createVariantMutation = useCreatePaperVariantMutation();
   const retireVariantMutation = useRetirePaperVariantMutation();
   const promoteVariantMutation = usePromoteVariantMutation();
@@ -154,10 +154,27 @@ function useLabData(liveEquityCurves: VariantEquityCurve[], liveStatus: string |
     candleSourcePending: candleSource.pending,
     candleSourceError: candleSource.errorMessage,
     importCandles: candleSource.importCandles,
+    importResult: candleSource.importResult,
     startOptimization: startOptimizationMutation.mutate,
+    tuningRun: tuningRunState(startOptimizationMutation),
     createPaperVariant: createVariantMutation.mutate,
     retireVariant: retireVariantMutation.mutate,
     promoteVariant: promoteVariantMutation.mutate,
+  };
+}
+
+function latestLabStudyId(
+  studies: ReturnType<typeof useOptimizationStudiesQuery>["data"],
+  startedStudy: ReturnType<typeof useStartOptimizationMutation>["data"]
+) {
+  return startedStudy?.study_id ?? studies?.studies[0]?.study_id ?? null;
+}
+
+function tuningRunState(mutation: ReturnType<typeof useStartOptimizationMutation>) {
+  return {
+    pending: mutation.isPending,
+    errorMessage: firstErrorMessage(mutation.error),
+    result: mutation.data ?? null,
   };
 }
 
@@ -170,6 +187,7 @@ function useLabCandleSource() {
     pending: candleSourceQuery.isLoading || importCandlesMutation.isPending,
     errorMessage: firstErrorMessage(candleSourceQuery.error, importCandlesMutation.error),
     importCandles: importCandlesMutation.mutate,
+    importResult: importCandlesMutation.data ?? null,
   };
 }
 
@@ -277,7 +295,9 @@ function LabRoute({ lab }: ProductPageProps) {
       candleSource={lab.candleSource}
       candleSourcePending={lab.candleSourcePending}
       candleSourceError={lab.candleSourceError}
+      candleImportResult={lab.importResult}
       onImportCandles={lab.importCandles}
+      tuningRun={lab.tuningRun}
     />
   );
 }

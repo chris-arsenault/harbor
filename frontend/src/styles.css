@@ -681,6 +681,26 @@ p {
   font-size: 1rem;
 }
 
+.lab-disclosure {
+  gap: 0.75rem;
+}
+
+.lab-disclosure__summary {
+  display: flex;
+  min-height: 2rem;
+  cursor: pointer;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: #26312b;
+  font-weight: 700;
+}
+
+.lab-disclosure__summary span {
+  color: #65736b;
+  font-size: 0.86rem;
+}
+
 .lab-source-note {
   margin: 0;
   color: #26312b;
@@ -788,6 +808,22 @@ p {
   padding: 0.75rem 0.875rem;
   color: #26312b;
   font-weight: 700;
+}
+
+.lab-run-notice {
+  margin: 0;
+  border: 1px solid #d6ded8;
+  border-radius: 8px;
+  background: #f7faf8;
+  padding: 0.75rem 0.875rem;
+  color: #26312b;
+  font-weight: 700;
+}
+
+.lab-run-notice--error {
+  border-color: #d9a7a1;
+  background: #fff7f5;
+  color: #a2342b;
 }
 
 @media (max-width: 760px) {

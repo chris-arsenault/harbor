@@ -1,4 +1,10 @@
-import type { CandleSourceStatus, LabSnapshot, LabVariantOverview } from "../../api/types";
+import type {
+  CandleImportResult,
+  CandleSourceStatus,
+  LabSnapshot,
+  LabVariantOverview,
+  OptimizationStartResponse,
+} from "../../api/types";
 import { displayValue } from "../../utils/format";
 import { CandidateScatter } from "./CandidateScatter";
 import { LabActions } from "./LabActions";
@@ -10,6 +16,7 @@ import { DEFAULT_TUNING_PAYLOAD } from "./tuningPayload";
 interface LabViewProps {
   readonly snapshot: LabSnapshot;
   readonly variants: LabVariantOverview;
+  readonly tuningRun: TuningRunState;
   readonly onStartOptimization: (payload: Record<string, unknown>) => void | Promise<void>;
   readonly onCreatePaperVariant: (payload: {
     trial_id: number;
@@ -21,12 +28,20 @@ interface LabViewProps {
   readonly candleSource: CandleSourceStatus | null;
   readonly candleSourcePending: boolean;
   readonly candleSourceError: string | null;
+  readonly candleImportResult: CandleImportResult | null;
   readonly onImportCandles: (payload: { instrument: string }) => void | Promise<void>;
+}
+
+export interface TuningRunState {
+  readonly pending: boolean;
+  readonly errorMessage: string | null;
+  readonly result: OptimizationStartResponse | null;
 }
 
 export function LabView({
   snapshot,
   variants,
+  tuningRun,
   onStartOptimization,
   onCreatePaperVariant,
   onRetireVariant,
@@ -35,6 +50,7 @@ export function LabView({
   candleSource,
   candleSourcePending,
   candleSourceError,
+  candleImportResult,
   onImportCandles,
 }: LabViewProps) {
   const firstCurve = variants.equity_curves.find((curve) => curve.points.length > 0) ?? null;
@@ -47,18 +63,20 @@ export function LabView({
         <button
           type="button"
           className="lab-button"
-          disabled={!canStartOptimization}
+          disabled={!canStartOptimization || tuningRun.pending}
           onClick={() => void onStartOptimization(DEFAULT_TUNING_PAYLOAD)}
         >
-          Start tuning study
+          {tuningRun.pending ? "Running tuning study" : "Start tuning study"}
         </button>
       </section>
       <CandleSourcePanel
         source={candleSource}
         pending={candleSourcePending}
         errorMessage={candleSourceError}
+        importResult={candleImportResult}
         onImportCandles={onImportCandles}
       />
+      <TuningRunNotice tuningRun={tuningRun} snapshot={snapshot} />
       <StudyProgress study={snapshot.study} />
       <div className="lab-grid">
         <CandidateScatter candidates={snapshot.candidates} />
@@ -85,11 +103,13 @@ export function CandleSourcePanel({
   source,
   pending,
   errorMessage,
+  importResult,
   onImportCandles,
 }: {
   readonly source: CandleSourceStatus | null;
   readonly pending: boolean;
   readonly errorMessage: string | null;
+  readonly importResult: CandleImportResult | null;
   readonly onImportCandles: (payload: { instrument: string }) => void | Promise<void>;
 }) {
   const facts = candleSourceFacts(source);
@@ -105,7 +125,7 @@ export function CandleSourcePanel({
           disabled={pending || !importConfigured}
           onClick={() => void onImportCandles({ instrument })}
         >
-          Import OANDA candles
+          Import/refresh OANDA candles
         </button>
       </div>
       <p className="lab-source-note">{facts.guidance}</p>
@@ -119,6 +139,12 @@ export function CandleSourcePanel({
       {errorMessage ? (
         <p className="lab-live-status" aria-live="polite">
           {errorMessage}
+        </p>
+      ) : null}
+      {importResult ? (
+        <p className="lab-live-status" aria-live="polite">
+          Imported {importResult.imported_count} candles. Coverage{" "}
+          {importResult.coverage.from ?? "none"} to {importResult.coverage.to ?? "none"}.
         </p>
       ) : null}
     </section>
@@ -190,18 +216,32 @@ function candleSourceRows(input: {
 
 function candleSourceGuidance(source: CandleSourceStatus) {
   if (!source.oanda_historical_import_configured) {
-    return "Configure OANDA_ACCOUNT_ID and OANDA_API_TOKEN in the stack environment, then import historical M1 midpoint candles.";
+    return "OANDA credentials are missing. Import would load practice M1 midpoint candles into Harbor's database for Lab studies.";
   }
   if (source.coverage.candle_count === 0) {
-    return "Click Import OANDA candles to load historical M1 midpoint candles before starting a tuning study.";
+    return "Import recent OANDA practice M1 midpoint candles into Harbor's database. Lab tuning reads this persisted dataset.";
   }
-  return "Lab tuning uses persisted M1 midpoint candles. Import again to extend coverage.";
+  return "Lab tuning reads this persisted candle dataset. Import/refresh updates the OANDA M1 midpoint history before rerunning studies.";
 }
 
 function CandidateParameters({ snapshot }: { readonly snapshot: LabSnapshot }) {
+  const parameterRows = snapshot.candidates.flatMap((candidate) =>
+    Object.entries(candidate.params).map(([key, value]) => ({
+      id: `${candidate.trial_id}-${key}`,
+      trialNo: candidate.trial_no,
+      key,
+      value,
+    }))
+  );
+  const parameterLabel =
+    parameterRows.length === 1 ? "1 parameter" : `${parameterRows.length} parameters`;
+
   return (
-    <section className="lab-panel" aria-label="Candidate parameters">
-      <h2>Candidate Parameters</h2>
+    <details className="lab-panel lab-disclosure" aria-label="Candidate parameters">
+      <summary className="lab-disclosure__summary">
+        <h2>Candidate Parameters</h2>
+        <span>{parameterLabel}</span>
+      </summary>
       <div className="lab-table-wrap">
         <table className="lab-table">
           <thead>
@@ -212,20 +252,74 @@ function CandidateParameters({ snapshot }: { readonly snapshot: LabSnapshot }) {
             </tr>
           </thead>
           <tbody>
-            {snapshot.candidates.flatMap((candidate) =>
-              Object.entries(candidate.params).map(([key, value]) => (
-                <tr key={`${candidate.trial_id}-${key}`}>
-                  <td>{candidate.trial_no}</td>
-                  <td>{key}</td>
-                  <td>{displayValue(value)}</td>
+            {parameterRows.length === 0 ? (
+              <tr>
+                <td colSpan={3}>No candidate parameters.</td>
+              </tr>
+            ) : (
+              parameterRows.map((row) => (
+                <tr key={row.id}>
+                  <td>{row.trialNo}</td>
+                  <td>{row.key}</td>
+                  <td>{displayValue(row.value)}</td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
-    </section>
+    </details>
   );
+}
+
+export function TuningRunNotice({
+  tuningRun,
+  snapshot,
+}: {
+  readonly tuningRun: TuningRunState;
+  readonly snapshot: LabSnapshot | null;
+}) {
+  if (tuningRun.pending) {
+    return (
+      <p className="lab-run-notice" aria-live="polite">
+        Tuning study is running.
+      </p>
+    );
+  }
+  if (tuningRun.errorMessage !== null) {
+    return (
+      <p className="lab-run-notice lab-run-notice--error" aria-live="polite">
+        {tuningRun.errorMessage}
+      </p>
+    );
+  }
+  if (tuningRun.result !== null) {
+    const studyId = tuningRun.result.study_id;
+    const trialCount = tuningRun.result.trials.length;
+    const candidateCount = tuningRun.result.candidates.length;
+    return (
+      <p className="lab-run-notice" aria-live="polite">
+        Study {studyId === null ? "completed" : `#${studyId} completed`}: {trialCount} trials,{" "}
+        {candidateCount} candidates.
+        {candidateCount === 0
+          ? " No leaderboard row was created because no candidate passed the scoring gates."
+          : " Candidates are ready for paper variants."}
+      </p>
+    );
+  }
+  if (
+    snapshot !== null &&
+    snapshot.study.status === "completed" &&
+    snapshot.study.candidate_count === 0
+  ) {
+    return (
+      <p className="lab-run-notice" aria-live="polite">
+        Latest study #{snapshot.study.study_id} completed: {snapshot.study.trial_count} trials, 0
+        candidates. No leaderboard row was created because no candidate passed the scoring gates.
+      </p>
+    );
+  }
+  return null;
 }
 
 function DataSeparation({
