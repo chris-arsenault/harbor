@@ -41,22 +41,25 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   expect(screen.getByText("fvg_window")).toBeVisible();
   expect(screen.getByText("Data Separation")).toBeInTheDocument();
   expect(screen.getByText("optimizer_uses_variant_trades: false")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Import/refresh OANDA candles" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Refresh latest 5,000 M1" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Backfill 30 days" })).toBeInTheDocument();
   expect(
     screen.getByText("path: OANDA practice REST -> persisted candles -> Lab optimizer")
   ).toBeInTheDocument();
+  expect(screen.getByText("write policy: upsert")).toBeInTheDocument();
+  expect(screen.getByText("upsert key: instrument+timestamp")).toBeInTheDocument();
   expect(screen.getByText("granularity: M1")).toBeInTheDocument();
   expect(screen.getByText("price: midpoint")).toBeInTheDocument();
   expect(
-    screen.getByText(
-      "Lab tuning reads this persisted candle dataset. Import/refresh updates the OANDA M1 midpoint history before rerunning studies."
-    )
+    screen.getByText("Lab tuning reads the persisted M1 midpoint candle dataset shown below.")
   ).toBeInTheDocument();
   expect(
     screen.getByText(
-      "Imported 4999 candles. Coverage 2026-06-15T08:21:00+00:00 to 2026-06-18T19:58:00+00:00."
+      "Upserted 4999 of 43200 requested candles from 2026-05-19T20:00:00.000Z. Coverage 2026-06-15T08:21:00+00:00 to 2026-06-18T19:58:00+00:00."
     )
   ).toBeInTheDocument();
+  expect(screen.getByText("latest-page request: 5,000 M1 candles")).toBeInTheDocument();
+  expect(screen.getByText("backfill request: 43,200 M1 candles")).toBeInTheDocument();
   expect(screen.getByText("candles: 2880")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Start tuning study" }));
@@ -120,13 +123,44 @@ test("CandleSourcePanel explains unavailable OANDA historical imports", () => {
     />
   );
 
-  expect(screen.getByRole("button", { name: "Import/refresh OANDA candles" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Refresh latest 5,000 M1" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Backfill 30 days" })).toBeDisabled();
   expect(
     screen.getByText(
       "OANDA credentials are missing. Import would load practice M1 midpoint candles into Harbor's database for Lab studies."
     )
   ).toBeInTheDocument();
   expect(screen.getByText("configured: false")).toBeInTheDocument();
+});
+
+test("CandleSourcePanel sends explicit latest-page and backfill import requests", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-06-18T20:00:00.000Z"));
+  const onImportCandles = vi.fn();
+
+  render(
+    <CandleSourcePanel
+      source={candleSource}
+      pending={false}
+      errorMessage={null}
+      importResult={null}
+      onImportCandles={onImportCandles}
+    />
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Refresh latest 5,000 M1" }));
+  fireEvent.click(screen.getByRole("button", { name: "Backfill 30 days" }));
+
+  expect(onImportCandles).toHaveBeenNthCalledWith(1, {
+    instrument: "EUR_USD",
+    count: 5000,
+  });
+  expect(onImportCandles).toHaveBeenNthCalledWith(2, {
+    instrument: "EUR_USD",
+    count: 43200,
+    from: "2026-05-19T20:00:00.000Z",
+  });
+  vi.useRealTimers();
 });
 
 test("LabView shows completed zero-candidate studies instead of a blank leaderboard", () => {
@@ -249,6 +283,12 @@ const candleSource = {
     to: "2026-01-16T23:59:00+00:00",
   },
   source_methods: ["oanda_historical_import", "oanda_pricing_stream"],
+  historical_import: {
+    page_size: 5000,
+    default_count: 43200,
+    upsert_key: "instrument+timestamp",
+    replaces_existing: false,
+  },
   oanda_historical_import_configured: true,
 };
 
@@ -256,8 +296,9 @@ const candleImportResult = {
   status: "completed",
   source: "oanda_historical_import",
   instrument: "EUR_USD",
-  requested_count: 5000,
+  requested_count: 43200,
   imported_count: 4999,
+  from: "2026-05-19T20:00:00.000Z",
   coverage: {
     instrument: "EUR_USD",
     candle_count: 4999,

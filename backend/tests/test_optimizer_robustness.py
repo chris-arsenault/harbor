@@ -99,3 +99,43 @@ def test_robustness_score_penalizes_lone_spikes_with_neighbor_average() -> None:
 
     assert observed_neighbors == [{"fvg_window": 9}, {"fvg_window": 11}]
     assert score == Decimal("10")
+
+
+def test_robustness_score_treats_unevaluable_neighbors_as_zero() -> None:
+    config = load_optimizer_config()
+    search_space = SearchSpace(
+        (
+            SearchParameter(
+                name="fvg_window",
+                parameter_type=SearchParameterType.INT,
+                minimum=Decimal("1"),
+                maximum=Decimal("20"),
+                step=Decimal("1"),
+            ),
+        )
+    )
+
+    def evaluator(params: dict[str, object]) -> ObjectiveEvaluation:
+        if params["fvg_window"] == 9:
+            msg = "cannot compute London levels without closed session candles"
+            raise ValueError(msg)
+        return ObjectiveEvaluation(
+            params=params,
+            score=TrialScore(
+                in_sample_score=Decimal("0"),
+                out_of_sample_score=Decimal("12"),
+            ),
+            in_sample_stats=None,
+            out_of_sample_stats=None,
+            windows_evaluated=1,
+        )
+
+    score = calculate_robustness_score(
+        params={"fvg_window": 10},
+        base_oos_score=Decimal("100"),
+        search_space=search_space,
+        optimizer_config=config,
+        objective_evaluator=evaluator,
+    )
+
+    assert score == Decimal("6")

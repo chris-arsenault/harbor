@@ -57,6 +57,7 @@ def test_oanda_settings_default_to_practice_without_credentials(monkeypatch) -> 
     assert settings.oanda_reconnect_initial_seconds == 1.0
     assert settings.oanda_reconnect_max_seconds == 30.0
     assert settings.oanda_historical_candle_page_size == 5000
+    assert settings.oanda_historical_import_count == 43_200
 
 
 def test_oanda_base_url_overrides_are_configuration(monkeypatch) -> None:
@@ -68,6 +69,7 @@ def test_oanda_base_url_overrides_are_configuration(monkeypatch) -> None:
     monkeypatch.setenv("OANDA_RECONNECT_INITIAL_SECONDS", "0.25")
     monkeypatch.setenv("OANDA_RECONNECT_MAX_SECONDS", "5")
     monkeypatch.setenv("OANDA_HISTORICAL_CANDLE_PAGE_SIZE", "250")
+    monkeypatch.setenv("OANDA_HISTORICAL_IMPORT_COUNT", "1440")
 
     settings = Settings()
 
@@ -78,6 +80,7 @@ def test_oanda_base_url_overrides_are_configuration(monkeypatch) -> None:
     assert settings.oanda_reconnect_initial_seconds == 0.25
     assert settings.oanda_reconnect_max_seconds == 5.0
     assert settings.oanda_historical_candle_page_size == 250
+    assert settings.oanda_historical_import_count == 1440
 
 
 def test_live_oanda_base_urls_require_allow_live(monkeypatch) -> None:
@@ -131,5 +134,6 @@ def _clear_oanda_env(monkeypatch) -> None:
         "OANDA_RECONNECT_INITIAL_SECONDS",
         "OANDA_RECONNECT_MAX_SECONDS",
         "OANDA_HISTORICAL_CANDLE_PAGE_SIZE",
+        "OANDA_HISTORICAL_IMPORT_COUNT",
     ):
         monkeypatch.delenv(name, raising=False)

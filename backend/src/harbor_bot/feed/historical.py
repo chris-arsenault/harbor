@@ -17,29 +17,44 @@ async def ingest_historical_candles(
     page_size: int = 5000,
     include_first: bool = True,
 ) -> int:
-    request_count = page_size if count is None else min(count, page_size)
-    candles = await client.get_historical_candles(
-        instrument=instrument,
-        from_time=from_time,
-        count=request_count,
-        include_first=include_first,
-    )
-
+    remaining = page_size if count is None else count
+    cursor = from_time
+    next_include_first = include_first
     persisted = 0
-    async with transaction(engine) as connection:
-        for candle in candles:
-            if not candle.complete:
-                continue
-            await upsert_candle(
-                connection,
-                instrument=candle.instrument,
-                ts=candle.time,
-                o=candle.o,
-                h=candle.h,
-                low=candle.low,
-                c=candle.c,
-                volume=candle.volume,
-                complete=True,
-            )
-            persisted += 1
+    while remaining > 0:
+        request_count = min(remaining, page_size)
+        candles = await client.get_historical_candles(
+            instrument=instrument,
+            from_time=cursor,
+            count=request_count,
+            include_first=next_include_first,
+        )
+        if not candles:
+            break
+
+        async with transaction(engine) as connection:
+            for candle in candles:
+                if not candle.complete:
+                    continue
+                await upsert_candle(
+                    connection,
+                    instrument=candle.instrument,
+                    ts=candle.time,
+                    o=candle.o,
+                    h=candle.h,
+                    low=candle.low,
+                    c=candle.c,
+                    volume=candle.volume,
+                    complete=True,
+                )
+                persisted += 1
+
+        remaining -= len(candles)
+        newest = max(candle.time for candle in candles)
+        if cursor is not None and newest <= cursor:
+            break
+        cursor = newest
+        next_include_first = False
+        if len(candles) < request_count:
+            break
     return persisted

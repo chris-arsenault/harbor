@@ -1,4 +1,5 @@
 import type {
+  CandleImportRequest,
   CandleImportResult,
   CandleSourceStatus,
   LabSnapshot,
@@ -31,7 +32,7 @@ interface LabViewProps {
   readonly candleSourcePending: boolean;
   readonly candleSourceError: string | null;
   readonly candleImportResult: CandleImportResult | null;
-  readonly onImportCandles: (payload: { instrument: string }) => void | Promise<void>;
+  readonly onImportCandles: (payload: CandleImportRequest) => void | Promise<void>;
 }
 
 export interface TuningRunState {
@@ -113,23 +114,43 @@ export function CandleSourcePanel({
   readonly pending: boolean;
   readonly errorMessage: string | null;
   readonly importResult: CandleImportResult | null;
-  readonly onImportCandles: (payload: { instrument: string }) => void | Promise<void>;
+  readonly onImportCandles: (payload: CandleImportRequest) => void | Promise<void>;
 }) {
   const facts = candleSourceFacts(source);
   const instrument = facts.instrument;
   const importConfigured = facts.oandaHistoricalImportConfigured;
+  const latestPagePayload = {
+    instrument,
+    count: facts.importPolicy.pageSize,
+  };
   return (
     <section className="lab-panel" aria-label="Candle source">
       <div className="lab-panel__header">
-        <h2>Candle Source</h2>
-        <button
-          type="button"
-          className="lab-button lab-button--quiet"
-          disabled={pending || !importConfigured}
-          onClick={() => void onImportCandles({ instrument })}
-        >
-          Import/refresh OANDA candles
-        </button>
+        <h2>Candle Dataset</h2>
+        <div className="lab-panel__actions">
+          <button
+            type="button"
+            className="lab-button lab-button--quiet"
+            disabled={pending || !importConfigured}
+            onClick={() => void onImportCandles(latestPagePayload)}
+          >
+            Refresh latest {facts.importPolicy.pageSize.toLocaleString()} M1
+          </button>
+          <button
+            type="button"
+            className="lab-button"
+            disabled={pending || !importConfigured}
+            onClick={() =>
+              void onImportCandles({
+                instrument,
+                count: facts.importPolicy.defaultCount,
+                from: backfillStart(facts.importPolicy.defaultCount),
+              })
+            }
+          >
+            Backfill {importDaysLabel(facts.importPolicy.defaultCount)}
+          </button>
+        </div>
       </div>
       <p className="lab-source-note">{facts.guidance}</p>
       <ul className="fact-list">
@@ -146,8 +167,9 @@ export function CandleSourcePanel({
       ) : null}
       {importResult ? (
         <p className="lab-live-status" aria-live="polite">
-          Imported {importResult.imported_count} candles. Coverage{" "}
-          {importResult.coverage.from ?? "none"} to {importResult.coverage.to ?? "none"}.
+          Upserted {importResult.imported_count} of {importResult.requested_count} requested candles
+          from {importResult.from ?? "latest page"}. Coverage {importResult.coverage.from ?? "none"}{" "}
+          to {importResult.coverage.to ?? "none"}.
         </p>
       ) : null}
     </section>
@@ -161,6 +183,10 @@ function candleSourceFacts(source: CandleSourceStatus | null) {
       oandaHistoricalImportConfigured: false,
       guidance:
         "Candles come from OANDA practice REST into the persisted M1 midpoint candle store. Configure OANDA_ACCOUNT_ID and OANDA_API_TOKEN before importing.",
+      importPolicy: {
+        pageSize: 5000,
+        defaultCount: 43200,
+      },
       rows: candleSourceRows({
         source: "persisted_candles",
         instrument: "EUR_USD",
@@ -170,15 +196,24 @@ function candleSourceFacts(source: CandleSourceStatus | null) {
         from: "none",
         to: "none",
         configured: false,
+        pageSize: 5000,
+        defaultCount: 43200,
+        upsertKey: "instrument+timestamp",
+        replacesExisting: false,
       }),
     };
   }
 
   const coverage = source.coverage;
+  const importPolicy = source.historical_import;
   const guidance = candleSourceGuidance(source);
   return {
     instrument: source.instrument,
     oandaHistoricalImportConfigured: source.oanda_historical_import_configured,
+    importPolicy: {
+      pageSize: importPolicy.page_size,
+      defaultCount: importPolicy.default_count,
+    },
     guidance,
     rows: candleSourceRows({
       source: source.primary_source,
@@ -189,6 +224,10 @@ function candleSourceFacts(source: CandleSourceStatus | null) {
       from: coverage.from ?? "none",
       to: coverage.to ?? "none",
       configured: source.oanda_historical_import_configured,
+      pageSize: importPolicy.page_size,
+      defaultCount: importPolicy.default_count,
+      upsertKey: importPolicy.upsert_key,
+      replacesExisting: importPolicy.replaces_existing,
     }),
   };
 }
@@ -202,17 +241,25 @@ function candleSourceRows(input: {
   readonly from: string;
   readonly to: string;
   readonly configured: boolean;
+  readonly pageSize: number;
+  readonly defaultCount: number;
+  readonly upsertKey: string;
+  readonly replacesExisting: boolean;
 }) {
   return [
     { label: "path", value: "OANDA practice REST -> persisted candles -> Lab optimizer" },
     { label: "source", value: input.source },
-    { label: "method", value: "oanda_historical_import" },
+    { label: "write policy", value: input.replacesExisting ? "replace" : "upsert" },
+    { label: "upsert key", value: input.upsertKey },
+    { label: "method", value: "OANDA historical import" },
     { label: "instrument", value: input.instrument },
     { label: "granularity", value: input.granularity },
     { label: "price", value: input.priceComponent },
     { label: "candles", value: String(input.candleCount) },
     { label: "from", value: input.from },
     { label: "to", value: input.to },
+    { label: "latest-page request", value: `${input.pageSize.toLocaleString()} M1 candles` },
+    { label: "backfill request", value: `${input.defaultCount.toLocaleString()} M1 candles` },
     { label: "configured", value: String(input.configured) },
   ];
 }
@@ -222,9 +269,18 @@ function candleSourceGuidance(source: CandleSourceStatus) {
     return "OANDA credentials are missing. Import would load practice M1 midpoint candles into Harbor's database for Lab studies.";
   }
   if (source.coverage.candle_count === 0) {
-    return "Import recent OANDA practice M1 midpoint candles into Harbor's database. Lab tuning reads this persisted dataset.";
+    return "No persisted M1 midpoint candles are available for Lab tuning.";
   }
-  return "Lab tuning reads this persisted candle dataset. Import/refresh updates the OANDA M1 midpoint history before rerunning studies.";
+  return "Lab tuning reads the persisted M1 midpoint candle dataset shown below.";
+}
+
+function backfillStart(count: number): string {
+  return new Date(Date.now() - count * 60_000).toISOString();
+}
+
+function importDaysLabel(count: number): string {
+  const days = Math.round(count / 1440);
+  return `${days} days`;
 }
 
 function CandidateParameters({ snapshot }: { readonly snapshot: LabSnapshot }) {

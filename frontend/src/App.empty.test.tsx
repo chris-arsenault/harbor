@@ -31,12 +31,14 @@ test("does not request a fixed lab study when the empty deployment has no studie
   expect(screen.getByText("No tuning studies yet")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Start tuning study" })).toBeDisabled();
   expect(screen.getByText("candles: 0")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Import/refresh OANDA candles" }));
+  expect(screen.getByText("write policy: upsert")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh latest 5,000 M1" }));
 
   await waitFor(() =>
     expect(fetch).toHaveBeenCalledWith("/api/candles/import", {
       body: JSON.stringify({
         instrument: "EUR_USD",
+        count: 5000,
       }),
       headers: { Accept: "application/json", "Content-Type": "application/json" },
       method: "POST",
@@ -125,6 +127,7 @@ function candleImport() {
     instrument: "EUR_USD",
     requested_count: 5000,
     imported_count: 5000,
+    from: null,
     coverage: candleSource(5000).coverage,
   };
 }
@@ -142,6 +145,12 @@ function candleSource(count: number) {
       to: count > 0 ? "2026-01-16T23:59:00+00:00" : null,
     },
     source_methods: ["oanda_historical_import", "oanda_pricing_stream"],
+    historical_import: {
+      page_size: 5000,
+      default_count: 43200,
+      upsert_key: "instrument+timestamp",
+      replaces_existing: false,
+    },
     oanda_historical_import_configured: true,
   };
 }

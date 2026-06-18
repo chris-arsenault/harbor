@@ -716,6 +716,12 @@ p {
   justify-content: space-between;
 }
 
+.lab-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .lab-scatter,
 .lab-equity {
   width: 100%;

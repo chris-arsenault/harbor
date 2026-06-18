@@ -35,6 +35,12 @@ class CandleSourceService:
             "price_component": "midpoint",
             "coverage": _jsonable_coverage(coverage),
             "source_methods": ["oanda_historical_import", "oanda_pricing_stream"],
+            "historical_import": {
+                "page_size": self.settings.oanda_historical_candle_page_size,
+                "default_count": self.settings.oanda_historical_import_count,
+                "upsert_key": "instrument+timestamp",
+                "replaces_existing": False,
+            },
             "oanda_historical_import_configured": bool(
                 self.settings.oanda_api_token and self.settings.oanda_account_id
             ),
@@ -42,11 +48,13 @@ class CandleSourceService:
 
     async def import_historical(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         instrument = str(payload.get("instrument") or _default_instrument())
-        count = int(payload.get("count") or self.settings.oanda_historical_candle_page_size)
+        count = int(payload.get("count") or self.settings.oanda_historical_import_count)
         if count <= 0:
             msg = "count must be positive"
             raise ValueError(msg)
         from_time = _optional_utc_ts(payload.get("from"))
+        if from_time is None and count > self.settings.oanda_historical_candle_page_size:
+            from_time = datetime.now(UTC) - timedelta(minutes=count)
 
         async with self.client_factory(self.settings) as client:
             imported_count = await self.historical_ingestor(
@@ -66,6 +74,7 @@ class CandleSourceService:
             "instrument": instrument,
             "requested_count": count,
             "imported_count": imported_count,
+            "from": _iso_or_none(from_time),
             "coverage": status["coverage"],
         }
 

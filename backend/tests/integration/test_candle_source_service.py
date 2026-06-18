@@ -40,8 +40,15 @@ async def _assert_candle_source_service(postgres_url: str) -> None:
         assert empty["coverage"]["candle_count"] == 0
         assert imported["imported_count"] == 2
         assert imported["coverage"]["candle_count"] == 2
+        assert imported["from"] is None
         assert status["coverage"]["from"] == "2026-01-15T14:30:00+00:00"
         assert status["coverage"]["to"] == "2026-01-15T14:31:00+00:00"
+        assert status["historical_import"] == {
+            "page_size": 5000,
+            "default_count": 43200,
+            "upsert_key": "instrument+timestamp",
+            "replaces_existing": False,
+        }
         assert status["oanda_historical_import_configured"] is True
     finally:
         await engine.dispose()

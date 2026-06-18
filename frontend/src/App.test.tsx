@@ -226,6 +226,12 @@ function dashboardRoutePayload(url: string): unknown {
         to: "2026-01-16T23:59:00+00:00",
       },
       source_methods: ["oanda_historical_import", "oanda_pricing_stream"],
+      historical_import: {
+        page_size: 5000,
+        default_count: 43200,
+        upsert_key: "instrument+timestamp",
+        replaces_existing: false,
+      },
       oanda_historical_import_configured: true,
     };
   }

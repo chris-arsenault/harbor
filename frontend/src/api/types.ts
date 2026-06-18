@@ -56,7 +56,15 @@ export interface CandleSourceStatus {
   price_component: string;
   coverage: CandleCoverage;
   source_methods: string[];
+  historical_import: CandleHistoricalImportPolicy;
   oanda_historical_import_configured: boolean;
+}
+
+export interface CandleHistoricalImportPolicy {
+  page_size: number;
+  default_count: number;
+  upsert_key: string;
+  replaces_existing: boolean;
 }
 
 export interface CandleImportRequest {
@@ -71,6 +79,7 @@ export interface CandleImportResult {
   instrument: string;
   requested_count: number;
   imported_count: number;
+  from: string | null;
   coverage: CandleCoverage;
 }
 

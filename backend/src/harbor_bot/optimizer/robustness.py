@@ -54,11 +54,19 @@ def calculate_robustness_score(
     neighbors = generate_neighbor_params(params, search_space, optimizer_config)
     if not neighbors:
         return base_oos_score
-    neighbor_scores = [
-        objective_evaluator(neighbor).score.out_of_sample_score for neighbor in neighbors
-    ]
+    neighbor_scores = [_neighbor_score(neighbor, objective_evaluator) for neighbor in neighbors]
     average_neighbor_score = sum(neighbor_scores, Decimal("0")) / Decimal(len(neighbor_scores))
     return min(base_oos_score, average_neighbor_score)
+
+
+def _neighbor_score(
+    neighbor: dict[str, object],
+    objective_evaluator: ObjectiveEvaluator,
+) -> Decimal:
+    try:
+        return objective_evaluator(neighbor).score.out_of_sample_score
+    except ValueError:
+        return Decimal("0")
 
 
 def _neighbor_value(

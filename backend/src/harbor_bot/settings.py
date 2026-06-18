@@ -58,6 +58,10 @@ class Settings(BaseSettings):
         default=5000,
         validation_alias="OANDA_HISTORICAL_CANDLE_PAGE_SIZE",
     )
+    oanda_historical_import_count: int = Field(
+        default=43_200,
+        validation_alias="OANDA_HISTORICAL_IMPORT_COUNT",
+    )
 
     @property
     def async_database_url(self) -> str:
