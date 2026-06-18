@@ -65,8 +65,8 @@ export function fetchStatus(): Promise<StatusSnapshot> {
 export function fetchLevels(params: {
   date: string;
   instrument: string;
-}): Promise<SessionLevelSnapshot> {
-  return apiGet<SessionLevelSnapshot>(withQuery("/api/levels", params));
+}): Promise<SessionLevelSnapshot | null> {
+  return apiGet<SessionLevelSnapshot | null>(withQuery("/api/levels", params));
 }
 
 export function fetchCandles(params: {

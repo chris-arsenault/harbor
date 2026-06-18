@@ -195,10 +195,10 @@ def create_app(
         date: Date,
         instrument: str,
         service: ObservabilityService = OBSERVABILITY_SERVICE_DEPENDENCY,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         levels = await service.get_levels(date=date, instrument=instrument)
         if levels is None:
-            raise HTTPException(status_code=404, detail="session levels not found")
+            return None
         return _jsonable(levels)
 
     @app.get("/api/candles")

@@ -87,10 +87,16 @@ export function useOptimizationStudiesQuery(params: { limit?: number } = {}) {
   });
 }
 
-export function useLabStudyQuery(studyId: number) {
+export function useLabStudyQuery(studyId: number | null) {
   return useQuery({
     queryKey: ["lab-study", studyId],
-    queryFn: () => fetchLabStudy(studyId),
+    queryFn: () => {
+      if (studyId === null) {
+        throw new Error("study id is required");
+      }
+      return fetchLabStudy(studyId);
+    },
+    enabled: studyId !== null,
   });
 }
 

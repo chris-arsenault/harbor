@@ -9,6 +9,7 @@ import {
   useLabStudyQuery,
   useLevelsQuery,
   useMarkersQuery,
+  useOptimizationStudiesQuery,
   usePracticeControls,
   usePromoteVariantMutation,
   useRetirePaperVariantMutation,
@@ -44,7 +45,6 @@ import { TradesView } from "./components/trades/TradesView";
 
 const DEFAULT_INSTRUMENT = "EUR_USD";
 const DEFAULT_EVENTS_LIMIT = 25;
-const DEFAULT_LAB_STUDY_ID = 1;
 const APP_VIEWS: ProductView[] = [
   "dashboard",
   "trades",
@@ -131,7 +131,9 @@ function useDashboardData(windowParams: ReturnType<typeof dashboardWindow>, live
 }
 
 function useLabData(liveEquityCurves: VariantEquityCurve[], liveStatus: string | null) {
-  const labStudyQuery = useLabStudyQuery(DEFAULT_LAB_STUDY_ID);
+  const studiesQuery = useOptimizationStudiesQuery({ limit: 50 });
+  const selectedStudyId = studiesQuery.data?.studies[0]?.study_id ?? null;
+  const labStudyQuery = useLabStudyQuery(selectedStudyId);
   const variantsQuery = useVariantsQuery();
   const startOptimizationMutation = useStartOptimizationMutation();
   const createVariantMutation = useCreatePaperVariantMutation();

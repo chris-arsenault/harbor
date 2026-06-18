@@ -36,7 +36,7 @@ def test_status_endpoint_reads_injected_observability_service() -> None:
     assert response.json()["deployment"]["readiness_path"] == "/ready"
 
 
-def test_levels_endpoint_parses_date_and_returns_404_for_missing_levels() -> None:
+def test_levels_endpoint_parses_date_and_returns_null_for_missing_levels() -> None:
     service = FakeObservabilityService()
     client = TestClient(create_app(observability_service=service))
 
@@ -50,8 +50,8 @@ def test_levels_endpoint_parses_date_and_returns_404_for_missing_levels() -> Non
         (date(2026, 1, 15), "EUR_USD"),
         (date(2026, 1, 16), "EUR_USD"),
     ]
-    assert missing.status_code == 404
-    assert missing.json() == {"detail": "session levels not found"}
+    assert missing.status_code == 200
+    assert missing.json() is None
 
 
 def test_candles_endpoint_parses_instrument_and_time_range() -> None:
