@@ -1,0 +1,20 @@
+{
+  "positions": [
+    {
+      "instrument": "EUR_USD",
+      "long": {
+        "units": "1000",
+        "pl": "0.00000",
+        "unrealizedPL": "1.20000"
+      },
+      "short": {
+        "units": "0",
+        "pl": "0.00000",
+        "unrealizedPL": "0.00000"
+      },
+      "pl": "0.00000",
+      "unrealizedPL": "1.20000"
+    }
+  ],
+  "lastTransactionID": "9103"
+}

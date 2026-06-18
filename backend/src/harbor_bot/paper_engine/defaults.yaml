@@ -1,0 +1,9 @@
+initial_nav: "10000"
+spread_pips: "0.8"
+slippage_pips: "0.1"
+commission_per_unit: "0"
+ambiguous_fill_policy: pessimistic
+force_ny_close: true
+live_forward_drawdown_floor: "1"
+leaderboard_min_trades: 0
+max_lab_rows: 200

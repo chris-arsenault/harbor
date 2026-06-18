@@ -1,0 +1,14 @@
+{
+  "instruments": [
+    {
+      "name": "EUR_USD",
+      "type": "CURRENCY",
+      "displayName": "EUR/USD",
+      "pipLocation": -4,
+      "displayPrecision": 5,
+      "tradeUnitsPrecision": 0,
+      "minimumTradeSize": "1"
+    }
+  ],
+  "lastTransactionID": "9002"
+}

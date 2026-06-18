@@ -1,0 +1,21 @@
+{
+  "type": "PRICE",
+  "time": "2026-01-15T14:30:12.345678901Z",
+  "instrument": "EUR_USD",
+  "status": "tradeable",
+  "tradeable": true,
+  "bids": [
+    {
+      "price": "1.09010",
+      "liquidity": 1000000
+    }
+  ],
+  "asks": [
+    {
+      "price": "1.09020",
+      "liquidity": 1000000
+    }
+  ],
+  "closeoutBid": "1.09005",
+  "closeoutAsk": "1.09025"
+}

@@ -1,0 +1,12 @@
+mode: practice
+trading_enabled_default: false
+max_open_positions: 1
+signal_id_namespace: harbor-practice
+max_daily_loss_pct: "2.0"
+max_spread_pips: "1.5"
+reconciliation_lag_tolerance_seconds: 30
+heartbeat_interval_seconds: 300
+ny_close_flatten_enabled: true
+ntfy_enabled: false
+telegram_enabled: false
+confirmation_token: OANDA_PRACTICE

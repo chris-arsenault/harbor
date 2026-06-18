@@ -1,0 +1,69 @@
+instrument:
+  value: EUR_USD
+timezone:
+  value: America/New_York
+sessions:
+  value:
+    asia:
+      start: "20:00"
+      end: "00:00"
+    london:
+      start: "02:00"
+      end: "05:00"
+    ny_trade:
+      start: "09:30"
+      end: "11:30"
+fvg_window:
+  value: 8
+  bounds:
+    min: 1
+    max: 20
+sweep_buffer_pips:
+  value: 1.5
+  bounds:
+    min: 0.5
+    max: 3.0
+risk_per_trade_pct:
+  value: 0.5
+  bounds:
+    min: 0.1
+    max: 1.0
+max_daily_loss_pct:
+  value: 2.0
+  bounds:
+    min: 0.5
+    max: 5.0
+target_mode:
+  value: rr_or_liquidity
+rr_floor:
+  value: 2.0
+  bounds:
+    min: 1.0
+    max: 4.0
+one_trade_per_level:
+  value: true
+max_trades_per_day:
+  value: 2
+  bounds:
+    min: 1
+    max: 4
+max_spread_pips:
+  value: 1.2
+  bounds:
+    min: 0.5
+    max: 3.0
+swing_lookback:
+  value: 5
+  bounds:
+    min: 1
+    max: 20
+max_units:
+  value: 100000
+  bounds:
+    min: 1000
+    max: 1000000
+min_forward_days:
+  value: 20
+  bounds:
+    min: 5
+    max: 60

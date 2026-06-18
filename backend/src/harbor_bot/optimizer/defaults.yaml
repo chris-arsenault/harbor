@@ -1,0 +1,75 @@
+trial_count: 4
+candidate_count: 3
+tpe_seed: 17
+drawdown_floor: "1"
+minimum_trade_count:
+  in_sample: 0
+  out_of_sample: 0
+robustness:
+  neighbor_count: 2
+  step_scale: "1"
+walk_forward:
+  train_window_days: 1
+  oos_window_days: 1
+  step_days: 1
+search_space:
+  asia_start_offset_minutes:
+    type: int
+    min: -30
+    max: 30
+    step: 15
+  asia_end_offset_minutes:
+    type: int
+    min: -30
+    max: 30
+    step: 15
+  london_start_offset_minutes:
+    type: int
+    min: -30
+    max: 30
+    step: 15
+  london_end_offset_minutes:
+    type: int
+    min: -30
+    max: 30
+    step: 15
+  ny_trade_start_offset_minutes:
+    type: int
+    min: -30
+    max: 30
+    step: 15
+  ny_trade_end_offset_minutes:
+    type: int
+    min: -30
+    max: 30
+    step: 15
+  sweep_buffer_pips:
+    type: decimal
+    min: "0.5"
+    max: "3.0"
+    step: "0.5"
+  fvg_window:
+    type: int
+    min: 1
+    max: 20
+    step: 1
+  swing_lookback:
+    type: int
+    min: 1
+    max: 20
+    step: 1
+  rr_floor:
+    type: decimal
+    min: "1.0"
+    max: "4.0"
+    step: "0.5"
+  max_spread_pips:
+    type: decimal
+    min: "0.5"
+    max: "3.0"
+    step: "0.1"
+  max_trades_per_day:
+    type: int
+    min: 1
+    max: 4
+    step: 1

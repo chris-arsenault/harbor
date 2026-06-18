@@ -1,0 +1,51 @@
+services:
+  backend:
+    image: ghcr.io/chris-arsenault/harbor/backend:${IMAGE_TAG:-latest}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      ALLOW_LIVE: "false"
+      DB_HOST: "192.168.66.3"
+      DB_NAME: "${DB_NAME}"
+      DB_PASSWORD: "${DB_PASSWORD}"
+      DB_PORT: "5432"
+      DB_USER: "${DB_USER}"
+      OANDA_ACCOUNT_ID: "${OANDA_ACCOUNT_ID}"
+      OANDA_API_TOKEN: "${OANDA_API_TOKEN}"
+      OANDA_ENV: "practice"
+      NTFY_TOPIC: "${NTFY_TOPIC}"
+      NTFY_URL: "${NTFY_URL}"
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID}"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/ready', timeout=3).read()\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+
+  frontend:
+    image: ghcr.io/chris-arsenault/harbor/frontend:${IMAGE_TAG:-latest}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "192.168.66.3:30091:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 15s

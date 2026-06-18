@@ -1,0 +1,16 @@
+{
+  "trades": [
+    {
+      "id": "7001",
+      "instrument": "EUR_USD",
+      "price": "1.09020",
+      "openTime": "2026-01-15T14:30:16.000000000Z",
+      "initialUnits": "1000",
+      "currentUnits": "1000",
+      "state": "OPEN",
+      "realizedPL": "0.00000",
+      "unrealizedPL": "1.20000"
+    }
+  ],
+  "lastTransactionID": "9103"
+}

@@ -1,0 +1,9 @@
+project: harbor
+prefix: harbor
+stack:
+  - python
+  - typescript
+truenas: true
+images:
+  - backend
+  - frontend

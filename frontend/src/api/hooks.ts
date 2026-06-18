@@ -1,0 +1,197 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
+
+import {
+  createPaperVariant,
+  fetchBacktestRun,
+  fetchBacktestRuns,
+  fetchCandles,
+  fetchConfig,
+  fetchEvents,
+  fetchLabStudy,
+  fetchLevels,
+  fetchMarkers,
+  fetchOptimizationStudies,
+  fetchStatus,
+  fetchTrades,
+  fetchVariantDetail,
+  fetchVariants,
+  flattenNow,
+  promoteVariant,
+  retirePaperVariant,
+  setTradingEnabled,
+  startBacktest,
+  startOptimization,
+  updateConfig,
+} from "./client";
+import { createLiveConnection, liveWebSocketUrl } from "./live";
+import type { FlattenResult, WebSocketEnvelope } from "./types";
+
+export function useStatusQuery() {
+  return useQuery({ queryKey: ["status"], queryFn: fetchStatus });
+}
+
+export function useLevelsQuery(params: { date: string; instrument: string }) {
+  return useQuery({
+    queryKey: ["levels", params],
+    queryFn: () => fetchLevels(params),
+  });
+}
+
+export function useCandlesQuery(params: { instrument: string; from: string; to: string }) {
+  return useQuery({
+    queryKey: ["candles", params],
+    queryFn: () => fetchCandles(params),
+  });
+}
+
+export function useMarkersQuery(params: { date: string; instrument: string }) {
+  return useQuery({
+    queryKey: ["markers", params],
+    queryFn: () => fetchMarkers(params),
+  });
+}
+
+export function useEventsQuery(params: { level?: string; limit?: number } = {}) {
+  return useQuery({
+    queryKey: ["events", params],
+    queryFn: () => fetchEvents(params),
+  });
+}
+
+export function useTradesQuery(params: { from: string; to: string; limit?: number }) {
+  return useQuery({
+    queryKey: ["trades", params],
+    queryFn: () => fetchTrades(params),
+  });
+}
+
+export function useBacktestRunsQuery(params: { limit?: number } = {}) {
+  return useQuery({
+    queryKey: ["backtest-runs", params],
+    queryFn: () => fetchBacktestRuns(params),
+  });
+}
+
+export function useBacktestRunQuery(runId: number) {
+  return useQuery({
+    queryKey: ["backtest-run", runId],
+    queryFn: () => fetchBacktestRun(runId),
+  });
+}
+
+export function useOptimizationStudiesQuery(params: { limit?: number } = {}) {
+  return useQuery({
+    queryKey: ["optimization-studies", params],
+    queryFn: () => fetchOptimizationStudies(params),
+  });
+}
+
+export function useLabStudyQuery(studyId: number) {
+  return useQuery({
+    queryKey: ["lab-study", studyId],
+    queryFn: () => fetchLabStudy(studyId),
+  });
+}
+
+export function useVariantsQuery() {
+  return useQuery({
+    queryKey: ["variants"],
+    queryFn: fetchVariants,
+  });
+}
+
+export function useVariantDetailQuery(variantId: number) {
+  return useQuery({
+    queryKey: ["variant-detail", variantId],
+    queryFn: () => fetchVariantDetail(variantId),
+  });
+}
+
+export function useConfigQuery() {
+  return useQuery({
+    queryKey: ["config"],
+    queryFn: fetchConfig,
+  });
+}
+
+export function useStartOptimizationMutation() {
+  return useMutation({ mutationFn: startOptimization });
+}
+
+export function useStartBacktestMutation() {
+  return useMutation({ mutationFn: startBacktest });
+}
+
+export function useUpdateConfigMutation() {
+  return useMutation({ mutationFn: updateConfig });
+}
+
+export function useCreatePaperVariantMutation() {
+  return useMutation({ mutationFn: createPaperVariant });
+}
+
+export function useRetirePaperVariantMutation() {
+  return useMutation({ mutationFn: retirePaperVariant });
+}
+
+export function usePromoteVariantMutation() {
+  return useMutation({ mutationFn: promoteVariant });
+}
+
+export function useSetTradingEnabledMutation() {
+  return useMutation({ mutationFn: setTradingEnabled });
+}
+
+export function useFlattenNowMutation() {
+  return useMutation({ mutationFn: flattenNow });
+}
+
+export interface PracticeControls {
+  readonly pending: boolean;
+  readonly errorMessage: string | null;
+  readonly flattenResult?: FlattenResult | null;
+  readonly setTradingEnabled: (enabled: boolean, confirmationToken: string) => void;
+  readonly flattenNow: (confirmationToken: string) => void;
+}
+
+export function usePracticeControls(): PracticeControls {
+  const setTradingMutation = useSetTradingEnabledMutation();
+  const flattenMutation = useFlattenNowMutation();
+  const error = setTradingMutation.error ?? flattenMutation.error;
+
+  return {
+    pending: setTradingMutation.isPending || flattenMutation.isPending,
+    errorMessage: error instanceof Error ? error.message : null,
+    flattenResult: flattenMutation.data ?? null,
+    setTradingEnabled: (enabled, confirmationToken) =>
+      setTradingMutation.mutate({ enabled, confirmation_token: confirmationToken }),
+    flattenNow: (confirmationToken) =>
+      flattenMutation.mutate({ confirmation_token: confirmationToken, reason: "manual" }),
+  };
+}
+
+export function useLiveConnection(options: {
+  enabled?: boolean;
+  url?: string;
+  onEnvelope: (envelope: WebSocketEnvelope) => void;
+  onHeartbeat?: (sentAt: string) => void;
+  onError?: (event: Event) => void;
+}) {
+  const enabled = options.enabled ?? true;
+  const url = options.url ?? liveWebSocketUrl(window.location);
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    const connection = createLiveConnection({
+      url,
+      onEnvelope: options.onEnvelope,
+      onHeartbeat: options.onHeartbeat,
+      onError: options.onError,
+    });
+    return () => connection.close();
+  }, [enabled, options.onEnvelope, options.onHeartbeat, options.onError, url]);
+}

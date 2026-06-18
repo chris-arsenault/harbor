@@ -1,0 +1,28 @@
+{
+  "orderCreateTransaction": {
+    "id": "9200",
+    "time": "2026-01-15T16:59:59.000000000Z",
+    "type": "MARKET_ORDER",
+    "instrument": "EUR_USD",
+    "units": "-1000"
+  },
+  "orderFillTransaction": {
+    "id": "9201",
+    "time": "2026-01-15T16:59:59.000000000Z",
+    "type": "ORDER_FILL",
+    "instrument": "EUR_USD",
+    "orderID": "9200",
+    "units": "-1000",
+    "price": "1.09200",
+    "tradesClosed": [
+      {
+        "tradeID": "7001",
+        "units": "1000",
+        "price": "1.09200",
+        "realizedPL": "18.00000"
+      }
+    ]
+  },
+  "relatedTransactionIDs": ["9200", "9201"],
+  "lastTransactionID": "9201"
+}

@@ -1,0 +1,42 @@
+{
+  "orderCreateTransaction": {
+    "id": "9100",
+    "time": "2026-01-15T14:30:16.000000000Z",
+    "type": "MARKET_ORDER",
+    "instrument": "EUR_USD",
+    "units": "1000",
+    "timeInForce": "FOK",
+    "positionFill": "DEFAULT",
+    "clientExtensions": {
+      "id": "harbor-signal-20260115T143000",
+      "tag": "harbor-practice",
+      "comment": "promoted variant practice execution"
+    },
+    "stopLossOnFill": {
+      "price": "1.08000",
+      "timeInForce": "GTC"
+    },
+    "takeProfitOnFill": {
+      "price": "1.11000",
+      "timeInForce": "GTC"
+    }
+  },
+  "orderFillTransaction": {
+    "id": "9101",
+    "time": "2026-01-15T14:30:16.000000000Z",
+    "type": "ORDER_FILL",
+    "instrument": "EUR_USD",
+    "orderID": "9100",
+    "units": "1000",
+    "price": "1.09020",
+    "pl": "0.00000",
+    "financing": "0.00000",
+    "tradeOpened": {
+      "tradeID": "7001",
+      "units": "1000",
+      "price": "1.09020"
+    }
+  },
+  "relatedTransactionIDs": ["9100", "9101", "9102", "9103"],
+  "lastTransactionID": "9103"
+}

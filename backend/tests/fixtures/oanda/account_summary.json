@@ -1,0 +1,12 @@
+{
+  "account": {
+    "id": "101-001-1234567-001",
+    "currency": "USD",
+    "balance": "10000.1234",
+    "NAV": "10002.5678",
+    "unrealizedPL": "2.4444",
+    "openTradeCount": 1,
+    "openPositionCount": 1
+  },
+  "lastTransactionID": "9001"
+}
