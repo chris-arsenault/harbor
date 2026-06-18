@@ -34,8 +34,8 @@ test("does not request a fixed lab study when the empty deployment has no studie
   await waitFor(() =>
     expect(fetch).toHaveBeenCalledWith("/api/optimize", {
       body: JSON.stringify({
-        fixture: "clean_signal_day.json",
-        optimizer_config: { trial_count: 25 },
+        fixture: "walkforward_validation.json",
+        optimizer_config: { trial_count: 4 },
       }),
       headers: { Accept: "application/json", "Content-Type": "application/json" },
       method: "POST",

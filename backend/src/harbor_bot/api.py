@@ -1,6 +1,7 @@
 from datetime import date as Date
 from datetime import datetime as DateTime
 from decimal import Decimal
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import (
@@ -97,6 +98,10 @@ WEBSOCKET_HUB_DEPENDENCY = Depends(get_websocket_hub)
 READINESS_CHECKER_DEPENDENCY = Depends(get_readiness_checker)
 
 
+def _packaged_fixture_base_path() -> Path:
+    return Path(__file__).resolve().parent / "backtester" / "fixtures"
+
+
 def create_app(
     backtest_service: BacktestService | None = None,
     observability_service: ObservabilityService | None = None,
@@ -111,7 +116,9 @@ def create_app(
     settings: Settings | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Harbor", version="0.1.0")
-    app.state.backtest_service = backtest_service or BacktestService()
+    app.state.backtest_service = backtest_service or BacktestService(
+        fixture_base_path=_packaged_fixture_base_path()
+    )
     app.state.settings = settings or Settings()
     app.state.settings.validate_startup()
     app.state.websocket_hub = websocket_hub or WebSocketHub()
@@ -136,7 +143,10 @@ def create_app(
         )
     app.state.observability_service = observability_service
     if optimizer_service is None:
-        optimizer_service = OptimizerService(persistence_engine=persistence_engine)
+        optimizer_service = OptimizerService(
+            persistence_engine=persistence_engine,
+            fixture_base_path=_packaged_fixture_base_path(),
+        )
     app.state.optimizer_service = optimizer_service
     paper_config = load_paper_engine_config()
     if lab_service is None:

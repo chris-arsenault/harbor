@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -57,6 +58,34 @@ def test_experiment_collection_routes_orchestrate_backtests_and_tuning() -> None
     assert backtests.started_payloads[0]["source"] == "persisted_candles"
     assert optimizer.started_payloads[0]["optimizer_config"]["trial_count"] == 2
     assert product.calls == [("backtests", 5), ("studies", 4)]
+
+
+def test_default_optimizer_service_loads_packaged_validation_fixture() -> None:
+    app = create_app(
+        observability_service=object(),
+        lab_service=FakeLabService(),
+        paper_forward_service=object(),
+        product_query_service=FakeProductQueryService(),
+        config_service=object(),
+        readiness_checker=FakeReadinessChecker(),
+    )
+    fixture_base_path = app.state.optimizer_service.fixture_base_path
+
+    assert fixture_base_path.joinpath("walkforward_validation.json").is_file()
+
+    service = OptimizerService(fixture_base_path=fixture_base_path)
+    response = asyncio.run(
+        service.start_optimization(
+            {
+                "fixture": "walkforward_validation.json",
+                "optimizer_config": {"trial_count": 1, "candidate_count": 1},
+            }
+        )
+    )
+
+    assert response["study_id"] is None
+    assert response["status"] == "completed"
+    assert response["trial_count"] == 1
 
 
 @pytest.mark.asyncio
@@ -195,6 +224,11 @@ class FakeLabService:
             ),
             data_separation={},
         )
+
+
+class FakeReadinessChecker:
+    async def check(self) -> dict[str, object]:
+        return {"status": "ready"}
 
 
 def _run_result() -> OptimizationRunResult:

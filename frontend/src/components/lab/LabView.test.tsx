@@ -51,8 +51,8 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   fireEvent.click(screen.getByRole("button", { name: "Retire paper variant candidate-1" }));
 
   expect(onStartOptimization).toHaveBeenCalledWith({
-    fixture: "clean_signal_day.json",
-    optimizer_config: { trial_count: 25 },
+    fixture: "walkforward_validation.json",
+    optimizer_config: { trial_count: 4 },
   });
   expect(onCreatePaperVariant).toHaveBeenCalledWith({ trial_id: 2, label: "paper-trial-1" });
   expect(onPromoteVariant).toHaveBeenCalledWith(7);

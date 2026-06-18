@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from harbor_bot.backtester.data import candles_from_records, load_candle_fixture
+from harbor_bot.backtester.engine import run_backtest
 from harbor_bot.backtester.models import BacktestConfig
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.optimizer.config import load_optimizer_config, optimizer_config_from_mapping
@@ -219,6 +220,7 @@ def _request_from_payload(
             ),
             "backtest_config": _backtest_config_from_payload(payload.get("backtest_config", {})),
             "optimizer_config": optimizer_config,
+            "backtest_runner": run_backtest,
         },
     }
 
