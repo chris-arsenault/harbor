@@ -9,8 +9,10 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from harbor_bot.persistence.schema import metadata
+from harbor_bot.settings import Settings
 
 config = context.config
+DEFAULT_ALEMBIC_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/harbor"
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -18,7 +20,13 @@ if config.config_file_name is not None:
 target_metadata = metadata
 
 
+def configure_database_url() -> None:
+    if config.get_main_option("sqlalchemy.url") == DEFAULT_ALEMBIC_URL:
+        config.set_main_option("sqlalchemy.url", Settings().async_database_url)
+
+
 def run_migrations_offline() -> None:
+    configure_database_url()
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -39,6 +47,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
+    configure_database_url()
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
