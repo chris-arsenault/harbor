@@ -26,7 +26,8 @@ Harbor is a TrueNAS-hosted OANDA practice-trading research system with a Python 
 - Use America/New_York session definitions and timezone conversion; never hardcode a UTC offset.
 - Follow Ahara TrueNAS LAN integration for deployment: shared workflow, Komodo, `secret-paths.yml`, TrueNAS PostgreSQL registration, and compose port publishing on `192.168.66.3`.
 - Store real secrets outside the repo. Commit only placeholder examples or SSM paths.
-- Use `with-cred -- ...` for commands that contact external services or require credentials.
+- Use `with-cred -- ...` for commands that require app, deploy, or API secrets such as AWS, database, OANDA, ntfy, Telegram, or GitHub API tokens.
+- Normal Git remote operations over the configured repository remote, including `git fetch`, `git pull`, and `git push`, do not use `with-cred`.
 - Do not start local dev servers unless the user explicitly asks.
 
 ## Code Map
