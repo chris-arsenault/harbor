@@ -15,7 +15,7 @@ from harbor_bot.optimizer.config import load_optimizer_config, optimizer_config_
 from harbor_bot.optimizer.models import OptimizationStatus
 from harbor_bot.optimizer.runner import OptimizationRunResult, run_optimization
 from harbor_bot.persistence.market_repository import (
-    latest_complete_candle_window,
+    get_candle_coverage,
     list_candles_range,
 )
 from harbor_bot.persistence.optimization_repository import append_optimization_run
@@ -43,7 +43,7 @@ class OptimizerService:
             engine=self.persistence_engine,
             candle_reader=self.candle_reader or read_persisted_candle_records,
             candle_window_selector=(
-                self.candle_window_selector or select_latest_persisted_candle_window
+                self.candle_window_selector or select_persisted_candle_coverage
             ),
         )
         request = _request_from_payload(payload, fixture_base_path=self.fixture_base_path)
@@ -146,7 +146,7 @@ async def read_persisted_candle_records(
     ]
 
 
-async def select_latest_persisted_candle_window(
+async def select_persisted_candle_coverage(
     engine: AsyncEngine | None,
     *,
     instrument: str,
@@ -155,12 +155,20 @@ async def select_latest_persisted_candle_window(
     if engine is None:
         msg = "persisted candle optimization requires a persistence engine"
         raise ValueError(msg)
+    if required_days <= 0:
+        msg = "required_days must be positive"
+        raise ValueError(msg)
     async with engine.connect() as connection:
-        return await latest_complete_candle_window(
-            connection,
-            instrument=instrument,
-            required_days=required_days,
-        )
+        coverage = await get_candle_coverage(connection, instrument=instrument)
+    if coverage["candle_count"] <= 0 or coverage["from"] is None or coverage["to"] is None:
+        return None
+    return {
+        "instrument": instrument,
+        "from": coverage["from"],
+        "to": coverage["to"],
+        "required_days": required_days,
+        "coverage": coverage,
+    }
 
 
 async def _payload_with_persisted_candles(

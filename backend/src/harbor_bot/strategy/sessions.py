@@ -60,6 +60,16 @@ def is_in_ny_trade_window(
     return session_windows_for_date(trading_date, config).ny_trade.contains(candle.ts)
 
 
+def trading_date_for_candle(candle: ClosedCandle, config: StrategyConfig) -> date:
+    candle = require_closed_candle(candle)
+    zone = ZoneInfo(config.timezone)
+    local_ts = candle.ts.astimezone(zone)
+    asia_start = _parse_time(config.sessions["asia"]["start"])
+    if local_ts.timetz().replace(tzinfo=None) >= asia_start:
+        return local_ts.date() + timedelta(days=1)
+    return local_ts.date()
+
+
 def compute_session_levels(
     candles: list[ClosedCandle],
     *,

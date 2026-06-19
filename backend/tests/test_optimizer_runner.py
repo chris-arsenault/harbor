@@ -21,10 +21,7 @@ def test_runner_uses_optuna_tpe_median_pruner_and_returns_ranked_candidates() ->
     config = load_optimizer_config()
 
     result = run_optimization(
-        candles=(
-            _candle("2026-01-15T01:00:00+00:00"),
-            _candle("2026-01-16T01:00:00+00:00"),
-        ),
+        candles=_study_candles(),
         base_strategy_config=strategy_config_from_defaults(load_default_config()),
         instrument_rules=_rules(),
         backtest_config=BacktestConfig(),
@@ -57,10 +54,7 @@ def test_runner_records_pruned_trials_when_trade_floor_rejects_params() -> None:
     )
 
     result = run_optimization(
-        candles=(
-            _candle("2026-01-15T01:00:00+00:00"),
-            _candle("2026-01-16T01:00:00+00:00"),
-        ),
+        candles=_study_candles(),
         base_strategy_config=strategy_config_from_defaults(load_default_config()),
         instrument_rules=_rules(),
         backtest_config=BacktestConfig(),
@@ -83,10 +77,7 @@ def test_runner_does_not_rank_zero_score_trials_as_candidates() -> None:
     config = load_optimizer_config()
 
     result = run_optimization(
-        candles=(
-            _candle("2026-01-15T01:00:00+00:00"),
-            _candle("2026-01-16T01:00:00+00:00"),
-        ),
+        candles=_study_candles(),
         base_strategy_config=strategy_config_from_defaults(load_default_config()),
         instrument_rules=_rules(),
         backtest_config=BacktestConfig(),
@@ -155,6 +146,19 @@ def _candle(ts: str) -> ClosedCandle:
         low=Decimal("1.0990"),
         c=Decimal("1.1005"),
         volume=100,
+    )
+
+
+def _study_candles() -> tuple[ClosedCandle, ...]:
+    return _session_day("2026-01-15") + _session_day("2026-01-16")
+
+
+def _session_day(day: str) -> tuple[ClosedCandle, ...]:
+    return (
+        _candle(f"{day}T01:30:00+00:00"),
+        _candle(f"{day}T07:30:00+00:00"),
+        _candle(f"{day}T15:00:00+00:00"),
+        _candle(f"{day}T17:01:00+00:00"),
     )
 
 

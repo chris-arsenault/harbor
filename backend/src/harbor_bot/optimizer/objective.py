@@ -42,7 +42,11 @@ def evaluate_params(
     backtest_runner: BacktestRunner = run_backtest,
 ) -> ObjectiveEvaluation:
     variant_config = strategy_config_for_params(base_strategy_config, params)
-    windows = build_walk_forward_windows(candles, optimizer_config.walk_forward)
+    windows = build_walk_forward_windows(
+        candles,
+        optimizer_config.walk_forward,
+        strategy_config=variant_config,
+    )
     in_sample_results: list[BacktestRunResult] = []
     oos_results: list[BacktestRunResult] = []
 

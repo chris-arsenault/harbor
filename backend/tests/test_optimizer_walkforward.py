@@ -3,9 +3,12 @@ from decimal import Decimal
 
 import pytest
 
+from harbor_bot.config.defaults import load_default_config
 from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.optimizer.models import WalkForwardConfig
+from harbor_bot.optimizer.search_space import strategy_config_for_params
 from harbor_bot.optimizer.walkforward import build_walk_forward_windows
+from harbor_bot.strategy.models import strategy_config_from_defaults
 
 
 def test_walk_forward_windows_are_chronological_and_non_overlapping() -> None:
@@ -77,6 +80,44 @@ def test_walk_forward_rejects_too_small_dataset() -> None:
             [_candle("2026-01-15T01:00:00+00:00")],
             WalkForwardConfig(train_window_days=1, oos_window_days=1, step_days=1),
         )
+
+
+def test_walk_forward_strategy_mode_discards_partial_session_days() -> None:
+    strategy_config = strategy_config_for_params(
+        strategy_config_from_defaults(load_default_config()),
+        {"asia_start_offset_minutes": 30},
+    )
+
+    windows = build_walk_forward_windows(
+        [
+            _candle("2026-06-18T00:00:00+00:00"),
+            _candle("2026-06-18T00:30:00+00:00"),
+            _candle("2026-06-18T06:00:00+00:00"),
+            _candle("2026-06-18T13:30:00+00:00"),
+            _candle("2026-06-18T15:31:00+00:00"),
+            _candle("2026-06-19T00:30:00+00:00"),
+            _candle("2026-06-19T06:00:00+00:00"),
+            _candle("2026-06-19T13:30:00+00:00"),
+            _candle("2026-06-19T15:31:00+00:00"),
+            _candle("2026-06-20T00:30:00+00:00"),
+        ],
+        WalkForwardConfig(train_window_days=1, oos_window_days=1, step_days=1),
+        strategy_config=strategy_config,
+    )
+
+    assert len(windows) == 1
+    assert [candle.ts.isoformat() for candle in windows[0].train_candles] == [
+        "2026-06-18T00:30:00+00:00",
+        "2026-06-18T06:00:00+00:00",
+        "2026-06-18T13:30:00+00:00",
+        "2026-06-18T15:31:00+00:00",
+    ]
+    assert [candle.ts.isoformat() for candle in windows[0].oos_candles] == [
+        "2026-06-19T00:30:00+00:00",
+        "2026-06-19T06:00:00+00:00",
+        "2026-06-19T13:30:00+00:00",
+        "2026-06-19T15:31:00+00:00",
+    ]
 
 
 def _candle(

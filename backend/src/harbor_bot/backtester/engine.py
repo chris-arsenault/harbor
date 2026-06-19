@@ -1,8 +1,7 @@
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
 from harbor_bot.backtester.fills import (
     OpenBacktestPosition,
@@ -22,7 +21,11 @@ from harbor_bot.backtester.models import (
 from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.strategy.core import RiskContext, StrategyResult, evaluate_closed_candle
 from harbor_bot.strategy.models import DayState, SessionLevels
-from harbor_bot.strategy.sessions import compute_session_levels, session_windows_for_date
+from harbor_bot.strategy.sessions import (
+    compute_session_levels,
+    session_windows_for_date,
+    trading_date_for_candle,
+)
 
 StrategyEvaluator = Callable[..., StrategyResult]
 
@@ -57,7 +60,7 @@ def run_backtest(
         if not candle.complete:
             msg = "backtest engine accepts closed candles only"
             raise ValueError(msg)
-        next_trading_date = _trading_date_for(candle, backtest_input)
+        next_trading_date = trading_date_for_candle(candle, backtest_input.strategy_config)
         if next_trading_date != trading_date:
             trading_date = next_trading_date
             candle_index = -1
@@ -152,14 +155,6 @@ def run_backtest(
     )
 
 
-def _trading_date_for(candle: ClosedCandle, backtest_input: BacktestInput) -> date:
-    local_ts = candle.ts.astimezone(ZoneInfo(backtest_input.strategy_config.timezone))
-    asia_start = _parse_time(backtest_input.strategy_config.sessions["asia"]["start"])
-    if local_ts.timetz().replace(tzinfo=None) >= asia_start:
-        return local_ts.date() + timedelta(days=1)
-    return local_ts.date()
-
-
 def _is_at_or_after_ny_window(
     candle: ClosedCandle,
     trading_date: date,
@@ -211,7 +206,3 @@ def _params_json(backtest_input: BacktestInput) -> dict[str, object]:
         "instrument": backtest_input.instrument,
         "backtest_config": backtest_input.backtest_config.to_jsonable(),
     }
-
-
-def _parse_time(value: str):
-    return datetime.strptime(value, "%H:%M").time()

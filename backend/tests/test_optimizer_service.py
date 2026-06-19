@@ -82,7 +82,7 @@ async def test_optimizer_service_rejects_requests_without_local_data() -> None:
 
 
 @pytest.mark.asyncio
-async def test_optimizer_service_defaults_persisted_source_to_latest_candle_window() -> None:
+async def test_optimizer_service_defaults_persisted_source_to_selected_coverage() -> None:
     calls = []
 
     async def reader(

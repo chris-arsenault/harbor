@@ -49,12 +49,7 @@ def test_evaluate_params_runs_m5_backtester_for_each_train_and_oos_window() -> N
 
     evaluation = evaluate_params(
         params={"fvg_window": 12},
-        candles=tuple(
-            [
-                _candle("2026-01-15T01:00:00+00:00"),
-                _candle("2026-01-16T01:00:00+00:00"),
-            ]
-        ),
+        candles=_session_day("2026-01-15") + _session_day("2026-01-16"),
         base_strategy_config=strategy_config_from_defaults(load_default_config()),
         instrument_rules=_rules(),
         backtest_config=BacktestConfig(),
@@ -89,10 +84,7 @@ def test_evaluate_params_rejects_results_below_trade_count_floor() -> None:
     with pytest.raises(InsufficientTradeCountError, match="trade count"):
         evaluate_params(
             params={},
-            candles=(
-                _candle("2026-01-15T01:00:00+00:00"),
-                _candle("2026-01-16T01:00:00+00:00"),
-            ),
+            candles=_session_day("2026-01-15") + _session_day("2026-01-16"),
             base_strategy_config=strategy_config_from_defaults(load_default_config()),
             instrument_rules=_rules(),
             backtest_config=BacktestConfig(),
@@ -168,6 +160,15 @@ def _candle(ts: str) -> ClosedCandle:
         low=Decimal("1.0990"),
         c=Decimal("1.1005"),
         volume=100,
+    )
+
+
+def _session_day(day: str) -> tuple[ClosedCandle, ...]:
+    return (
+        _candle(f"{day}T01:00:00+00:00"),
+        _candle(f"{day}T07:00:00+00:00"),
+        _candle(f"{day}T14:30:00+00:00"),
+        _candle(f"{day}T16:31:00+00:00"),
     )
 
 

@@ -3,6 +3,12 @@ from datetime import UTC, date, timedelta
 
 from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.optimizer.models import WalkForwardConfig
+from harbor_bot.strategy.models import StrategyConfig
+from harbor_bot.strategy.sessions import (
+    compute_session_levels,
+    session_windows_for_date,
+    trading_date_for_candle,
+)
 
 
 @dataclass(frozen=True)
@@ -23,10 +29,22 @@ class WalkForwardWindow:
 def build_walk_forward_windows(
     candles: tuple[ClosedCandle, ...] | list[ClosedCandle],
     config: WalkForwardConfig,
+    *,
+    strategy_config: StrategyConfig | None = None,
 ) -> tuple[WalkForwardWindow, ...]:
     ordered = tuple(candles)
     _validate_candles(ordered)
 
+    if strategy_config is not None:
+        return _build_strategy_date_windows(ordered, config, strategy_config)
+
+    return _build_utc_date_windows(ordered, config)
+
+
+def _build_utc_date_windows(
+    ordered: tuple[ClosedCandle, ...],
+    config: WalkForwardConfig,
+) -> tuple[WalkForwardWindow, ...]:
     by_date: dict[date, list[ClosedCandle]] = {}
     for candle in ordered:
         by_date.setdefault(candle.ts.date(), []).append(candle)
@@ -61,6 +79,78 @@ def build_walk_forward_windows(
         msg = "dataset is too small for configured walk-forward windows"
         raise ValueError(msg)
     return tuple(windows)
+
+
+def _build_strategy_date_windows(
+    ordered: tuple[ClosedCandle, ...],
+    config: WalkForwardConfig,
+    strategy_config: StrategyConfig,
+) -> tuple[WalkForwardWindow, ...]:
+    instrument = ordered[0].instrument
+    by_date: dict[date, list[ClosedCandle]] = {}
+    for candle in ordered:
+        trading_date = trading_date_for_candle(candle, strategy_config)
+        by_date.setdefault(trading_date, []).append(candle)
+
+    by_complete_date = {
+        trading_date: day_candles
+        for trading_date, day_candles in by_date.items()
+        if _is_evaluable_strategy_day(
+            trading_date,
+            day_candles,
+            strategy_config=strategy_config,
+            instrument=instrument,
+        )
+    }
+    dates = sorted(by_complete_date)
+    required_dates = config.train_window_days + config.oos_window_days
+    windows: list[WalkForwardWindow] = []
+    start_index = 0
+    while start_index + required_dates <= len(dates):
+        train_dates = dates[start_index : start_index + config.train_window_days]
+        oos_start_index = start_index + config.train_window_days
+        oos_dates = dates[oos_start_index : oos_start_index + config.oos_window_days]
+        windows.append(
+            WalkForwardWindow(
+                index=len(windows),
+                train_candles=tuple(
+                    candle for value in train_dates for candle in by_complete_date[value]
+                ),
+                oos_candles=tuple(
+                    candle for value in oos_dates for candle in by_complete_date[value]
+                ),
+            )
+        )
+        start_index += config.step_days
+
+    if not windows:
+        msg = "dataset is too small for configured walk-forward windows"
+        raise ValueError(msg)
+    return tuple(windows)
+
+
+def _is_evaluable_strategy_day(
+    trading_date: date,
+    day_candles: list[ClosedCandle],
+    *,
+    strategy_config: StrategyConfig,
+    instrument: str,
+) -> bool:
+    windows = session_windows_for_date(trading_date, strategy_config)
+    if max(candle.ts for candle in day_candles) < windows.ny_trade.end:
+        return False
+    if not any(windows.ny_trade.contains(candle.ts) for candle in day_candles):
+        return False
+    try:
+        compute_session_levels(
+            list(day_candles),
+            trading_date=trading_date,
+            instrument=instrument,
+            config=strategy_config,
+        )
+    except ValueError:
+        return False
+    return True
 
 
 def _validate_candles(candles: tuple[ClosedCandle, ...]) -> None:
