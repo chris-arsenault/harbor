@@ -14,7 +14,7 @@ from harbor_bot.backtester.models import (
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.optimizer.config import load_optimizer_config
-from harbor_bot.optimizer.models import OptimizationConfig
+from harbor_bot.optimizer.models import OptimizationConfig, WalkForwardConfig
 from harbor_bot.optimizer.objective import (
     InsufficientTradeCountError,
     aggregate_stats,
@@ -53,7 +53,7 @@ def test_evaluate_params_runs_m5_backtester_for_each_train_and_oos_window() -> N
         base_strategy_config=strategy_config_from_defaults(load_default_config()),
         instrument_rules=_rules(),
         backtest_config=BacktestConfig(),
-        optimizer_config=load_optimizer_config(),
+        optimizer_config=_test_optimizer_config(),
         backtest_runner=fake_runner,
     )
 
@@ -67,7 +67,7 @@ def test_evaluate_params_runs_m5_backtester_for_each_train_and_oos_window() -> N
 
 
 def test_evaluate_params_rejects_results_below_trade_count_floor() -> None:
-    config = load_optimizer_config()
+    config = _test_optimizer_config()
     strict_config = OptimizationConfig(
         search_space=config.search_space,
         walk_forward=config.walk_forward,
@@ -131,6 +131,22 @@ def _result(
             lookahead_sanity_passed=True,
         ),
         trades=result_trades,
+    )
+
+
+def _test_optimizer_config() -> OptimizationConfig:
+    config = load_optimizer_config()
+    return OptimizationConfig(
+        search_space=config.search_space,
+        walk_forward=WalkForwardConfig(train_window_days=1, oos_window_days=1, step_days=1),
+        trial_count=4,
+        candidate_count=3,
+        tpe_seed=config.tpe_seed,
+        min_in_sample_trades=0,
+        min_oos_trades=0,
+        drawdown_floor=config.drawdown_floor,
+        robustness_neighbor_count=config.robustness_neighbor_count,
+        robustness_step_scale=config.robustness_step_scale,
     )
 
 

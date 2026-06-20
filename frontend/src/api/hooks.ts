@@ -19,6 +19,7 @@ import {
   fetchVariants,
   flattenNow,
   importHistoricalCandles,
+  preflightOptimization,
   promoteVariant,
   retirePaperVariant,
   setTradingEnabled,
@@ -27,7 +28,7 @@ import {
   updateConfig,
 } from "./client";
 import { createLiveConnection, liveWebSocketUrl } from "./live";
-import type { FlattenResult, WebSocketEnvelope } from "./types";
+import type { FlattenResult, OptimizationStartPayload, WebSocketEnvelope } from "./types";
 
 export function useStatusQuery() {
   return useQuery({ queryKey: ["status"], queryFn: fetchStatus });
@@ -96,6 +97,15 @@ export function useOptimizationStudiesQuery(params: { limit?: number } = {}) {
   });
 }
 
+export function useOptimizationPreflightQuery(payload: OptimizationStartPayload, enabled: boolean) {
+  return useQuery({
+    queryKey: ["optimization-preflight", payload],
+    queryFn: () => preflightOptimization(payload),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
 export function useLabStudyQuery(studyId: number | null) {
   return useQuery({
     queryKey: ["lab-study", studyId],
@@ -151,6 +161,7 @@ export function useImportHistoricalCandlesMutation() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["candle-source"] });
       await queryClient.invalidateQueries({ queryKey: ["candles"] });
+      await queryClient.invalidateQueries({ queryKey: ["optimization-preflight"] });
     },
   });
 }

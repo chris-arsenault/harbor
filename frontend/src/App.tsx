@@ -11,6 +11,7 @@ import {
   useLabStudyQuery,
   useLevelsQuery,
   useMarkersQuery,
+  useOptimizationPreflightQuery,
   useOptimizationStudiesQuery,
   usePracticeControls,
   usePromoteVariantMutation,
@@ -41,6 +42,11 @@ import { ConfigView } from "./components/config/ConfigView";
 import { DashboardView } from "./components/dashboard/DashboardView";
 import { EventsView } from "./components/events/EventsView";
 import { LabScreen } from "./components/lab/LabScreen";
+import {
+  DISCOVERY_STUDY_CONFIG,
+  tuningPayloadFromConfig,
+  type TuningStudyConfig,
+} from "./components/lab/tuningPayload";
 import { ProductNav, type ProductView } from "./components/navigation/ProductNav";
 import { OperationsView } from "./components/operations/OperationsView";
 import { TradesView } from "./components/trades/TradesView";
@@ -133,12 +139,16 @@ function useDashboardData(windowParams: ReturnType<typeof dashboardWindow>, live
 }
 
 function useLabData(liveEquityCurves: VariantEquityCurve[], liveStatus: string | null) {
+  const [studyConfig, setStudyConfig] = useState<TuningStudyConfig>(DISCOVERY_STUDY_CONFIG);
+  const studyPayload = useMemo(() => tuningPayloadFromConfig(studyConfig), [studyConfig]);
   const studiesQuery = useOptimizationStudiesQuery({ limit: 50 });
   const startOptimizationMutation = useStartOptimizationMutation();
   const selectedStudyId = latestLabStudyId(studiesQuery.data, startOptimizationMutation.data);
   const labStudyQuery = useLabStudyQuery(selectedStudyId);
   const variantsQuery = useVariantsQuery();
   const candleSource = useLabCandleSource();
+  const canPreflight = (candleSource.status?.coverage?.candle_count ?? 0) > 0;
+  const preflightQuery = useOptimizationPreflightQuery(studyPayload, canPreflight);
   const createVariantMutation = useCreatePaperVariantMutation();
   const retireVariantMutation = useRetirePaperVariantMutation();
   const promoteVariantMutation = usePromoteVariantMutation();
@@ -155,6 +165,12 @@ function useLabData(liveEquityCurves: VariantEquityCurve[], liveStatus: string |
     candleSourceError: candleSource.errorMessage,
     importCandles: candleSource.importCandles,
     importResult: candleSource.importResult,
+    studyConfig,
+    setStudyConfig,
+    studyPayload,
+    preflight: preflightQuery.data ?? null,
+    preflightPending: preflightQuery.isFetching,
+    preflightError: preflightQuery.error instanceof Error ? preflightQuery.error.message : null,
     startOptimization: startOptimizationMutation.mutate,
     tuningRun: tuningRunState(startOptimizationMutation),
     createPaperVariant: createVariantMutation.mutate,
@@ -297,6 +313,12 @@ function LabRoute({ lab }: ProductPageProps) {
       candleSourceError={lab.candleSourceError}
       candleImportResult={lab.importResult}
       onImportCandles={lab.importCandles}
+      studyConfig={lab.studyConfig}
+      onStudyConfigChange={lab.setStudyConfig}
+      studyPayload={lab.studyPayload}
+      preflight={lab.preflight}
+      preflightPending={lab.preflightPending}
+      preflightError={lab.preflightError}
       tuningRun={lab.tuningRun}
     />
   );

@@ -337,6 +337,16 @@ def create_app(
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/api/optimize/preflight")
+    async def preflight_optimization(
+        payload: dict[str, Any],
+        service: OptimizerService = OPTIMIZER_SERVICE_DEPENDENCY,
+    ) -> dict[str, Any]:
+        try:
+            return _jsonable(await service.preflight_optimization(payload))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/optimize")
     async def list_optimization_studies(
         limit: int = 100,

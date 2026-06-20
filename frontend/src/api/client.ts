@@ -25,6 +25,7 @@ import type {
   TradesResponse,
   VariantDetail,
 } from "./types";
+import type { OptimizationPreflightResponse } from "./optimizerTypes";
 
 const API_BASE_URL = "";
 
@@ -139,6 +140,12 @@ export function startOptimization(
   payload: OptimizationStartPayload
 ): Promise<OptimizationStartResponse> {
   return apiPost<OptimizationStartResponse>("/api/optimize", payload);
+}
+
+export function preflightOptimization(
+  payload: OptimizationStartPayload
+): Promise<OptimizationPreflightResponse> {
+  return apiPost<OptimizationPreflightResponse>("/api/optimize/preflight", payload);
 }
 
 export function fetchLabStudy(studyId: number): Promise<LabSnapshot> {

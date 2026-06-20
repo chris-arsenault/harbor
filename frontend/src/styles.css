@@ -634,7 +634,14 @@ p {
   gap: 0.5rem;
 }
 
+.lab-study-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.5rem;
+}
+
 .lab-progress div,
+.lab-study-status-grid div,
 .lab-panel,
 .lab-actions,
 .lab-live-status {
@@ -643,7 +650,8 @@ p {
   background: #ffffff;
 }
 
-.lab-progress div {
+.lab-progress div,
+.lab-study-status-grid div {
   display: grid;
   gap: 0.35rem;
   min-height: 4.5rem;
@@ -652,6 +660,7 @@ p {
 }
 
 .lab-progress span,
+.lab-study-status-grid span,
 .lab-actions span {
   color: #65736b;
   font-size: 0.78rem;
@@ -659,7 +668,8 @@ p {
   text-transform: uppercase;
 }
 
-.lab-progress strong {
+.lab-progress strong,
+.lab-study-status-grid strong {
   overflow-wrap: anywhere;
   font-size: 1.05rem;
 }
@@ -720,6 +730,31 @@ p {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.lab-study-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.65rem;
+}
+
+.lab-study-controls label {
+  display: grid;
+  gap: 0.35rem;
+  color: #65736b;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.lab-study-controls input {
+  min-height: 2.25rem;
+  border: 1px solid #c8d2cc;
+  border-radius: 8px;
+  padding: 0 0.65rem;
+  color: #26312b;
+  font: inherit;
+  font-weight: 700;
 }
 
 .lab-scatter,

@@ -428,3 +428,5 @@ export interface LabStatusEnvelope {
   status: string;
   message?: string;
 }
+
+export type { OptimizationPreflightResponse } from "./optimizerTypes";

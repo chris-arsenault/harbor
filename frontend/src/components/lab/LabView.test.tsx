@@ -2,7 +2,10 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import type { LabSnapshot, LabVariantOverview } from "../../api/types";
-import { CandleSourcePanel, LabView } from "./LabView";
+import { CandleSourcePanel } from "./CandleSourcePanel";
+import { preflight } from "./LabView.fixtures";
+import { LabView } from "./LabView";
+import { DEFAULT_TUNING_PAYLOAD, DISCOVERY_STUDY_CONFIG } from "./tuningPayload";
 
 test("LabView renders backend study facts, leaderboard, equity, and paper actions", () => {
   const onCreatePaperVariant = vi.fn();
@@ -35,6 +38,11 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   expect(screen.getByText("variant 7 closed trade")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /live/i })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Start tuning study" })).toBeInTheDocument();
+  expect(screen.getByText("Study Setup")).toBeInTheDocument();
+  expect(screen.getByText("Baseline OOS")).toBeInTheDocument();
+  expect(screen.getByText("0.75")).toBeInTheDocument();
+  expect(screen.getByText("16/18")).toBeInTheDocument();
+  expect(screen.getByLabelText("Trials")).toHaveValue(32);
   expect(screen.getByText("1 parameter")).toBeInTheDocument();
   expect(screen.getByText("fvg_window")).not.toBeVisible();
   fireEvent.click(screen.getByText("Candidate Parameters"));
@@ -69,10 +77,7 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   fireEvent.click(screen.getByRole("button", { name: "Promote practice variant candidate-1" }));
   fireEvent.click(screen.getByRole("button", { name: "Retire paper variant candidate-1" }));
 
-  expect(onStartOptimization).toHaveBeenCalledWith({
-    source: "persisted_candles",
-    instrument: "EUR_USD",
-  });
+  expect(onStartOptimization).toHaveBeenCalledWith(DEFAULT_TUNING_PAYLOAD);
   expect(onCreatePaperVariant).toHaveBeenCalledWith({ trial_id: 2, label: "paper-trial-1" });
   expect(onPromoteVariant).toHaveBeenCalledWith(7);
   expect(onRetireVariant).toHaveBeenCalledWith(7);
@@ -81,7 +86,7 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
 function renderPopulatedLabView(handlers: {
   readonly onCreatePaperVariant: (payload: { trial_id: number; label: string }) => void;
   readonly onRetireVariant: (variantId: number) => void;
-  readonly onStartOptimization: (payload: Record<string, unknown>) => void;
+  readonly onStartOptimization: Parameters<typeof LabView>[0]["onStartOptimization"];
   readonly onPromoteVariant: (variantId: number) => void;
 }) {
   render(
@@ -99,6 +104,12 @@ function renderPopulatedLabView(handlers: {
       candleSourceError={null}
       candleImportResult={candleImportResult}
       onImportCandles={vi.fn()}
+      studyConfig={DISCOVERY_STUDY_CONFIG}
+      onStudyConfigChange={vi.fn()}
+      studyPayload={DEFAULT_TUNING_PAYLOAD}
+      preflight={preflight}
+      preflightPending={false}
+      preflightError={null}
     />
   );
 }
@@ -190,6 +201,12 @@ test("LabView shows completed zero-candidate studies instead of a blank leaderbo
       candleSourceError={null}
       candleImportResult={null}
       onImportCandles={vi.fn()}
+      studyConfig={DISCOVERY_STUDY_CONFIG}
+      onStudyConfigChange={vi.fn()}
+      studyPayload={DEFAULT_TUNING_PAYLOAD}
+      preflight={preflight}
+      preflightPending={false}
+      preflightError={null}
     />
   );
 

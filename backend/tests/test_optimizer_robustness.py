@@ -1,3 +1,4 @@
+from dataclasses import replace
 from decimal import Decimal
 
 from harbor_bot.optimizer.config import load_optimizer_config
@@ -12,7 +13,7 @@ from harbor_bot.optimizer.robustness import calculate_robustness_score, generate
 
 
 def test_generate_neighbor_params_steps_numeric_parameters_within_bounds() -> None:
-    config = load_optimizer_config()
+    config = _optimizer_config_with_neighbor_count(2)
     search_space = SearchSpace(
         (
             SearchParameter(
@@ -62,7 +63,7 @@ def test_generate_neighbor_params_skips_out_of_bounds_neighbors() -> None:
 
 
 def test_robustness_score_penalizes_lone_spikes_with_neighbor_average() -> None:
-    config = load_optimizer_config()
+    config = _optimizer_config_with_neighbor_count(2)
     search_space = SearchSpace(
         (
             SearchParameter(
@@ -102,7 +103,7 @@ def test_robustness_score_penalizes_lone_spikes_with_neighbor_average() -> None:
 
 
 def test_robustness_score_treats_unevaluable_neighbors_as_zero() -> None:
-    config = load_optimizer_config()
+    config = _optimizer_config_with_neighbor_count(2)
     search_space = SearchSpace(
         (
             SearchParameter(
@@ -139,3 +140,7 @@ def test_robustness_score_treats_unevaluable_neighbors_as_zero() -> None:
     )
 
     assert score == Decimal("6")
+
+
+def _optimizer_config_with_neighbor_count(count: int):
+    return replace(load_optimizer_config(), robustness_neighbor_count=count)

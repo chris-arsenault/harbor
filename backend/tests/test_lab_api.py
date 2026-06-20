@@ -25,6 +25,18 @@ def test_optimize_endpoint_starts_optimizer_through_injected_service() -> None:
     assert optimizer.started_payloads == [{"fixture": "clean_signal_day.json"}]
 
 
+def test_optimize_preflight_endpoint_reports_study_readiness() -> None:
+    optimizer = FakeOptimizerService()
+    client = TestClient(create_app(optimizer_service=optimizer, lab_service=FakeLabService()))
+
+    response = client.post("/api/optimize/preflight", json={"source": "persisted_candles"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+    assert response.json()["walk_forward"]["window_count"] == 3
+    assert optimizer.preflight_payloads == [{"source": "persisted_candles"}]
+
+
 def test_lab_endpoints_read_study_variants_and_paper_only_actions() -> None:
     lab = FakeLabService()
     client = TestClient(create_app(optimizer_service=FakeOptimizerService(), lab_service=lab))
@@ -94,6 +106,7 @@ def test_candidate_scatter_point_explains_zero_score_rejection() -> None:
 class FakeOptimizerService:
     def __init__(self) -> None:
         self.started_payloads: list[dict[str, Any]] = []
+        self.preflight_payloads: list[dict[str, Any]] = []
 
     async def start_optimization(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.started_payloads.append(payload)
@@ -103,6 +116,14 @@ class FakeOptimizerService:
             "trials": [],
             "candidates": [],
             "data_separation": {"variant_trades_used": False},
+        }
+
+    async def preflight_optimization(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.preflight_payloads.append(payload)
+        return {
+            "status": "ready",
+            "walk_forward": {"window_count": 3},
+            "readiness": [],
         }
 
 

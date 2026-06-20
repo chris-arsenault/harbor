@@ -12,13 +12,13 @@ from harbor_bot.backtester.models import (
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.optimizer.config import load_optimizer_config
-from harbor_bot.optimizer.models import OptimizationConfig, OptimizationStatus
+from harbor_bot.optimizer.models import OptimizationConfig, OptimizationStatus, WalkForwardConfig
 from harbor_bot.optimizer.runner import run_optimization
 from harbor_bot.strategy.models import InstrumentRules, strategy_config_from_defaults
 
 
 def test_runner_uses_optuna_tpe_median_pruner_and_returns_ranked_candidates() -> None:
-    config = load_optimizer_config()
+    config = _test_optimizer_config()
 
     result = run_optimization(
         candles=_study_candles(),
@@ -39,7 +39,7 @@ def test_runner_uses_optuna_tpe_median_pruner_and_returns_ranked_candidates() ->
 
 
 def test_runner_records_pruned_trials_when_trade_floor_rejects_params() -> None:
-    config = load_optimizer_config()
+    config = _test_optimizer_config()
     strict_config = OptimizationConfig(
         search_space=config.search_space,
         walk_forward=config.walk_forward,
@@ -74,7 +74,7 @@ def test_runner_records_pruned_trials_when_trade_floor_rejects_params() -> None:
 
 
 def test_runner_does_not_rank_zero_score_trials_as_candidates() -> None:
-    config = load_optimizer_config()
+    config = _test_optimizer_config()
 
     result = run_optimization(
         candles=_study_candles(),
@@ -94,6 +94,22 @@ def _scoring_runner(backtest_input: BacktestInput) -> BacktestRunResult:
     fvg_window = backtest_input.strategy_config.fvg_window
     pnl = Decimal(fvg_window)
     return _result(pnl=pnl, r_multiple=pnl / Decimal("10"))
+
+
+def _test_optimizer_config() -> OptimizationConfig:
+    config = load_optimizer_config()
+    return OptimizationConfig(
+        search_space=config.search_space,
+        walk_forward=WalkForwardConfig(train_window_days=1, oos_window_days=1, step_days=1),
+        trial_count=4,
+        candidate_count=3,
+        tpe_seed=config.tpe_seed,
+        min_in_sample_trades=0,
+        min_oos_trades=0,
+        drawdown_floor=config.drawdown_floor,
+        robustness_neighbor_count=config.robustness_neighbor_count,
+        robustness_step_scale=config.robustness_step_scale,
+    )
 
 
 def _result(

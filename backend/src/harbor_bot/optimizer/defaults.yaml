@@ -1,17 +1,17 @@
-trial_count: 4
-candidate_count: 3
+trial_count: 32
+candidate_count: 5
 tpe_seed: 17
 drawdown_floor: "1"
 minimum_trade_count:
-  in_sample: 0
-  out_of_sample: 0
+  in_sample: 3
+  out_of_sample: 1
 robustness:
-  neighbor_count: 2
+  neighbor_count: 1
   step_scale: "1"
 walk_forward:
-  train_window_days: 1
-  oos_window_days: 1
-  step_days: 1
+  train_window_days: 10
+  oos_window_days: 5
+  step_days: 5
 search_space:
   asia_start_offset_minutes:
     type: int

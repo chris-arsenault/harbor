@@ -4,6 +4,7 @@ import {
   createPaperVariant,
   fetchLabStudy,
   fetchVariants,
+  preflightOptimization,
   retirePaperVariant,
   startOptimization,
 } from "./client";
@@ -21,6 +22,7 @@ test("Lab clients call optimizer and variant endpoints with backend payloads", a
   });
 
   await startOptimization({ fixture: "clean_signal_day.json" });
+  await preflightOptimization({ source: "persisted_candles", instrument: "EUR_USD" });
   await fetchLabStudy(42);
   await fetchVariants();
   await createPaperVariant({ trial_id: 2, label: "paper-trial-1" });
@@ -31,18 +33,23 @@ test("Lab clients call optimizer and variant endpoints with backend payloads", a
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({ fixture: "clean_signal_day.json" }),
   });
-  expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/optimize/42", {
-    headers: { Accept: "application/json" },
+  expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/optimize/preflight", {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ source: "persisted_candles", instrument: "EUR_USD" }),
   });
-  expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/variants", {
+  expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/optimize/42", {
     headers: { Accept: "application/json" },
   });
   expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/variants", {
+    headers: { Accept: "application/json" },
+  });
+  expect(fetchMock).toHaveBeenNthCalledWith(5, "/api/variants", {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({ trial_id: 2, label: "paper-trial-1" }),
   });
-  expect(fetchMock).toHaveBeenNthCalledWith(5, "/api/variants/7/retire", {
+  expect(fetchMock).toHaveBeenNthCalledWith(6, "/api/variants/7/retire", {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({}),

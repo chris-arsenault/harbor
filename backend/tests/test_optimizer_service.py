@@ -98,7 +98,7 @@ async def test_optimizer_service_defaults_persisted_source_to_selected_coverage(
     async def selector(engine, *, instrument: str, required_days: int) -> dict[str, Any]:
         assert engine == "engine"
         assert instrument == "EUR_USD"
-        assert required_days == 2
+        assert required_days == 15
         return {
             "instrument": instrument,
             "from": datetime(2026, 1, 15, tzinfo=UTC),
@@ -132,6 +132,76 @@ async def test_optimizer_service_defaults_persisted_source_to_selected_coverage(
         "to": "2026-01-16T23:59:00+00:00",
         "candle_count": 2,
     }
+
+
+@pytest.mark.asyncio
+async def test_optimizer_service_preflights_persisted_study_shape_and_baseline() -> None:
+    async def reader(
+        engine,
+        *,
+        instrument: str,
+        start: datetime,
+        end: datetime,
+    ) -> list[dict[str, Any]]:
+        assert engine == "engine"
+        assert instrument == "EUR_USD"
+        assert start == datetime(2026, 1, 15, tzinfo=UTC)
+        assert end == datetime(2026, 1, 16, 23, 59, tzinfo=UTC)
+        return [
+            _record("2026-01-15T01:00:00+00:00"),
+            _record("2026-01-15T07:00:00+00:00"),
+            _record("2026-01-15T14:30:00+00:00"),
+            _record("2026-01-15T16:31:00+00:00"),
+            _record("2026-01-16T01:00:00+00:00"),
+            _record("2026-01-16T07:00:00+00:00"),
+            _record("2026-01-16T14:30:00+00:00"),
+            _record("2026-01-16T16:31:00+00:00"),
+        ]
+
+    async def selector(engine, *, instrument: str, required_days: int) -> dict[str, Any]:
+        assert required_days == 2
+        return {
+            "instrument": instrument,
+            "from": datetime(2026, 1, 15, tzinfo=UTC),
+            "to": datetime(2026, 1, 16, 23, 59, tzinfo=UTC),
+        }
+
+    service = OptimizerService(
+        persistence_engine="engine",
+        candle_reader=reader,
+        candle_window_selector=selector,
+    )
+    response = await service.preflight_optimization(
+        {
+            "source": "persisted_candles",
+            "optimizer_config": {
+                "trial_count": 2,
+                "candidate_count": 1,
+                "walk_forward": {
+                    "train_window_days": 1,
+                    "oos_window_days": 1,
+                    "step_days": 1,
+                },
+            },
+        }
+    )
+
+    assert response["status"] == "ready"
+    assert response["dataset"]["candle_count"] == 8
+    assert response["dataset"]["evaluable_session_day_count"] == 2
+    assert response["walk_forward"]["window_count"] == 1
+    assert response["walk_forward"]["windows"][0] == {
+        "index": 0,
+        "train_start": "2026-01-15",
+        "train_end": "2026-01-15",
+        "out_of_sample_start": "2026-01-16",
+        "out_of_sample_end": "2026-01-16",
+        "train_candle_count": 4,
+        "out_of_sample_candle_count": 4,
+    }
+    assert response["baseline"]["window_count"] == 1
+    assert response["baseline"]["in_sample"]["stats"]["trade_count"] >= 0
+    assert response["recommended_payload"]["optimizer_config"]["trial_count"] == 2
 
 
 @pytest.mark.asyncio

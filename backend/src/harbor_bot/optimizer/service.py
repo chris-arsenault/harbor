@@ -9,17 +9,24 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from harbor_bot.backtester.data import candles_from_records, load_candle_fixture
 from harbor_bot.backtester.engine import run_backtest
-from harbor_bot.backtester.models import BacktestConfig
+from harbor_bot.backtester.models import BacktestConfig, BacktestInput, BacktestStats
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.optimizer.config import load_optimizer_config, optimizer_config_from_mapping
-from harbor_bot.optimizer.models import OptimizationStatus
+from harbor_bot.optimizer.models import OptimizationConfig, OptimizationStatus
+from harbor_bot.optimizer.objective import aggregate_stats, objective_score
 from harbor_bot.optimizer.runner import OptimizationRunResult, run_optimization
+from harbor_bot.optimizer.walkforward import (
+    WalkForwardWindow,
+    build_walk_forward_windows,
+    summarize_strategy_days,
+)
 from harbor_bot.persistence.market_repository import (
     get_candle_coverage,
     list_candles_range,
 )
 from harbor_bot.persistence.optimization_repository import append_optimization_run
 from harbor_bot.strategy.models import InstrumentRules, strategy_config_from_defaults
+from harbor_bot.strategy.sessions import trading_date_for_candle
 
 OptimizationRunner = Callable[..., OptimizationRunResult]
 PersistenceWriter = Callable[..., Awaitable[int]]
@@ -36,6 +43,116 @@ class OptimizerService:
     persistence_writer: PersistenceWriter = append_optimization_run
     candle_reader: CandleRangeReader = None
     candle_window_selector: CandleWindowSelector = None
+
+    async def preflight_optimization(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        payload = await _payload_with_persisted_candles(
+            payload,
+            engine=self.persistence_engine,
+            candle_reader=self.candle_reader or read_persisted_candle_records,
+            candle_window_selector=(
+                self.candle_window_selector or select_persisted_candle_coverage
+            ),
+        )
+        request = _request_from_payload(payload, fixture_base_path=self.fixture_base_path)
+        runner_kwargs = request["runner_kwargs"]
+        candles = runner_kwargs["candles"]
+        optimizer_config = request["optimizer_config"]
+        strategy_config = runner_kwargs["base_strategy_config"]
+        instrument_rules = runner_kwargs["instrument_rules"]
+        backtest_config = runner_kwargs["backtest_config"]
+
+        day_statuses = summarize_strategy_days(candles, strategy_config)
+        evaluable_day_count = len([status for status in day_statuses if status.evaluable])
+        required_days = (
+            optimizer_config.walk_forward.train_window_days
+            + optimizer_config.walk_forward.oos_window_days
+        )
+        try:
+            windows = build_walk_forward_windows(
+                candles,
+                optimizer_config.walk_forward,
+                strategy_config=strategy_config,
+            )
+            window_error = None
+        except ValueError as exc:
+            windows = ()
+            window_error = str(exc)
+
+        baseline = None
+        baseline_error = None
+        if windows:
+            try:
+                baseline = _baseline_summary(
+                    windows,
+                    instrument=strategy_config.instrument,
+                    strategy_config=strategy_config,
+                    instrument_rules=instrument_rules,
+                    backtest_config=backtest_config,
+                    optimizer_config=optimizer_config,
+                )
+            except ValueError as exc:
+                baseline_error = str(exc)
+
+        readiness = _preflight_readiness(
+            candle_count=len(candles),
+            evaluable_day_count=evaluable_day_count,
+            required_days=required_days,
+            window_count=len(windows),
+            window_error=window_error,
+            baseline=baseline,
+            baseline_error=baseline_error,
+        )
+        return {
+            "status": "ready"
+            if all(item["status"] != "fail" for item in readiness)
+            else "not_ready",
+            "instrument": strategy_config.instrument,
+            "candle_source": payload.get("_candle_source"),
+            "study_config": optimizer_config.to_jsonable(),
+            "candidate_gate": {
+                "requires": "completed trials with positive in-sample and out-of-sample scores",
+                "min_in_sample_trades": optimizer_config.min_in_sample_trades,
+                "min_out_of_sample_trades": optimizer_config.min_oos_trades,
+            },
+            "dataset": {
+                "candle_count": len(candles),
+                "session_day_count": len(day_statuses),
+                "evaluable_session_day_count": evaluable_day_count,
+                "partial_session_day_count": len(day_statuses) - evaluable_day_count,
+                "first_evaluable_trading_date": _first_evaluable_date(day_statuses),
+                "last_evaluable_trading_date": _last_evaluable_date(day_statuses),
+                "day_diagnostics": [
+                    {
+                        "trading_date": status.trading_date.isoformat(),
+                        "candle_count": status.candle_count,
+                        "evaluable": status.evaluable,
+                        "reason": status.reason,
+                    }
+                    for status in day_statuses
+                    if not status.evaluable
+                ][:10],
+            },
+            "walk_forward": {
+                "window_count": len(windows),
+                "required_session_days": required_days,
+                "train_window_days": optimizer_config.walk_forward.train_window_days,
+                "out_of_sample_window_days": optimizer_config.walk_forward.oos_window_days,
+                "step_days": optimizer_config.walk_forward.step_days,
+                "window_error": window_error,
+                "windows": [
+                    _window_summary(window, strategy_config=strategy_config)
+                    for window in windows[:12]
+                ],
+                "omitted_window_count": max(len(windows) - 12, 0),
+            },
+            "baseline": baseline,
+            "readiness": readiness,
+            "recommended_payload": {
+                "source": "persisted_candles",
+                "instrument": strategy_config.instrument,
+                "optimizer_config": optimizer_config.to_jsonable(),
+            },
+        }
 
     async def start_optimization(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         payload = await _payload_with_persisted_candles(
@@ -112,6 +229,178 @@ def optimization_result_to_response(
             "frontend_ui_used": False,
         },
     }
+
+
+def _baseline_summary(
+    windows: tuple[WalkForwardWindow, ...],
+    *,
+    instrument: str,
+    strategy_config,
+    instrument_rules: InstrumentRules,
+    backtest_config: BacktestConfig,
+    optimizer_config: OptimizationConfig,
+) -> dict[str, Any]:
+    train_results = []
+    oos_results = []
+    for window in windows:
+        train_results.append(
+            run_backtest(
+                BacktestInput(
+                    instrument=instrument,
+                    candles=window.train_candles,
+                    strategy_config=strategy_config,
+                    instrument_rules=instrument_rules,
+                    backtest_config=backtest_config,
+                )
+            )
+        )
+        oos_results.append(
+            run_backtest(
+                BacktestInput(
+                    instrument=instrument,
+                    candles=window.oos_candles,
+                    strategy_config=strategy_config,
+                    instrument_rules=instrument_rules,
+                    backtest_config=backtest_config,
+                )
+            )
+        )
+
+    in_sample_stats = aggregate_stats(train_results, initial_nav=backtest_config.initial_nav)
+    out_of_sample_stats = aggregate_stats(oos_results, initial_nav=backtest_config.initial_nav)
+    in_sample_score = objective_score(in_sample_stats, optimizer_config)
+    out_of_sample_score = objective_score(out_of_sample_stats, optimizer_config)
+    return {
+        "status": _baseline_status(
+            in_sample_stats,
+            out_of_sample_stats,
+            in_sample_score=in_sample_score,
+            out_of_sample_score=out_of_sample_score,
+            optimizer_config=optimizer_config,
+        ),
+        "window_count": len(windows),
+        "in_sample": _baseline_side(in_sample_stats, in_sample_score),
+        "out_of_sample": _baseline_side(out_of_sample_stats, out_of_sample_score),
+    }
+
+
+def _baseline_side(stats: BacktestStats, score: Decimal) -> dict[str, Any]:
+    return {
+        "score": str(score),
+        "stats": stats.to_jsonable(),
+    }
+
+
+def _baseline_status(
+    in_sample_stats: BacktestStats,
+    out_of_sample_stats: BacktestStats,
+    *,
+    in_sample_score: Decimal,
+    out_of_sample_score: Decimal,
+    optimizer_config: OptimizationConfig,
+) -> str:
+    if in_sample_stats.trade_count < optimizer_config.min_in_sample_trades:
+        return "below_in_sample_trade_floor"
+    if out_of_sample_stats.trade_count < optimizer_config.min_oos_trades:
+        return "below_out_of_sample_trade_floor"
+    if in_sample_score > 0 and out_of_sample_score > 0:
+        return "candidate_gate_passed"
+    if in_sample_stats.trade_count == 0 and out_of_sample_stats.trade_count == 0:
+        return "no_trades"
+    return "candidate_gate_failed"
+
+
+def _preflight_readiness(
+    *,
+    candle_count: int,
+    evaluable_day_count: int,
+    required_days: int,
+    window_count: int,
+    window_error: str | None,
+    baseline: dict[str, Any] | None,
+    baseline_error: str | None,
+) -> list[dict[str, str]]:
+    readiness = [
+        {
+            "name": "candles",
+            "status": "pass" if candle_count > 0 else "fail",
+            "message": f"{candle_count} persisted closed candles selected",
+        },
+        {
+            "name": "session_days",
+            "status": "pass" if evaluable_day_count >= required_days else "fail",
+            "message": (
+                f"{evaluable_day_count} complete strategy session days available; "
+                f"{required_days} required by the study split"
+            ),
+        },
+        {
+            "name": "walk_forward",
+            "status": "pass" if window_count > 0 else "fail",
+            "message": (
+                f"{window_count} walk-forward windows"
+                if window_count > 0
+                else window_error or "no walk-forward windows can be built"
+            ),
+        },
+    ]
+    if baseline_error is not None:
+        readiness.append({"name": "baseline", "status": "fail", "message": baseline_error})
+    elif baseline is not None:
+        readiness.append(
+            {
+                "name": "baseline",
+                "status": "pass" if baseline["status"] == "candidate_gate_passed" else "warn",
+                "message": _baseline_message(baseline),
+            }
+        )
+    return readiness
+
+
+def _baseline_message(baseline: dict[str, Any]) -> str:
+    if baseline["status"] == "candidate_gate_passed":
+        return "baseline passes the same positive IS/OOS candidate gate"
+    if baseline["status"] == "no_trades":
+        return "baseline produced no trades across the selected walk-forward windows"
+    if baseline["status"] == "below_in_sample_trade_floor":
+        return "baseline is below the configured in-sample trade floor"
+    if baseline["status"] == "below_out_of_sample_trade_floor":
+        return "baseline is below the configured out-of-sample trade floor"
+    return "baseline does not pass the positive IS/OOS candidate gate"
+
+
+def _window_summary(window: WalkForwardWindow, *, strategy_config) -> dict[str, Any]:
+    train_dates = _trading_dates(window.train_candles, strategy_config)
+    out_of_sample_dates = _trading_dates(window.oos_candles, strategy_config)
+    return {
+        "index": window.index,
+        "train_start": train_dates[0].isoformat(),
+        "train_end": train_dates[-1].isoformat(),
+        "out_of_sample_start": out_of_sample_dates[0].isoformat(),
+        "out_of_sample_end": out_of_sample_dates[-1].isoformat(),
+        "train_candle_count": len(window.train_candles),
+        "out_of_sample_candle_count": len(window.oos_candles),
+    }
+
+
+def _trading_dates(candles, strategy_config) -> tuple:
+    return tuple(
+        dict.fromkeys(trading_date_for_candle(candle, strategy_config) for candle in candles)
+    )
+
+
+def _first_evaluable_date(day_statuses) -> str | None:
+    for status in day_statuses:
+        if status.evaluable:
+            return status.trading_date.isoformat()
+    return None
+
+
+def _last_evaluable_date(day_statuses) -> str | None:
+    for status in reversed(day_statuses):
+        if status.evaluable:
+            return status.trading_date.isoformat()
+    return None
 
 
 async def read_persisted_candle_records(

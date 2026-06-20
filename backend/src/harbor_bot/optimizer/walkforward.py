@@ -26,6 +26,14 @@ class WalkForwardWindow:
         return _dates_for(self.oos_candles)
 
 
+@dataclass(frozen=True)
+class StrategyDayStatus:
+    trading_date: date
+    candle_count: int
+    evaluable: bool
+    reason: str | None = None
+
+
 def build_walk_forward_windows(
     candles: tuple[ClosedCandle, ...] | list[ClosedCandle],
     config: WalkForwardConfig,
@@ -86,21 +94,14 @@ def _build_strategy_date_windows(
     config: WalkForwardConfig,
     strategy_config: StrategyConfig,
 ) -> tuple[WalkForwardWindow, ...]:
-    instrument = ordered[0].instrument
-    by_date: dict[date, list[ClosedCandle]] = {}
-    for candle in ordered:
-        trading_date = trading_date_for_candle(candle, strategy_config)
-        by_date.setdefault(trading_date, []).append(candle)
-
+    by_date = _strategy_day_groups(ordered, strategy_config)
+    day_statuses = _strategy_day_statuses(
+        by_date, strategy_config, instrument=ordered[0].instrument
+    )
     by_complete_date = {
-        trading_date: day_candles
-        for trading_date, day_candles in by_date.items()
-        if _is_evaluable_strategy_day(
-            trading_date,
-            day_candles,
-            strategy_config=strategy_config,
-            instrument=instrument,
-        )
+        status.trading_date: by_date[status.trading_date]
+        for status in day_statuses
+        if status.evaluable
     }
     dates = sorted(by_complete_date)
     required_dates = config.train_window_days + config.oos_window_days
@@ -129,18 +130,69 @@ def _build_strategy_date_windows(
     return tuple(windows)
 
 
-def _is_evaluable_strategy_day(
+def summarize_strategy_days(
+    candles: tuple[ClosedCandle, ...] | list[ClosedCandle],
+    strategy_config: StrategyConfig,
+) -> tuple[StrategyDayStatus, ...]:
+    ordered = tuple(candles)
+    _validate_candles(ordered)
+    return _strategy_day_statuses(
+        _strategy_day_groups(ordered, strategy_config),
+        strategy_config,
+        instrument=ordered[0].instrument,
+    )
+
+
+def _strategy_day_groups(
+    ordered: tuple[ClosedCandle, ...],
+    strategy_config: StrategyConfig,
+) -> dict[date, list[ClosedCandle]]:
+    by_date: dict[date, list[ClosedCandle]] = {}
+    for candle in ordered:
+        trading_date = trading_date_for_candle(candle, strategy_config)
+        by_date.setdefault(trading_date, []).append(candle)
+    return by_date
+
+
+def _strategy_day_statuses(
+    by_date: dict[date, list[ClosedCandle]],
+    strategy_config: StrategyConfig,
+    *,
+    instrument: str,
+) -> tuple[StrategyDayStatus, ...]:
+    return tuple(
+        _strategy_day_status(
+            trading_date,
+            by_date[trading_date],
+            strategy_config=strategy_config,
+            instrument=instrument,
+        )
+        for trading_date in sorted(by_date)
+    )
+
+
+def _strategy_day_status(
     trading_date: date,
     day_candles: list[ClosedCandle],
     *,
     strategy_config: StrategyConfig,
     instrument: str,
-) -> bool:
+) -> StrategyDayStatus:
     windows = session_windows_for_date(trading_date, strategy_config)
     if max(candle.ts for candle in day_candles) < windows.ny_trade.end:
-        return False
+        return StrategyDayStatus(
+            trading_date=trading_date,
+            candle_count=len(day_candles),
+            evaluable=False,
+            reason="day ends before the NY trade window closes",
+        )
     if not any(windows.ny_trade.contains(candle.ts) for candle in day_candles):
-        return False
+        return StrategyDayStatus(
+            trading_date=trading_date,
+            candle_count=len(day_candles),
+            evaluable=False,
+            reason="no candles inside the NY trade window",
+        )
     try:
         compute_session_levels(
             list(day_candles),
@@ -148,9 +200,18 @@ def _is_evaluable_strategy_day(
             instrument=instrument,
             config=strategy_config,
         )
-    except ValueError:
-        return False
-    return True
+    except ValueError as exc:
+        return StrategyDayStatus(
+            trading_date=trading_date,
+            candle_count=len(day_candles),
+            evaluable=False,
+            reason=str(exc),
+        )
+    return StrategyDayStatus(
+        trading_date=trading_date,
+        candle_count=len(day_candles),
+        evaluable=True,
+    )
 
 
 def _validate_candles(candles: tuple[ClosedCandle, ...]) -> None:

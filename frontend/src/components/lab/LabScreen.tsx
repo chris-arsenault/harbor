@@ -1,6 +1,13 @@
-import type { CandleSourceStatus, LabVariantOverview } from "../../api/types";
-import { CandleSourcePanel, LabView, TuningRunNotice } from "./LabView";
-import { DEFAULT_TUNING_PAYLOAD } from "./tuningPayload";
+import type {
+  CandleSourceStatus,
+  LabVariantOverview,
+  OptimizationStartPayload,
+} from "../../api/types";
+import type { OptimizationPreflightResponse } from "../../api/optimizerTypes";
+import { CandleSourcePanel } from "./CandleSourcePanel";
+import { LabView, TuningRunNotice } from "./LabView";
+import { StudyWorkbench } from "./StudyWorkbench";
+import type { TuningStudyConfig } from "./tuningPayload";
 
 interface LabScreenProps {
   readonly snapshot: Parameters<typeof LabView>[0]["snapshot"] | null;
@@ -16,56 +23,38 @@ interface LabScreenProps {
   readonly candleSourceError: string | null;
   readonly candleImportResult: Parameters<typeof LabView>[0]["candleImportResult"];
   readonly onImportCandles: Parameters<typeof LabView>[0]["onImportCandles"];
+  readonly studyConfig: TuningStudyConfig;
+  readonly onStudyConfigChange: (config: TuningStudyConfig) => void;
+  readonly studyPayload: OptimizationStartPayload;
+  readonly preflight: OptimizationPreflightResponse | null;
+  readonly preflightPending: boolean;
+  readonly preflightError: string | null;
 }
 
-export function LabScreen({
-  snapshot,
-  variants,
-  liveStatus,
-  tuningRun,
-  onStartOptimization,
-  onCreatePaperVariant,
-  onRetireVariant,
-  onPromoteVariant,
-  candleSource,
-  candleSourcePending,
-  candleSourceError,
-  candleImportResult,
-  onImportCandles,
-}: LabScreenProps) {
-  const canStartOptimization = (candleSource?.coverage?.candle_count ?? 0) > 0;
+export function LabScreen(props: LabScreenProps) {
+  const {
+    snapshot,
+    variants,
+    liveStatus,
+    tuningRun,
+    onStartOptimization,
+    onCreatePaperVariant,
+    onRetireVariant,
+    onPromoteVariant,
+    candleSource,
+    candleSourcePending,
+    candleSourceError,
+    candleImportResult,
+    onImportCandles,
+    studyConfig,
+    onStudyConfigChange,
+    studyPayload,
+    preflight,
+    preflightPending,
+    preflightError,
+  } = props;
   if (snapshot === null) {
-    return (
-      <section className="lab-view" aria-label="Lab">
-        <section className="lab-actions" aria-label="Tuning controls">
-          <span>Optimizer</span>
-          <button
-            type="button"
-            className="lab-button"
-            disabled={!canStartOptimization || tuningRun.pending}
-            onClick={() => void onStartOptimization(DEFAULT_TUNING_PAYLOAD)}
-          >
-            {tuningRun.pending ? "Running tuning study" : "Start tuning study"}
-          </button>
-        </section>
-        <CandleSourcePanel
-          source={candleSource}
-          pending={candleSourcePending}
-          errorMessage={candleSourceError}
-          importResult={candleImportResult}
-          onImportCandles={onImportCandles}
-        />
-        <TuningRunNotice tuningRun={tuningRun} snapshot={null} />
-        <section className="lab-panel" aria-label="Lab empty state">
-          <h2>No tuning studies yet</h2>
-        </section>
-        {liveStatus ? (
-          <p className="lab-live-status" aria-live="polite">
-            {liveStatus}
-          </p>
-        ) : null}
-      </section>
-    );
+    return <EmptyLabScreen {...props} />;
   }
   return (
     <LabView
@@ -82,6 +71,61 @@ export function LabScreen({
       candleSourceError={candleSourceError}
       candleImportResult={candleImportResult}
       onImportCandles={onImportCandles}
+      studyConfig={studyConfig}
+      onStudyConfigChange={onStudyConfigChange}
+      studyPayload={studyPayload}
+      preflight={preflight}
+      preflightPending={preflightPending}
+      preflightError={preflightError}
     />
+  );
+}
+
+function EmptyLabScreen({
+  tuningRun,
+  onStartOptimization,
+  liveStatus,
+  candleSource,
+  candleSourcePending,
+  candleSourceError,
+  candleImportResult,
+  onImportCandles,
+  studyConfig,
+  onStudyConfigChange,
+  studyPayload,
+  preflight,
+  preflightPending,
+  preflightError,
+}: LabScreenProps) {
+  return (
+    <section className="lab-view" aria-label="Lab">
+      <CandleSourcePanel
+        source={candleSource}
+        pending={candleSourcePending}
+        errorMessage={candleSourceError}
+        importResult={candleImportResult}
+        onImportCandles={onImportCandles}
+      />
+      <StudyWorkbench
+        studyConfig={studyConfig}
+        onStudyConfigChange={onStudyConfigChange}
+        studyPayload={studyPayload}
+        preflight={preflight}
+        preflightPending={preflightPending}
+        preflightError={preflightError}
+        tuningRun={tuningRun}
+        candleSource={candleSource}
+        onStartOptimization={onStartOptimization}
+      />
+      <TuningRunNotice tuningRun={tuningRun} snapshot={null} />
+      <section className="lab-panel" aria-label="Lab empty state">
+        <h2>No tuning studies yet</h2>
+      </section>
+      {liveStatus ? (
+        <p className="lab-live-status" aria-live="polite">
+          {liveStatus}
+        </p>
+      ) : null}
+    </section>
   );
 }
