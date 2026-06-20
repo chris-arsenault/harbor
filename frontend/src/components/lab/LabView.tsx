@@ -12,6 +12,7 @@ import { displayValue } from "../../utils/format";
 import { CandidateScatter } from "./CandidateScatter";
 import { CandleSourcePanel } from "./CandleSourcePanel";
 import { LabActions } from "./LabActions";
+import { StudyResults } from "./StudyResults";
 import { StudyWorkbench } from "./StudyWorkbench";
 import { StudyProgress } from "./StudyProgress";
 import { TrialDiagnostics } from "./TrialDiagnostics";
@@ -96,6 +97,11 @@ export function LabView({
       />
       <TuningRunNotice tuningRun={tuningRun} snapshot={snapshot} />
       <StudyProgress study={snapshot.study} />
+      <StudyResults
+        candidates={snapshot.candidates}
+        optimizationResult={tuningRun.result}
+        paperCandidateCount={tuningRun.result?.candidates.length ?? snapshot.study.candidate_count}
+      />
       <TrialDiagnostics candidates={snapshot.candidates} optimizationResult={tuningRun.result} />
       <div className="lab-grid">
         <CandidateScatter candidates={snapshot.candidates} />

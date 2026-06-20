@@ -73,7 +73,7 @@ test("renders Lab as a secondary view and applies variant live envelopes", async
   expect(await screen.findByRole("region", { name: "Study progress" })).toHaveTextContent(
     "completed"
   );
-  expect(screen.getByLabelText("Candidate score scatter")).toHaveAttribute(
+  expect(screen.getByRole("img", { name: "Trial score scatter" })).toHaveAttribute(
     "data-points",
     "0:1.25:1.50"
   );

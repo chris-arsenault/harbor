@@ -640,6 +640,10 @@ p {
   gap: 0.5rem;
 }
 
+.lab-study-status-grid--compact {
+  grid-template-columns: repeat(auto-fit, minmax(8.75rem, 1fr));
+}
+
 .lab-progress div,
 .lab-study-status-grid div,
 .lab-panel,
@@ -859,6 +863,11 @@ p {
   padding: 0.75rem 0.875rem;
   color: #26312b;
   font-weight: 700;
+}
+
+.lab-result-summary {
+  margin: 0;
+  color: #26312b;
 }
 
 .lab-run-notice--error {

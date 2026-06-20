@@ -24,10 +24,13 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
     screen.getByRole("region", { name: "Study progress" }).querySelector("strong")
   ).toHaveTextContent("completed");
   expect(screen.getByText("2 trials")).toBeInTheDocument();
-  expect(screen.getByLabelText("Candidate score scatter")).toHaveAttribute(
+  expect(screen.getByRole("img", { name: "Trial score scatter" })).toHaveAttribute(
     "data-points",
     "0:1.25:1.50"
   );
+  expect(screen.getByLabelText("Study results")).toBeInTheDocument();
+  expect(screen.getByText("Paper candidates")).toBeInTheDocument();
+  expect(screen.getByText("passes score gate")).toBeInTheDocument();
   expect(
     screen.getByRole("row", { name: /1 candidate-1 1 20.00000000 1.50000000/i })
   ).toBeInTheDocument();
@@ -217,8 +220,13 @@ test("LabView shows completed zero-candidate studies instead of a blank leaderbo
     )
   ).toBeInTheDocument();
   expect(screen.getByLabelText("Trial diagnostics")).toBeInTheDocument();
+  expect(screen.getByLabelText("Study results")).toBeInTheDocument();
+  expect(screen.getByText("Passed score gate")).toBeInTheDocument();
+  expect(
+    screen.getByText(/No paper candidates. Best trial #0 is blocked because/)
+  ).toBeInTheDocument();
   expect(screen.getAllByText("in-sample and out-of-sample scores are not positive")).toHaveLength(
-    4
+    8
   );
   expect(screen.getByText("No paper variants on the leaderboard.")).toBeInTheDocument();
   expect(screen.getByText("0 parameters")).toBeInTheDocument();

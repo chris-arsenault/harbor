@@ -20,13 +20,13 @@ export function CandidateScatter({ candidates }: CandidateScatterProps) {
   );
 
   return (
-    <section className="lab-panel" aria-label="Candidates">
-      <h2>Candidates</h2>
+    <section className="lab-panel" aria-label="Trial score scatter">
+      <h2>Trial Score Scatter</h2>
       <svg
         className="lab-scatter"
         viewBox="0 0 240 160"
         role="img"
-        aria-label="Candidate score scatter"
+        aria-label="Trial score scatter"
         data-points={pointsData}
       >
         <line x1="32" y1="128" x2="220" y2="128" />

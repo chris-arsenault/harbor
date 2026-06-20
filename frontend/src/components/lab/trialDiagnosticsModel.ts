@@ -4,13 +4,15 @@ import type {
   OptimizationTrialResult,
 } from "../../api/types";
 
-interface TrialDiagnosticRow {
+export interface TrialDiagnosticRow {
   readonly id: string;
   readonly trialNo: number;
   readonly status: string;
   readonly inSampleScore: string;
   readonly outOfSampleScore: string;
+  readonly robustnessScore: string;
   readonly reason: string;
+  readonly params: Record<string, unknown>;
 }
 
 export function trialDiagnosticRows({
@@ -33,6 +35,8 @@ function trialDiagnosticRowFromTrial(trial: OptimizationTrialResult): TrialDiagn
     status: trial.status,
     inSampleScore: trial.is_score,
     outOfSampleScore: trial.oos_score,
+    robustnessScore: trial.robustness_score,
+    params: trial.params,
     reason:
       candidateRejectionReason({
         status: trial.status,
@@ -51,6 +55,8 @@ function trialDiagnosticRowFromCandidate(candidate: CandidateScatterPoint): Tria
     status: candidate.status,
     inSampleScore: candidate.in_sample_score,
     outOfSampleScore: candidate.out_of_sample_score,
+    robustnessScore: candidate.robustness_score,
+    params: candidate.params,
     reason:
       candidate.candidate_rejection_reason ??
       candidateRejectionReason({
@@ -64,7 +70,7 @@ function trialDiagnosticRowFromCandidate(candidate: CandidateScatterPoint): Tria
   };
 }
 
-function candidateRejectionReason({
+export function candidateRejectionReason({
   status,
   pruned,
   failureReason,
@@ -98,6 +104,30 @@ function candidateRejectionReason({
     return "out-of-sample score is not positive";
   }
   return null;
+}
+
+export function rankedTrialDiagnosticRows({
+  candidates,
+  optimizationResult,
+}: {
+  readonly candidates: readonly CandidateScatterPoint[];
+  readonly optimizationResult: OptimizationStartResponse | null;
+}): TrialDiagnosticRow[] {
+  return [...trialDiagnosticRows({ candidates, optimizationResult })].sort((left, right) => {
+    const scoreComparison =
+      scoreNumber(right.outOfSampleScore) - scoreNumber(left.outOfSampleScore) ||
+      scoreNumber(right.robustnessScore) - scoreNumber(left.robustnessScore) ||
+      scoreNumber(right.inSampleScore) - scoreNumber(left.inSampleScore);
+    if (scoreComparison !== 0) {
+      return scoreComparison;
+    }
+    return left.trialNo - right.trialNo;
+  });
+}
+
+function scoreNumber(score: string): number {
+  const value = Number(score);
+  return Number.isFinite(value) ? value : Number.NEGATIVE_INFINITY;
 }
 
 function isNonPositiveScore(score: string): boolean {
