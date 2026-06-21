@@ -23,7 +23,7 @@ import {
   useUpdateConfigMutation,
   useVariantsQuery,
 } from "./api/hooks";
-import type { VariantEquityCurve } from "./api/types";
+import type { CandleImportRequest, CandleImportResult, VariantEquityCurve } from "./api/types";
 import {
   emptyMarkers,
   emptyStatus,
@@ -198,13 +198,69 @@ function tuningRunState(mutation: ReturnType<typeof useStartOptimizationMutation
 function useLabCandleSource() {
   const candleSourceQuery = useCandleSourceQuery({ instrument: DEFAULT_RESEARCH_INSTRUMENT });
   const importCandlesMutation = useImportHistoricalCandlesMutation();
+  const [batchImportPending, setBatchImportPending] = useState(false);
+  const [batchImportResult, setBatchImportResult] = useState<CandleImportResult | null>(null);
+
+  async function importCandles(payload: CandleImportRequest) {
+    if (payload.instrument !== "research_universe" || !payload.instruments?.length) {
+      setBatchImportResult(null);
+      await importCandlesMutation.mutateAsync(payload);
+      return;
+    }
+
+    setBatchImportPending(true);
+    setBatchImportResult(null);
+    try {
+      const results: CandleImportResult[] = [];
+      for (const instrument of payload.instruments) {
+        results.push(
+          await importCandlesMutation.mutateAsync({
+            instrument,
+            count: payload.count,
+            from: payload.from,
+          })
+        );
+      }
+      setBatchImportResult(aggregateImportResult(results, payload));
+    } finally {
+      setBatchImportPending(false);
+    }
+  }
 
   return {
     status: candleSourceQuery.data ?? null,
-    pending: candleSourceQuery.isLoading || importCandlesMutation.isPending,
+    pending: candleSourceQuery.isLoading || importCandlesMutation.isPending || batchImportPending,
     errorMessage: firstErrorMessage(candleSourceQuery.error, importCandlesMutation.error),
-    importCandles: importCandlesMutation.mutate,
-    importResult: importCandlesMutation.data ?? null,
+    importCandles,
+    importResult: batchImportResult ?? importCandlesMutation.data ?? null,
+  };
+}
+
+function aggregateImportResult(
+  results: CandleImportResult[],
+  payload: CandleImportRequest
+): CandleImportResult {
+  const first = results[0];
+  return {
+    status: "completed",
+    source: "oanda_historical_import",
+    instrument: "research_universe",
+    instruments: results.map((result) => result.instrument),
+    requested_count: results.reduce((total, result) => total + result.requested_count, 0),
+    imported_count: results.reduce((total, result) => total + result.imported_count, 0),
+    from: payload.from ?? first?.from ?? null,
+    coverage: first?.coverage ?? {
+      instrument: "research_universe",
+      candle_count: 0,
+      from: null,
+      to: null,
+    },
+    results: results.map((result) => ({
+      instrument: result.instrument,
+      requested_count: result.requested_count,
+      imported_count: result.imported_count,
+      coverage: result.coverage,
+    })),
   };
 }
 
