@@ -325,15 +325,30 @@ def _validate_candidates_on_holdout(
     for candidate in candidates:
         trial = trial_by_no[candidate.source_trial_no]
         variant_config = _strategy_config_for_params(base_strategy_config, candidate.params)
-        holdout_result = run_backtest(
-            BacktestInput(
-                instrument=variant_config.instrument,
-                candles=holdout_candles,
-                strategy_config=variant_config,
-                instrument_rules=instrument_rules,
-                backtest_config=backtest_config,
+        try:
+            holdout_result = run_backtest(
+                BacktestInput(
+                    instrument=variant_config.instrument,
+                    candles=holdout_candles,
+                    strategy_config=variant_config,
+                    instrument_rules=instrument_rules,
+                    backtest_config=backtest_config,
+                )
             )
-        )
+        except ValueError as exc:
+            rows.append(
+                {
+                    "label": candidate.label,
+                    "source_trial_no": trial.trial_no,
+                    "status": "failed",
+                    "holdout_score": "0",
+                    "holdout_trade_count": 0,
+                    "holdout_net_pnl": "0",
+                    "reason": str(exc),
+                }
+            )
+            continue
+
         score = objective_score(holdout_result.stats, optimizer_config)
         passed = (
             holdout_result.stats.trade_count >= protocol_config.min_holdout_trades and score > 0

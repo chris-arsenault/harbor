@@ -1,17 +1,24 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from harbor_bot.backtester.models import BacktestConfig
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.optimizer.config import load_optimizer_config
-from harbor_bot.optimizer.models import OptimizationStatus, TrialRecord, TrialScore
+from harbor_bot.optimizer.models import (
+    CandidateVariant,
+    OptimizationStatus,
+    TrialRecord,
+    TrialScore,
+)
 from harbor_bot.optimizer.research_protocol import (
     ResearchProtocolConfig,
     _rank_discovery_candidates,
+    _validate_candidates_on_holdout,
     research_optimizer_config,
     research_readiness,
 )
-from harbor_bot.strategy.models import strategy_config_from_defaults
+from harbor_bot.strategy.models import InstrumentRules, strategy_config_from_defaults
 
 
 def test_research_readiness_rejects_short_datasets_with_concrete_requirements() -> None:
@@ -104,6 +111,48 @@ def test_research_protocol_can_holdout_validate_broader_discovery_shortlist() ->
     assert [candidate.source_trial_no for candidate in candidates] == [0, 1, 2]
 
 
+def test_holdout_validation_records_shifted_session_failures() -> None:
+    base_config = strategy_config_from_defaults(load_default_config())
+    optimizer_config = research_optimizer_config(load_optimizer_config())
+
+    rows = _validate_candidates_on_holdout(
+        trials=(
+            _trial(
+                1,
+                in_sample="1.0",
+                out_of_sample="1.0",
+                robustness="1.0",
+                params={"london_start_offset_minutes": 600, "london_end_offset_minutes": 600},
+            ),
+        ),
+        candidates=(
+            CandidateVariant(
+                label="candidate-1",
+                params={"london_start_offset_minutes": 600, "london_end_offset_minutes": 600},
+                source_trial_no=1,
+            ),
+        ),
+        holdout_candles=_research_days("2026-01-05", day_count=2),
+        base_strategy_config=base_config,
+        instrument_rules=_rules(),
+        backtest_config=BacktestConfig(),
+        optimizer_config=optimizer_config,
+        protocol_config=ResearchProtocolConfig(),
+    )
+
+    assert rows == [
+        {
+            "label": "candidate-1",
+            "source_trial_no": 1,
+            "status": "failed",
+            "holdout_score": "0",
+            "holdout_trade_count": 0,
+            "holdout_net_pnl": "0",
+            "reason": "cannot compute London levels without closed session candles",
+        }
+    ]
+
+
 def _research_days(start_day: str, *, day_count: int) -> tuple[ClosedCandle, ...]:
     start = datetime.fromisoformat(f"{start_day}T00:00:00+00:00")
     candles = []
@@ -121,16 +170,28 @@ def _trial(
     in_sample: str,
     out_of_sample: str,
     robustness: str,
+    params: dict[str, object] | None = None,
 ) -> TrialRecord:
     return TrialRecord(
         trial_no=trial_no,
-        params={"fvg_window": trial_no + 1},
+        params=params or {"fvg_window": trial_no + 1},
         score=TrialScore(
             in_sample_score=Decimal(in_sample),
             out_of_sample_score=Decimal(out_of_sample),
             robustness_score=Decimal(robustness),
         ),
         status=OptimizationStatus.COMPLETED,
+    )
+
+
+def _rules() -> InstrumentRules:
+    return InstrumentRules(
+        instrument="EUR_USD",
+        pip_location=-4,
+        display_precision=5,
+        trade_units_precision=0,
+        minimum_trade_size=Decimal("1"),
+        unit_step=Decimal("1"),
     )
 
 
