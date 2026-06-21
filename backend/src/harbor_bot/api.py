@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import (
+    BackgroundTasks,
     Depends,
     FastAPI,
     HTTPException,
@@ -331,10 +332,11 @@ def create_app(
     @app.post("/api/optimize")
     async def start_optimization(
         payload: dict[str, Any],
+        background_tasks: BackgroundTasks,
         service: OptimizerService = OPTIMIZER_SERVICE_DEPENDENCY,
     ) -> dict[str, Any]:
         try:
-            return await service.start_optimization(payload)
+            return await service.start_optimization(payload, background_tasks=background_tasks)
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

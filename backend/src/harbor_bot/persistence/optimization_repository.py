@@ -2,7 +2,7 @@ from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from harbor_bot.optimizer.models import CandidateVariant, OptimizationStatus, TrialRecord
@@ -42,6 +42,70 @@ async def append_optimization_run(
         return study_id
 
 
+async def start_optimization_run(
+    engine: AsyncEngine,
+    *,
+    search_space_json: Mapping[str, Any],
+    walkforward_json: Mapping[str, Any],
+) -> int:
+    async with transaction(engine) as connection:
+        return await create_optimization_study(
+            connection,
+            search_space_json=search_space_json,
+            walkforward_json=walkforward_json,
+            status=OptimizationStatus.RUNNING,
+        )
+
+
+async def complete_optimization_run(
+    engine: AsyncEngine,
+    *,
+    study_id: int,
+    search_space_json: Mapping[str, Any],
+    walkforward_json: Mapping[str, Any],
+    trials: tuple[TrialRecord, ...],
+    candidates: tuple[CandidateVariant, ...],
+) -> None:
+    async with transaction(engine) as connection:
+        await update_optimization_study(
+            connection,
+            study_id=study_id,
+            search_space_json=search_space_json,
+            walkforward_json=walkforward_json,
+            status=OptimizationStatus.COMPLETED,
+        )
+        trial_ids: dict[int, int] = {}
+        for trial in trials:
+            trial_ids[trial.trial_no] = await append_optimization_trial(
+                connection,
+                study_id=study_id,
+                trial=trial,
+            )
+        for candidate in candidates:
+            await append_candidate_variant(
+                connection,
+                candidate=candidate,
+                source_trial_id=trial_ids[candidate.source_trial_no],
+            )
+
+
+async def fail_optimization_run(
+    engine: AsyncEngine,
+    *,
+    study_id: int,
+    search_space_json: Mapping[str, Any],
+    walkforward_json: Mapping[str, Any],
+) -> None:
+    async with transaction(engine) as connection:
+        await update_optimization_study(
+            connection,
+            study_id=study_id,
+            search_space_json=search_space_json,
+            walkforward_json=walkforward_json,
+            status=OptimizationStatus.FAILED,
+        )
+
+
 async def create_optimization_study(
     connection: AsyncConnection,
     *,
@@ -59,6 +123,29 @@ async def create_optimization_study(
         .returning(opt_studies.c.id)
     )
     return int(result.scalar_one())
+
+
+async def update_optimization_study(
+    connection: AsyncConnection,
+    *,
+    study_id: int,
+    search_space_json: Mapping[str, Any],
+    walkforward_json: Mapping[str, Any],
+    status: OptimizationStatus,
+) -> None:
+    result = await connection.execute(
+        update(opt_studies)
+        .where(opt_studies.c.id == study_id)
+        .values(
+            search_space_json=dict(search_space_json),
+            walkforward_json=dict(walkforward_json),
+            status=OptimizationStatus(status).value,
+        )
+        .returning(opt_studies.c.id)
+    )
+    if result.scalar_one_or_none() is None:
+        msg = f"optimization study {study_id} was not found"
+        raise ValueError(msg)
 
 
 async def append_optimization_trial(

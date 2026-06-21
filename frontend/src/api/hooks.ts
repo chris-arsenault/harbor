@@ -94,6 +94,7 @@ export function useOptimizationStudiesQuery(params: { limit?: number } = {}) {
   return useQuery({
     queryKey: ["optimization-studies", params],
     queryFn: () => fetchOptimizationStudies(params),
+    refetchInterval: 5_000,
   });
 }
 
@@ -116,6 +117,7 @@ export function useLabStudyQuery(studyId: number | null) {
       return fetchLabStudy(studyId);
     },
     enabled: studyId !== null,
+    refetchInterval: 5_000,
   });
 }
 

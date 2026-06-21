@@ -108,7 +108,13 @@ class FakeOptimizerService:
         self.started_payloads: list[dict[str, Any]] = []
         self.preflight_payloads: list[dict[str, Any]] = []
 
-    async def start_optimization(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def start_optimization(
+        self,
+        payload: dict[str, Any],
+        *,
+        background_tasks: Any = None,
+    ) -> dict[str, Any]:
+        _ = background_tasks
         self.started_payloads.append(payload)
         return {
             "study_id": 42,

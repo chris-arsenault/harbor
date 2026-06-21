@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -30,12 +31,20 @@ from harbor_bot.persistence.market_repository import (
     get_candle_coverage,
     list_candles_range,
 )
-from harbor_bot.persistence.optimization_repository import append_optimization_run
+from harbor_bot.persistence.optimization_repository import (
+    append_optimization_run,
+    complete_optimization_run,
+    fail_optimization_run,
+    start_optimization_run,
+)
 from harbor_bot.strategy.models import InstrumentRules, strategy_config_from_defaults
 from harbor_bot.strategy.sessions import trading_date_for_candle
 
 OptimizationRunner = Callable[..., OptimizationRunResult]
 PersistenceWriter = Callable[..., Awaitable[int]]
+StudyStarter = Callable[..., Awaitable[int]]
+StudyCompleter = Callable[..., Awaitable[None]]
+StudyFailureWriter = Callable[..., Awaitable[None]]
 CandleRangeReader = Callable[..., Awaitable[list[dict[str, Any]]]]
 CandleWindowSelector = Callable[..., Awaitable[dict[str, Any] | None]]
 _UTC_OFFSET = timedelta(0)
@@ -47,6 +56,9 @@ class OptimizerService:
     fixture_base_path: Path | None = None
     optimization_runner: OptimizationRunner = run_optimization
     persistence_writer: PersistenceWriter = append_optimization_run
+    study_starter: StudyStarter = start_optimization_run
+    study_completer: StudyCompleter = complete_optimization_run
+    study_failure_writer: StudyFailureWriter = fail_optimization_run
     candle_reader: CandleRangeReader = None
     candle_window_selector: CandleWindowSelector = None
 
@@ -163,32 +175,27 @@ class OptimizerService:
             },
         }
 
-    async def start_optimization(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        payload = await _payload_with_persisted_candles(
-            payload,
-            engine=self.persistence_engine,
-            candle_reader=self.candle_reader or read_persisted_candle_records,
-            candle_window_selector=(
-                self.candle_window_selector or select_persisted_candle_coverage
-            ),
-        )
-        request = _request_from_payload(payload, fixture_base_path=self.fixture_base_path)
-        protocol_report = None
-        optimizer_config = request["optimizer_config"]
-        if _is_persisted_candle_payload(payload):
-            runner_kwargs = request["runner_kwargs"]
-            protocol = run_research_protocol(
-                candles=runner_kwargs["candles"],
-                base_strategy_config=runner_kwargs["base_strategy_config"],
-                instrument_rules=runner_kwargs["instrument_rules"],
-                backtest_config=runner_kwargs["backtest_config"],
-                optimizer_config=optimizer_config,
+    async def start_optimization(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        background_tasks: Any = None,
+    ) -> dict[str, Any]:
+        if background_tasks is not None and self.should_queue_optimization(payload):
+            response = await self.queue_optimization(payload)
+            background_tasks.add_task(
+                self.finish_queued_optimization,
+                response["study_id"],
+                dict(payload),
             )
-            result = protocol.run_result
-            protocol_report = protocol.report
-            optimizer_config = research_optimizer_config(optimizer_config)
-        else:
-            result = self.optimization_runner(**request["runner_kwargs"])
+            return response
+
+        (
+            result,
+            optimizer_config,
+            protocol_report,
+            materialized_payload,
+        ) = await self._run_optimization(payload)
         study_id = None
         if self.persistence_engine is not None:
             study_id = await self.persistence_writer(
@@ -205,9 +212,123 @@ class OptimizerService:
         return optimization_result_to_response(
             result,
             study_id=study_id,
-            candle_source=payload.get("_candle_source"),
+            candle_source=materialized_payload.get("_candle_source"),
             research_protocol=protocol_report,
         )
+
+    def should_queue_optimization(self, payload: Mapping[str, Any]) -> bool:
+        return (
+            self.persistence_engine is not None
+            and _requests_persisted_candles(payload)
+            and "candles" not in payload
+            and "fixture" not in payload
+        )
+
+    async def queue_optimization(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        if self.persistence_engine is None:
+            msg = "queued persisted-candle optimization requires a persistence engine"
+            raise ValueError(msg)
+
+        optimizer_config = research_optimizer_config(
+            _optimizer_config_from_payload(payload.get("optimizer_config", {}))
+        )
+        selection = await _select_persisted_candle_range(
+            payload,
+            engine=self.persistence_engine,
+            candle_window_selector=(
+                self.candle_window_selector or select_persisted_candle_coverage
+            ),
+        )
+        candle_source = _candle_source_from_selection(selection)
+        walkforward_json = _queued_study_metadata(
+            optimizer_config,
+            candle_source=candle_source,
+        )
+        study_id = await self.study_starter(
+            self.persistence_engine,
+            search_space_json=optimizer_config.search_space.to_jsonable(),
+            walkforward_json=walkforward_json,
+        )
+        return queued_optimization_response(
+            study_id=study_id,
+            optimizer_config=optimizer_config,
+            candle_source=candle_source,
+        )
+
+    async def finish_queued_optimization(
+        self,
+        study_id: int,
+        payload: Mapping[str, Any],
+    ) -> None:
+        if self.persistence_engine is None:
+            return
+        fallback_config = research_optimizer_config(
+            _optimizer_config_from_payload(payload.get("optimizer_config", {}))
+        )
+        try:
+            (
+                result,
+                optimizer_config,
+                protocol_report,
+                materialized_payload,
+            ) = await self._run_optimization(payload, offload=True)
+            await self.study_completer(
+                self.persistence_engine,
+                study_id=study_id,
+                search_space_json=optimizer_config.search_space.to_jsonable(),
+                walkforward_json=_study_walkforward_metadata(
+                    optimizer_config,
+                    protocol_report=protocol_report,
+                ),
+                trials=result.trials,
+                candidates=result.candidates,
+            )
+            _ = materialized_payload
+        except Exception as exc:  # noqa: BLE001 - background tasks must persist failures.
+            await self.study_failure_writer(
+                self.persistence_engine,
+                study_id=study_id,
+                search_space_json=fallback_config.search_space.to_jsonable(),
+                walkforward_json={
+                    **_study_walkforward_metadata(
+                        fallback_config,
+                        protocol_report=None,
+                    ),
+                    "failure_reason": str(exc),
+                },
+            )
+
+    async def _run_optimization(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        offload: bool = False,
+    ) -> tuple[OptimizationRunResult, OptimizationConfig, dict[str, Any] | None, dict[str, Any]]:
+        payload = await _payload_with_persisted_candles(
+            payload,
+            engine=self.persistence_engine,
+            candle_reader=self.candle_reader or read_persisted_candle_records,
+            candle_window_selector=(
+                self.candle_window_selector or select_persisted_candle_coverage
+            ),
+        )
+        request = _request_from_payload(payload, fixture_base_path=self.fixture_base_path)
+        protocol_report = None
+        optimizer_config = request["optimizer_config"]
+        if _is_persisted_candle_payload(payload):
+            runner_kwargs = request["runner_kwargs"]
+            run_protocol = _research_protocol_runner(runner_kwargs, optimizer_config)
+            protocol = await asyncio.to_thread(run_protocol) if offload else run_protocol()
+            result = protocol.run_result
+            protocol_report = protocol.report
+            optimizer_config = research_optimizer_config(optimizer_config)
+        else:
+
+            def run_optimizer() -> OptimizationRunResult:
+                return self.optimization_runner(**request["runner_kwargs"])
+
+            result = await asyncio.to_thread(run_optimizer) if offload else run_optimizer()
+        return result, optimizer_config, protocol_report, payload
 
 
 def optimization_result_to_response(
@@ -260,9 +381,62 @@ def optimization_result_to_response(
     }
 
 
+def queued_optimization_response(
+    *,
+    study_id: int,
+    optimizer_config: OptimizationConfig,
+    candle_source: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "study_id": study_id,
+        "status": OptimizationStatus.RUNNING.value,
+        "sampler": "pending",
+        "pruner": "pending",
+        "trial_count": 0,
+        "candidates": [],
+        "best_trial_history": [],
+        "trials": [],
+        "data_separation": {
+            "source": _data_source_label(candle_source),
+            "candle_source": dict(candle_source),
+            "no_live_forward_data": True,
+            "variant_trades_used": False,
+            "oanda_streams_used": False,
+            "broker_state_used": False,
+            "paper_engine_used": False,
+            "frontend_ui_used": False,
+        },
+        "research_protocol": {
+            "status": OptimizationStatus.RUNNING.value,
+            "message": "research study queued against persisted closed candles",
+            "optimizer_config": optimizer_config.to_jsonable(),
+        },
+    }
+
+
 def _is_persisted_candle_payload(payload: Mapping[str, Any]) -> bool:
     candle_source = payload.get("_candle_source")
     return isinstance(candle_source, Mapping) and candle_source.get("source") == "persisted_candles"
+
+
+def _requests_persisted_candles(payload: Mapping[str, Any]) -> bool:
+    return payload.get("source") == "persisted_candles" or "candle_range" in payload
+
+
+def _research_protocol_runner(
+    runner_kwargs: Mapping[str, Any],
+    optimizer_config: OptimizationConfig,
+):
+    def run() -> Any:
+        return run_research_protocol(
+            candles=runner_kwargs["candles"],
+            base_strategy_config=runner_kwargs["base_strategy_config"],
+            instrument_rules=runner_kwargs["instrument_rules"],
+            backtest_config=runner_kwargs["backtest_config"],
+            optimizer_config=optimizer_config,
+        )
+
+    return run
 
 
 def _study_walkforward_metadata(
@@ -274,6 +448,18 @@ def _study_walkforward_metadata(
     if protocol_report is not None:
         metadata["research_protocol"] = protocol_report
     return metadata
+
+
+def _queued_study_metadata(
+    optimizer_config: OptimizationConfig,
+    *,
+    candle_source: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        **_study_walkforward_metadata(optimizer_config, protocol_report=None),
+        "queued": True,
+        "candle_source": dict(candle_source),
+    }
 
 
 def _baseline_summary(
@@ -517,33 +703,14 @@ async def _payload_with_persisted_candles(
     if payload.get("source") != "persisted_candles" and "candle_range" not in payload:
         return dict(payload)
 
-    strategy_config = strategy_config_from_defaults(load_default_config())
-    instrument = str(payload.get("instrument") or strategy_config.instrument)
-    raw_range = payload.get("candle_range")
-    if not isinstance(raw_range, Mapping):
-        optimizer_config = research_optimizer_config(
-            _optimizer_config_from_payload(payload.get("optimizer_config", {}))
-        )
-        required_days = (
-            optimizer_config.walk_forward.train_window_days
-            + optimizer_config.walk_forward.oos_window_days
-        )
-        selected_window = await candle_window_selector(
-            engine,
-            instrument=instrument,
-            required_days=required_days,
-        )
-        if selected_window is None:
-            msg = (
-                f"no persisted closed-candle window is available for {instrument}; "
-                "import OANDA historical candles before starting a tuning study"
-            )
-            raise ValueError(msg)
-        start = selected_window["from"]
-        end = selected_window["to"]
-    else:
-        start = _parse_utc_ts(str(raw_range["from"]))
-        end = _parse_utc_ts(str(raw_range["to"]))
+    selection = await _select_persisted_candle_range(
+        payload,
+        engine=engine,
+        candle_window_selector=candle_window_selector,
+    )
+    instrument = selection["instrument"]
+    start = selection["from"]
+    end = selection["to"]
     candles = await candle_reader(engine, instrument=instrument, start=start, end=end)
     if not candles:
         msg = (
@@ -567,6 +734,68 @@ async def _payload_with_persisted_candles(
     }
     next_payload.pop("fixture", None)
     return next_payload
+
+
+async def _select_persisted_candle_range(
+    payload: Mapping[str, Any],
+    *,
+    engine: AsyncEngine | None,
+    candle_window_selector: CandleWindowSelector,
+) -> dict[str, Any]:
+    strategy_config = strategy_config_from_defaults(load_default_config())
+    instrument = str(payload.get("instrument") or strategy_config.instrument)
+    optimizer_config = research_optimizer_config(
+        _optimizer_config_from_payload(payload.get("optimizer_config", {}))
+    )
+    required_days = (
+        optimizer_config.walk_forward.train_window_days
+        + optimizer_config.walk_forward.oos_window_days
+    )
+    raw_range = payload.get("candle_range")
+    if isinstance(raw_range, Mapping):
+        return {
+            "instrument": instrument,
+            "from": _parse_utc_ts(str(raw_range["from"])),
+            "to": _parse_utc_ts(str(raw_range["to"])),
+            "required_days": required_days,
+            "coverage": None,
+        }
+
+    selected_window = await candle_window_selector(
+        engine,
+        instrument=instrument,
+        required_days=required_days,
+    )
+    if selected_window is None:
+        msg = (
+            f"no persisted closed-candle window is available for {instrument}; "
+            "import OANDA historical candles before starting a tuning study"
+        )
+        raise ValueError(msg)
+    return {
+        "instrument": instrument,
+        "from": selected_window["from"],
+        "to": selected_window["to"],
+        "required_days": required_days,
+        "coverage": selected_window.get("coverage"),
+    }
+
+
+def _candle_source_from_selection(selection: Mapping[str, Any]) -> dict[str, Any]:
+    start = selection["from"]
+    end = selection["to"]
+    candle_source = {
+        "source": "persisted_candles",
+        "origin": "database",
+        "instrument": selection["instrument"],
+        "from": start.isoformat(),
+        "to": end.isoformat(),
+        "required_days": selection["required_days"],
+    }
+    coverage = selection.get("coverage")
+    if isinstance(coverage, Mapping):
+        candle_source["available_candle_count"] = coverage.get("candle_count")
+    return candle_source
 
 
 def _best_trial_history(result: OptimizationRunResult) -> list[dict[str, Any]]:

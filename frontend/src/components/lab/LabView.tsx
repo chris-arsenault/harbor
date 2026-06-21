@@ -179,52 +179,122 @@ export function TuningRunNotice({
   readonly tuningRun: TuningRunState;
   readonly snapshot: LabSnapshot | null;
 }) {
+  const notice = tuningRunNotice(tuningRun, snapshot);
+  if (notice === null) {
+    return null;
+  }
+  const className =
+    notice.level === "error" ? "lab-run-notice lab-run-notice--error" : "lab-run-notice";
+  return (
+    <p className={className} aria-live="polite">
+      {notice.message}
+    </p>
+  );
+}
+
+interface RunNotice {
+  readonly level: "info" | "error";
+  readonly message: string;
+}
+
+function tuningRunNotice(
+  tuningRun: TuningRunState,
+  snapshot: LabSnapshot | null
+): RunNotice | null {
   if (tuningRun.pending) {
-    return (
-      <p className="lab-run-notice" aria-live="polite">
-        Research study is running.
-      </p>
-    );
+    return { level: "info", message: "Research study is running." };
   }
   if (tuningRun.errorMessage !== null) {
-    return (
-      <p className="lab-run-notice lab-run-notice--error" aria-live="polite">
-        {tuningRun.errorMessage}
-      </p>
-    );
+    return { level: "error", message: tuningRun.errorMessage };
   }
-  if (tuningRun.result !== null) {
-    const studyId = tuningRun.result.study_id;
-    const trialCount = tuningRun.result.trials.length;
-    const candidateCount = tuningRun.result.candidates.length;
-    const explanation = noCandidateExplanation(
-      trialDiagnosticRows({ candidates: [], optimizationResult: tuningRun.result })
-    );
-    return (
-      <p className="lab-run-notice" aria-live="polite">
-        Study {studyId === null ? "completed" : `#${studyId} completed`}: {trialCount} trials,{" "}
-        {candidateCount} candidates.
-        {candidateCount === 0 ? ` ${explanation}` : " Candidates are ready for paper variants."}
-      </p>
-    );
-  }
+  return (
+    queuedResultNotice(tuningRun, snapshot) ??
+    completedResultNotice(tuningRun) ??
+    snapshotNotice(snapshot)
+  );
+}
+
+function queuedResultNotice(
+  tuningRun: TuningRunState,
+  snapshot: LabSnapshot | null
+): RunNotice | null {
+  const result = tuningRun.result;
   if (
-    snapshot !== null &&
-    snapshot.study.status === "completed" &&
-    snapshot.study.candidate_count === 0
+    result !== null &&
+    result.status === "running" &&
+    snapshotSupersedesRunningResult(snapshot, result.study_id)
   ) {
+    return null;
+  }
+  if (tuningRun.result !== null && tuningRun.result.status === "running") {
+    const studyId = tuningRun.result.study_id;
+    return {
+      level: "info",
+      message: `Study ${
+        studyId === null ? "started" : `#${studyId} started`
+      }. Trials will appear when the research run completes.`,
+    };
+  }
+  return null;
+}
+
+function snapshotSupersedesRunningResult(
+  snapshot: LabSnapshot | null,
+  studyId: number | null
+): boolean {
+  return (
+    snapshot !== null && snapshot.study.study_id === studyId && snapshot.study.status !== "running"
+  );
+}
+
+function completedResultNotice(tuningRun: TuningRunState): RunNotice | null {
+  const result = tuningRun.result;
+  if (result === null || result.status === "running") {
+    return null;
+  }
+  const studyId = result.study_id;
+  const trialCount = result.trials.length;
+  const candidateCount = result.candidates.length;
+  const explanation = noCandidateExplanation(
+    trialDiagnosticRows({ candidates: [], optimizationResult: result })
+  );
+  return {
+    level: "info",
+    message: `Study ${
+      studyId === null ? "completed" : `#${studyId} completed`
+    }: ${trialCount} trials, ${candidateCount} candidates.${
+      candidateCount === 0 ? ` ${explanation}` : " Candidates are ready for paper variants."
+    }`,
+  };
+}
+
+function snapshotNotice(snapshot: LabSnapshot | null): RunNotice | null {
+  if (snapshot === null) {
+    return null;
+  }
+  if (snapshot.study.status === "running") {
+    return {
+      level: "info",
+      message: `Study #${snapshot.study.study_id} is running. Trials will appear when the research run completes.`,
+    };
+  }
+  if (snapshot.study.status === "failed") {
+    return {
+      level: "error",
+      message: `Study #${snapshot.study.study_id} failed before producing candidates.`,
+    };
+  }
+  if (snapshot.study.status === "completed" && snapshot.study.candidate_count === 0) {
     const explanation = noCandidateExplanation(
       trialDiagnosticRows({
         candidates: snapshot.candidates,
         optimizationResult: null,
       })
     );
-    return (
-      <p className="lab-run-notice" aria-live="polite">
-        Latest study #{snapshot.study.study_id} completed: {snapshot.study.trial_count} trials, 0
-        candidates. {explanation}
-      </p>
-    );
+    return {
+      level: "info",
+      message: `Latest study #${snapshot.study.study_id} completed: ${snapshot.study.trial_count} trials, 0 candidates. ${explanation}`,
+    };
   }
   return null;
 }

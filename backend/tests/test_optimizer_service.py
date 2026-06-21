@@ -100,6 +100,86 @@ async def test_optimizer_service_persists_when_engine_is_configured() -> None:
 
 
 @pytest.mark.asyncio
+async def test_optimizer_service_queues_persisted_source_with_background_tasks() -> None:
+    starts = []
+
+    async def starter(engine, **kwargs) -> int:
+        starts.append((engine, kwargs))
+        return 99
+
+    async def selector(engine, *, instrument: str, required_days: int) -> dict[str, Any]:
+        assert engine == "engine"
+        assert instrument == "GBP_USD"
+        assert required_days == 80
+        return {
+            "instrument": instrument,
+            "from": datetime(2026, 1, 15, tzinfo=UTC),
+            "to": datetime(2026, 6, 15, tzinfo=UTC),
+            "coverage": {"candle_count": 180_000},
+        }
+
+    tasks = _BackgroundTasks()
+    service = OptimizerService(
+        persistence_engine="engine",
+        candle_window_selector=selector,
+        study_starter=starter,
+    )
+
+    response = await service.start_optimization(
+        {"source": "persisted_candles", "instrument": "GBP_USD"},
+        background_tasks=tasks,
+    )
+
+    assert response["study_id"] == 99
+    assert response["status"] == "running"
+    assert response["trials"] == []
+    assert response["data_separation"]["candle_source"]["instrument"] == "GBP_USD"
+    assert starts[0][1]["walkforward_json"]["queued"] is True
+    assert len(tasks.calls) == 1
+    assert tasks.calls[0][0] == service.finish_queued_optimization
+    assert tasks.calls[0][1] == (99, {"source": "persisted_candles", "instrument": "GBP_USD"})
+
+
+@pytest.mark.asyncio
+async def test_optimizer_service_marks_queued_study_failed_when_background_run_fails() -> None:
+    failures = []
+
+    async def selector(engine, *, instrument: str, required_days: int) -> dict[str, Any]:
+        return {
+            "instrument": instrument,
+            "from": datetime(2026, 1, 15, tzinfo=UTC),
+            "to": datetime(2026, 1, 16, tzinfo=UTC),
+        }
+
+    async def reader(
+        engine,
+        *,
+        instrument: str,
+        start: datetime,
+        end: datetime,
+    ) -> list[dict[str, Any]]:
+        return [_record("2026-01-15T14:00:00+00:00")]
+
+    async def failure_writer(engine, **kwargs) -> None:
+        failures.append((engine, kwargs))
+
+    service = OptimizerService(
+        persistence_engine="engine",
+        candle_reader=reader,
+        candle_window_selector=selector,
+        study_failure_writer=failure_writer,
+    )
+
+    await service.finish_queued_optimization(42, {"source": "persisted_candles"})
+
+    assert failures[0][0] == "engine"
+    assert failures[0][1]["study_id"] == 42
+    assert failures[0][1]["walkforward_json"]["failure_reason"].endswith(
+        "complete strategy days available; 120 required"
+    )
+
+
+@pytest.mark.asyncio
 async def test_optimizer_service_rejects_requests_without_local_data() -> None:
     service = OptimizerService(optimization_runner=lambda **_: _run_result())
 
@@ -258,6 +338,14 @@ def _run_result() -> OptimizationRunResult:
 
 async def _writer(engine, **kwargs) -> int:
     return 42
+
+
+class _BackgroundTasks:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def add_task(self, task, *args) -> None:
+        self.calls.append((task, args))
 
 
 def _record(ts: str, *, instrument: str = "EUR_USD") -> dict[str, object]:

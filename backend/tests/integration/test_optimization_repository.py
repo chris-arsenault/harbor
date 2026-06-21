@@ -18,7 +18,10 @@ from harbor_bot.optimizer.models import (
 from harbor_bot.persistence.database import create_engine
 from harbor_bot.persistence.optimization_repository import (
     append_optimization_run,
+    complete_optimization_run,
+    fail_optimization_run,
     get_optimization_study,
+    start_optimization_run,
 )
 from harbor_bot.persistence.schema import opt_studies, opt_trials, variants
 from harbor_bot.settings import Settings
@@ -36,6 +39,12 @@ def test_optimization_run_rolls_back_when_variant_insert_fails(postgres_url: str
     command.upgrade(_alembic_config(postgres_url), "head")
 
     asyncio.run(_assert_optimization_rollback(postgres_url))
+
+
+def test_queued_optimization_run_transitions_to_completed_and_failed(postgres_url: str) -> None:
+    command.upgrade(_alembic_config(postgres_url), "head")
+
+    asyncio.run(_assert_queued_optimization_transitions(postgres_url))
 
 
 async def _assert_optimization_round_trip(postgres_url: str) -> None:
@@ -80,6 +89,65 @@ async def _assert_optimization_round_trip(postgres_url: str) -> None:
         )
         assert stored["variants"][0]["label"] == "candidate-1"
         assert stored["variants"][0]["status"] == "paper"
+    finally:
+        await engine.dispose()
+
+
+async def _assert_queued_optimization_transitions(postgres_url: str) -> None:
+    engine = create_engine(Settings(DATABASE_URL=postgres_url))
+    config = load_optimizer_config()
+    try:
+        completed_study_id = await start_optimization_run(
+            engine,
+            search_space_json=config.search_space.to_jsonable(),
+            walkforward_json={"queued": True},
+        )
+        failed_study_id = await start_optimization_run(
+            engine,
+            search_space_json=config.search_space.to_jsonable(),
+            walkforward_json={"queued": True},
+        )
+
+        async with engine.connect() as connection:
+            queued = await get_optimization_study(connection, study_id=completed_study_id)
+        assert queued is not None
+        assert queued["status"] == "running"
+        assert queued["trials"] == []
+
+        await complete_optimization_run(
+            engine,
+            study_id=completed_study_id,
+            search_space_json=config.search_space.to_jsonable(),
+            walkforward_json={"completed": True},
+            trials=_trials(),
+            candidates=(
+                CandidateVariant(
+                    label="candidate-1",
+                    params={"fvg_window": 8},
+                    source_trial_no=0,
+                ),
+            ),
+        )
+        await fail_optimization_run(
+            engine,
+            study_id=failed_study_id,
+            search_space_json=config.search_space.to_jsonable(),
+            walkforward_json={"failure_reason": "optimizer failed"},
+        )
+
+        async with engine.connect() as connection:
+            completed = await get_optimization_study(connection, study_id=completed_study_id)
+            failed = await get_optimization_study(connection, study_id=failed_study_id)
+
+        assert completed is not None
+        assert completed["status"] == "completed"
+        assert completed["walkforward_json"] == {"completed": True}
+        assert len(completed["trials"]) == 2
+        assert completed["variants"][0]["label"] == "candidate-1"
+        assert failed is not None
+        assert failed["status"] == "failed"
+        assert failed["walkforward_json"] == {"failure_reason": "optimizer failed"}
+        assert failed["trials"] == []
     finally:
         await engine.dispose()
 
