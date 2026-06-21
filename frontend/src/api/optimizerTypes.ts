@@ -41,6 +41,7 @@ export interface ResearchProtocolReadiness {
   data_requirements: {
     trial_count: number;
     candidate_count: number;
+    discovery_candidate_count: number;
     min_evaluable_days: number;
     min_discovery_days: number;
     holdout_days: number;

@@ -4,8 +4,10 @@ from decimal import Decimal
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.optimizer.config import load_optimizer_config
+from harbor_bot.optimizer.models import OptimizationStatus, TrialRecord, TrialScore
 from harbor_bot.optimizer.research_protocol import (
     ResearchProtocolConfig,
+    _rank_discovery_candidates,
     research_optimizer_config,
     research_readiness,
 )
@@ -87,6 +89,21 @@ def test_research_optimizer_config_ignores_caller_knobs_for_fixed_protocol() -> 
     assert configured.robustness_neighbor_count == 0
 
 
+def test_research_protocol_can_holdout_validate_broader_discovery_shortlist() -> None:
+    candidates = _rank_discovery_candidates(
+        (
+            _trial(0, in_sample="1.0", out_of_sample="1.0", robustness="1.0"),
+            _trial(1, in_sample="0.8", out_of_sample="0.8", robustness="0.8"),
+            _trial(2, in_sample="0.6", out_of_sample="0.6", robustness="0.6"),
+            _trial(3, in_sample="-1.0", out_of_sample="2.0", robustness="2.0"),
+            _trial(4, in_sample="2.0", out_of_sample="-1.0", robustness="2.0"),
+        ),
+        candidate_count=3,
+    )
+
+    assert [candidate.source_trial_no for candidate in candidates] == [0, 1, 2]
+
+
 def _research_days(start_day: str, *, day_count: int) -> tuple[ClosedCandle, ...]:
     start = datetime.fromisoformat(f"{start_day}T00:00:00+00:00")
     candles = []
@@ -96,6 +113,25 @@ def _research_days(start_day: str, *, day_count: int) -> tuple[ClosedCandle, ...
         candles.extend(_minute_window(trading_day, 2, 0, 3 * 60))
         candles.extend(_minute_window(trading_day, 9, 30, 2 * 60))
     return tuple(candles)
+
+
+def _trial(
+    trial_no: int,
+    *,
+    in_sample: str,
+    out_of_sample: str,
+    robustness: str,
+) -> TrialRecord:
+    return TrialRecord(
+        trial_no=trial_no,
+        params={"fvg_window": trial_no + 1},
+        score=TrialScore(
+            in_sample_score=Decimal(in_sample),
+            out_of_sample_score=Decimal(out_of_sample),
+            robustness_score=Decimal(robustness),
+        ),
+        status=OptimizationStatus.COMPLETED,
+    )
 
 
 def _minute_window(

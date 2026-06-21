@@ -85,6 +85,7 @@ export const preflight = {
     data_requirements: {
       trial_count: DISCOVERY_STUDY_CONFIG.trialCount,
       candidate_count: DISCOVERY_STUDY_CONFIG.candidateCount,
+      discovery_candidate_count: 30,
       min_evaluable_days: 120,
       min_discovery_days: 90,
       holdout_days: 30,

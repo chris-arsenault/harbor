@@ -8,11 +8,13 @@ from harbor_bot.backtester.models import BacktestConfig, BacktestInput
 from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.optimizer.config import load_optimizer_config
 from harbor_bot.optimizer.models import (
+    CandidateVariant,
     OptimizationConfig,
     OptimizationStatus,
+    TrialRecord,
     WalkForwardConfig,
 )
-from harbor_bot.optimizer.objective import objective_score
+from harbor_bot.optimizer.objective import candidate_gate_score, objective_score
 from harbor_bot.optimizer.runner import OptimizationRunResult, run_optimization
 from harbor_bot.optimizer.walkforward import StrategyDayStatus
 from harbor_bot.strategy.models import InstrumentRules, StrategyConfig
@@ -27,6 +29,7 @@ from harbor_bot.strategy.sessions import (
 class ResearchProtocolConfig:
     trial_count: int = 96
     candidate_count: int = 5
+    discovery_candidate_count: int = 30
     min_evaluable_days: int = 120
     min_discovery_days: int = 90
     holdout_days: int = 30
@@ -109,8 +112,13 @@ def run_research_protocol(
         optimizer_config=optimizer_config,
         backtest_runner=run_backtest,
     )
+    discovery_shortlist = _rank_discovery_candidates(
+        discovery_result.trials,
+        protocol_config.discovery_candidate_count,
+    )
     validation_rows = _validate_candidates_on_holdout(
-        discovery_result,
+        trials=discovery_result.trials,
+        candidates=discovery_shortlist,
         holdout_candles=holdout_candles,
         base_strategy_config=base_strategy_config,
         instrument_rules=instrument_rules,
@@ -121,11 +129,21 @@ def run_research_protocol(
     passed_trial_numbers = {
         int(row["source_trial_no"]) for row in validation_rows if row["status"] == "passed"
     }
-    validated_candidates = tuple(
+    validated_candidates = _relabel_candidates(
         candidate
-        for candidate in discovery_result.candidates
+        for candidate in discovery_shortlist
         if candidate.source_trial_no in passed_trial_numbers
-    )
+    )[: protocol_config.candidate_count]
+    validated_source_trial_numbers = {
+        candidate.source_trial_no for candidate in validated_candidates
+    }
+    validation_rows = [
+        {
+            **row,
+            "selected": int(row["source_trial_no"]) in validated_source_trial_numbers,
+        }
+        for row in validation_rows
+    ]
     result = OptimizationRunResult(
         status=OptimizationStatus.COMPLETED,
         trials=discovery_result.trials,
@@ -153,6 +171,7 @@ def run_research_protocol(
                 "holdout_to": holdout_dates[-1].isoformat(),
             },
             "optimizer_config": optimizer_config.to_jsonable(),
+            "discovery_shortlist_count": len(discovery_shortlist),
             "holdout_validation": validation_rows,
         },
     )
@@ -291,8 +310,9 @@ def _window_gap_reason(day_candles, window, *, name: str, max_gap: timedelta) ->
 
 
 def _validate_candidates_on_holdout(
-    result: OptimizationRunResult,
     *,
+    trials: tuple[TrialRecord, ...],
+    candidates: tuple[CandidateVariant, ...],
     holdout_candles: tuple[ClosedCandle, ...],
     base_strategy_config: StrategyConfig,
     instrument_rules: InstrumentRules,
@@ -300,9 +320,9 @@ def _validate_candidates_on_holdout(
     optimizer_config: OptimizationConfig,
     protocol_config: ResearchProtocolConfig,
 ) -> list[dict[str, Any]]:
-    trial_by_no = {trial.trial_no: trial for trial in result.trials}
+    trial_by_no = {trial.trial_no: trial for trial in trials}
     rows = []
-    for candidate in result.candidates:
+    for candidate in candidates:
         trial = trial_by_no[candidate.source_trial_no]
         variant_config = _strategy_config_for_params(base_strategy_config, candidate.params)
         holdout_result = run_backtest(
@@ -336,6 +356,52 @@ def _validate_candidates_on_holdout(
             }
         )
     return rows
+
+
+def _rank_discovery_candidates(
+    trials: tuple[TrialRecord, ...],
+    candidate_count: int,
+) -> tuple[CandidateVariant, ...]:
+    completed = [
+        trial
+        for trial in trials
+        if trial.status == OptimizationStatus.COMPLETED
+        and not trial.pruned
+        and trial.score.in_sample_score > 0
+        and trial.score.out_of_sample_score > 0
+    ]
+    ranked = sorted(
+        completed,
+        key=lambda trial: (
+            _candidate_gate_score_from_trial(trial),
+            trial.score.out_of_sample_score,
+            trial.score.robustness_score,
+        ),
+        reverse=True,
+    )
+    return tuple(
+        CandidateVariant(
+            label=f"discovery-candidate-{index}",
+            params=trial.params,
+            source_trial_no=trial.trial_no,
+        )
+        for index, trial in enumerate(ranked[:candidate_count], start=1)
+    )
+
+
+def _candidate_gate_score_from_trial(trial: TrialRecord) -> Decimal:
+    return candidate_gate_score(trial.score)
+
+
+def _relabel_candidates(candidates) -> tuple[CandidateVariant, ...]:
+    return tuple(
+        CandidateVariant(
+            label=f"candidate-{index}",
+            params=candidate.params,
+            source_trial_no=candidate.source_trial_no,
+        )
+        for index, candidate in enumerate(candidates, start=1)
+    )
 
 
 def _strategy_config_for_params(base_config: StrategyConfig, params: dict[str, Any]):
@@ -379,6 +445,7 @@ def _requirements(protocol_config: ResearchProtocolConfig) -> dict[str, int]:
     return {
         "trial_count": protocol_config.trial_count,
         "candidate_count": protocol_config.candidate_count,
+        "discovery_candidate_count": protocol_config.discovery_candidate_count,
         "min_evaluable_days": protocol_config.min_evaluable_days,
         "min_discovery_days": protocol_config.min_discovery_days,
         "holdout_days": protocol_config.holdout_days,
