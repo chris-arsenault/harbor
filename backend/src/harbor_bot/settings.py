@@ -59,8 +59,12 @@ class Settings(BaseSettings):
         validation_alias="OANDA_HISTORICAL_CANDLE_PAGE_SIZE",
     )
     oanda_historical_import_count: int = Field(
-        default=43_200,
+        default=259_200,
         validation_alias="OANDA_HISTORICAL_IMPORT_COUNT",
+    )
+    oanda_historical_request_interval_seconds: float = Field(
+        default=0.1,
+        validation_alias="OANDA_HISTORICAL_REQUEST_INTERVAL_SECONDS",
     )
 
     @property

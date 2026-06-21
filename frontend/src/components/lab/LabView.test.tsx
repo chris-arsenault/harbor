@@ -40,12 +40,13 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   );
   expect(screen.getByText("variant 7 closed trade")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /live/i })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Start tuning study" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Start research study" })).toBeInTheDocument();
   expect(screen.getByText("Study Setup")).toBeInTheDocument();
-  expect(screen.getByText("Baseline OOS")).toBeInTheDocument();
-  expect(screen.getByText("0.75")).toBeInTheDocument();
-  expect(screen.getByText("16/18")).toBeInTheDocument();
-  expect(screen.getByLabelText("Trials")).toHaveValue(64);
+  expect(screen.getByText("124/126")).toBeInTheDocument();
+  expect(screen.getByText("124/120")).toBeInTheDocument();
+  expect(
+    screen.getByText("research protocol: dataset satisfies the fixed research protocol")
+  ).toBeInTheDocument();
   expect(screen.getByText("1 parameter")).toBeInTheDocument();
   expect(screen.getByText("fvg_window")).not.toBeVisible();
   fireEvent.click(screen.getByText("Candidate Parameters"));
@@ -53,7 +54,7 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   expect(screen.getByText("Data Separation")).toBeInTheDocument();
   expect(screen.getByText("optimizer_uses_variant_trades: false")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Refresh latest 5,000 M1" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Backfill 30 days" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Backfill research dataset" })).toBeInTheDocument();
   expect(
     screen.getByText("path: OANDA practice REST -> persisted candles -> Lab optimizer")
   ).toBeInTheDocument();
@@ -62,18 +63,18 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   expect(screen.getByText("granularity: M1")).toBeInTheDocument();
   expect(screen.getByText("price: midpoint")).toBeInTheDocument();
   expect(
-    screen.getByText("Lab tuning reads the persisted M1 midpoint candle dataset shown below.")
+    screen.getByText("Lab research reads the persisted M1 midpoint candle dataset shown below.")
   ).toBeInTheDocument();
   expect(
     screen.getByText(
-      "Upserted 4999 of 43200 requested candles from 2026-05-19T20:00:00.000Z. Coverage 2026-06-15T08:21:00+00:00 to 2026-06-18T19:58:00+00:00."
+      "Upserted 4999 of 259200 requested candles from 2025-12-20T20:00:00.000Z. Coverage 2026-06-15T08:21:00+00:00 to 2026-06-18T19:58:00+00:00."
     )
   ).toBeInTheDocument();
   expect(screen.getByText("latest-page request: 5,000 M1 candles")).toBeInTheDocument();
-  expect(screen.getByText("backfill request: 43,200 M1 candles")).toBeInTheDocument();
+  expect(screen.getByText("research backfill request: 259,200 M1 candles")).toBeInTheDocument();
   expect(screen.getByText("candles: 2880")).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole("button", { name: "Start tuning study" }));
+  fireEvent.click(screen.getByRole("button", { name: "Start research study" }));
   fireEvent.change(screen.getByLabelText("Trial"), { target: { value: "2" } });
   fireEvent.change(screen.getByLabelText("Label"), { target: { value: "paper-trial-1" } });
   fireEvent.click(screen.getByRole("button", { name: "Create paper variant" }));
@@ -138,10 +139,10 @@ test("CandleSourcePanel explains unavailable OANDA historical imports", () => {
   );
 
   expect(screen.getByRole("button", { name: "Refresh latest 5,000 M1" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Backfill 30 days" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Backfill research dataset" })).toBeDisabled();
   expect(
     screen.getByText(
-      "OANDA credentials are missing. Import would load practice M1 midpoint candles into Harbor's database for Lab studies."
+      "OANDA credentials are missing. Import would load practice M1 midpoint candles into Harbor's database for Lab research studies."
     )
   ).toBeInTheDocument();
   expect(screen.getByText("configured: false")).toBeInTheDocument();
@@ -163,7 +164,7 @@ test("CandleSourcePanel sends explicit latest-page and backfill import requests"
   );
 
   fireEvent.click(screen.getByRole("button", { name: "Refresh latest 5,000 M1" }));
-  fireEvent.click(screen.getByRole("button", { name: "Backfill 30 days" }));
+  fireEvent.click(screen.getByRole("button", { name: "Backfill research dataset" }));
 
   expect(onImportCandles).toHaveBeenNthCalledWith(1, {
     instrument: "EUR_USD",
@@ -171,8 +172,8 @@ test("CandleSourcePanel sends explicit latest-page and backfill import requests"
   });
   expect(onImportCandles).toHaveBeenNthCalledWith(2, {
     instrument: "EUR_USD",
-    count: 43200,
-    from: "2026-05-19T20:00:00.000Z",
+    count: 259200,
+    from: "2025-12-20T20:00:00.000Z",
   });
   vi.useRealTimers();
 });
@@ -310,7 +311,8 @@ const candleSource = {
   source_methods: ["oanda_historical_import", "oanda_pricing_stream"],
   historical_import: {
     page_size: 5000,
-    default_count: 43200,
+    default_count: 259200,
+    request_interval_seconds: 0.1,
     upsert_key: "instrument+timestamp",
     replaces_existing: false,
   },
@@ -321,9 +323,9 @@ const candleImportResult = {
   status: "completed",
   source: "oanda_historical_import",
   instrument: "EUR_USD",
-  requested_count: 43200,
+  requested_count: 259200,
   imported_count: 4999,
-  from: "2026-05-19T20:00:00.000Z",
+  from: "2025-12-20T20:00:00.000Z",
   coverage: {
     instrument: "EUR_USD",
     candle_count: 4999,

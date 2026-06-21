@@ -82,7 +82,7 @@ async def test_optimizer_service_rejects_requests_without_local_data() -> None:
 
 
 @pytest.mark.asyncio
-async def test_optimizer_service_defaults_persisted_source_to_selected_coverage() -> None:
+async def test_optimizer_service_rejects_persisted_source_below_research_data_floor() -> None:
     calls = []
 
     async def reader(
@@ -98,7 +98,7 @@ async def test_optimizer_service_defaults_persisted_source_to_selected_coverage(
     async def selector(engine, *, instrument: str, required_days: int) -> dict[str, Any]:
         assert engine == "engine"
         assert instrument == "EUR_USD"
-        assert required_days == 15
+        assert required_days == 80
         return {
             "instrument": instrument,
             "from": datetime(2026, 1, 15, tzinfo=UTC),
@@ -112,9 +112,9 @@ async def test_optimizer_service_defaults_persisted_source_to_selected_coverage(
         optimization_runner=lambda **_: _run_result(),
         persistence_writer=_writer,
     )
-    response = await service.start_optimization({"source": "persisted_candles"})
+    with pytest.raises(ValueError, match="complete strategy days available"):
+        await service.start_optimization({"source": "persisted_candles"})
 
-    assert response["study_id"] == 42
     assert calls == [
         (
             "engine",
@@ -123,15 +123,6 @@ async def test_optimizer_service_defaults_persisted_source_to_selected_coverage(
             datetime(2026, 1, 16, 23, 59, tzinfo=UTC),
         )
     ]
-    assert response["data_separation"]["source"] == "persisted closed candles"
-    assert response["data_separation"]["candle_source"] == {
-        "source": "persisted_candles",
-        "origin": "database",
-        "instrument": "EUR_USD",
-        "from": "2026-01-15T00:00:00+00:00",
-        "to": "2026-01-16T23:59:00+00:00",
-        "candle_count": 2,
-    }
 
 
 @pytest.mark.asyncio
@@ -159,7 +150,7 @@ async def test_optimizer_service_preflights_persisted_study_shape_and_baseline()
         ]
 
     async def selector(engine, *, instrument: str, required_days: int) -> dict[str, Any]:
-        assert required_days == 2
+        assert required_days == 80
         return {
             "instrument": instrument,
             "from": datetime(2026, 1, 15, tzinfo=UTC),
@@ -186,22 +177,20 @@ async def test_optimizer_service_preflights_persisted_study_shape_and_baseline()
         }
     )
 
-    assert response["status"] == "ready"
+    assert response["status"] == "not_ready"
+    assert response["study_config"]["trial_count"] == 96
+    assert response["candidate_gate"]["min_in_sample_trades"] == 12
+    assert response["candidate_gate"]["min_out_of_sample_trades"] == 4
     assert response["dataset"]["candle_count"] == 8
     assert response["dataset"]["evaluable_session_day_count"] == 2
-    assert response["walk_forward"]["window_count"] == 1
-    assert response["walk_forward"]["windows"][0] == {
-        "index": 0,
-        "train_start": "2026-01-15",
-        "train_end": "2026-01-15",
-        "out_of_sample_start": "2026-01-16",
-        "out_of_sample_end": "2026-01-16",
-        "train_candle_count": 4,
-        "out_of_sample_candle_count": 4,
-    }
-    assert response["baseline"]["window_count"] == 1
-    assert response["baseline"]["in_sample"]["stats"]["trade_count"] >= 0
-    assert response["recommended_payload"]["optimizer_config"]["trial_count"] == 2
+    assert response["walk_forward"]["required_session_days"] == 80
+    assert response["walk_forward"]["train_window_days"] == 60
+    assert response["walk_forward"]["out_of_sample_window_days"] == 20
+    assert response["walk_forward"]["window_count"] == 0
+    assert response["baseline"] is None
+    assert response["research_protocol"]["status"] == "not_ready"
+    assert response["research_protocol"]["data_requirements"]["min_evaluable_days"] == 120
+    assert response["recommended_payload"]["optimizer_config"]["trial_count"] == 96
 
 
 @pytest.mark.asyncio

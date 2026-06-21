@@ -45,7 +45,8 @@ async def _assert_candle_source_service(postgres_url: str) -> None:
         assert status["coverage"]["to"] == "2026-01-15T14:31:00+00:00"
         assert status["historical_import"] == {
             "page_size": 5000,
-            "default_count": 43200,
+            "default_count": 259200,
+            "request_interval_seconds": 0.1,
             "upsert_key": "instrument+timestamp",
             "replaces_existing": False,
         }

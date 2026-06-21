@@ -182,7 +182,7 @@ export function TuningRunNotice({
   if (tuningRun.pending) {
     return (
       <p className="lab-run-notice" aria-live="polite">
-        Tuning study is running.
+        Research study is running.
       </p>
     );
   }

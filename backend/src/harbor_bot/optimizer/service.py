@@ -14,6 +14,11 @@ from harbor_bot.config.defaults import load_default_config
 from harbor_bot.optimizer.config import load_optimizer_config, optimizer_config_from_mapping
 from harbor_bot.optimizer.models import OptimizationConfig, OptimizationStatus
 from harbor_bot.optimizer.objective import aggregate_stats, objective_score
+from harbor_bot.optimizer.research_protocol import (
+    research_optimizer_config,
+    research_readiness,
+    run_research_protocol,
+)
 from harbor_bot.optimizer.runner import OptimizationRunResult, run_optimization
 from harbor_bot.optimizer.walkforward import (
     WalkForwardWindow,
@@ -102,9 +107,11 @@ class OptimizerService:
             baseline=baseline,
             baseline_error=baseline_error,
         )
+        protocol_readiness = research_readiness(candles, strategy_config)
         return {
             "status": "ready"
             if all(item["status"] != "fail" for item in readiness)
+            and protocol_readiness["status"] == "ready"
             else "not_ready",
             "instrument": strategy_config.instrument,
             "candle_source": payload.get("_candle_source"),
@@ -146,6 +153,7 @@ class OptimizerService:
                 "omitted_window_count": max(len(windows) - 12, 0),
             },
             "baseline": baseline,
+            "research_protocol": protocol_readiness,
             "readiness": readiness,
             "recommended_payload": {
                 "source": "persisted_candles",
@@ -164,14 +172,31 @@ class OptimizerService:
             ),
         )
         request = _request_from_payload(payload, fixture_base_path=self.fixture_base_path)
-        result = self.optimization_runner(**request["runner_kwargs"])
+        protocol_report = None
+        optimizer_config = request["optimizer_config"]
+        if _is_persisted_candle_payload(payload):
+            runner_kwargs = request["runner_kwargs"]
+            protocol = run_research_protocol(
+                candles=runner_kwargs["candles"],
+                base_strategy_config=runner_kwargs["base_strategy_config"],
+                instrument_rules=runner_kwargs["instrument_rules"],
+                backtest_config=runner_kwargs["backtest_config"],
+                optimizer_config=optimizer_config,
+            )
+            result = protocol.run_result
+            protocol_report = protocol.report
+            optimizer_config = research_optimizer_config(optimizer_config)
+        else:
+            result = self.optimization_runner(**request["runner_kwargs"])
         study_id = None
         if self.persistence_engine is not None:
-            optimizer_config = request["optimizer_config"]
             study_id = await self.persistence_writer(
                 self.persistence_engine,
                 search_space_json=optimizer_config.search_space.to_jsonable(),
-                walkforward_json=optimizer_config.walk_forward.to_jsonable(),
+                walkforward_json=_study_walkforward_metadata(
+                    optimizer_config,
+                    protocol_report=protocol_report,
+                ),
                 status=OptimizationStatus.COMPLETED,
                 trials=result.trials,
                 candidates=result.candidates,
@@ -180,6 +205,7 @@ class OptimizerService:
             result,
             study_id=study_id,
             candle_source=payload.get("_candle_source"),
+            research_protocol=protocol_report,
         )
 
 
@@ -188,6 +214,7 @@ def optimization_result_to_response(
     *,
     study_id: int | None = None,
     candle_source: Any = None,
+    research_protocol: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "study_id": study_id,
@@ -228,7 +255,24 @@ def optimization_result_to_response(
             "paper_engine_used": False,
             "frontend_ui_used": False,
         },
+        "research_protocol": research_protocol,
     }
+
+
+def _is_persisted_candle_payload(payload: Mapping[str, Any]) -> bool:
+    candle_source = payload.get("_candle_source")
+    return isinstance(candle_source, Mapping) and candle_source.get("source") == "persisted_candles"
+
+
+def _study_walkforward_metadata(
+    optimizer_config: OptimizationConfig,
+    *,
+    protocol_report: dict[str, Any] | None,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = optimizer_config.walk_forward.to_jsonable()
+    if protocol_report is not None:
+        metadata["research_protocol"] = protocol_report
+    return metadata
 
 
 def _baseline_summary(
@@ -476,7 +520,9 @@ async def _payload_with_persisted_candles(
     instrument = str(payload.get("instrument") or strategy_config.instrument)
     raw_range = payload.get("candle_range")
     if not isinstance(raw_range, Mapping):
-        optimizer_config = _optimizer_config_from_payload(payload.get("optimizer_config", {}))
+        optimizer_config = research_optimizer_config(
+            _optimizer_config_from_payload(payload.get("optimizer_config", {}))
+        )
         required_days = (
             optimizer_config.walk_forward.train_window_days
             + optimizer_config.walk_forward.oos_window_days
@@ -581,6 +627,8 @@ def _request_from_payload(
         raise ValueError(msg)
 
     optimizer_config = _optimizer_config_from_payload(payload.get("optimizer_config", {}))
+    if _is_persisted_candle_payload(payload):
+        optimizer_config = research_optimizer_config(optimizer_config)
     return {
         "optimizer_config": optimizer_config,
         "runner_kwargs": {

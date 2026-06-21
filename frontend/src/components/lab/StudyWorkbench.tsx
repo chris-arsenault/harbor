@@ -1,10 +1,6 @@
 import type { CandleSourceStatus, OptimizationStartPayload } from "../../api/types";
 import type { OptimizationPreflightResponse } from "../../api/optimizerTypes";
-import {
-  DISCOVERY_STUDY_CONFIG,
-  QUICK_STUDY_CONFIG,
-  type TuningStudyConfig,
-} from "./tuningPayload";
+import type { TuningStudyConfig } from "./tuningPayload";
 import type { TuningRunState } from "./LabView";
 
 interface StudyWorkbenchProps {
@@ -28,8 +24,6 @@ export function StudyWorkbench(props: StudyWorkbenchProps) {
       <StudyWorkbenchHeader
         disabled={!hasCandles || !ready || props.tuningRun.pending}
         pending={props.tuningRun.pending}
-        onDiscovery={() => props.onStudyConfigChange(DISCOVERY_STUDY_CONFIG)}
-        onQuick={() => props.onStudyConfigChange(QUICK_STUDY_CONFIG)}
         onStart={() => void props.onStartOptimization(startPayload)}
       />
       <StudyStatusCards preflight={props.preflight} pending={props.preflightPending} />
@@ -38,7 +32,6 @@ export function StudyWorkbench(props: StudyWorkbenchProps) {
           {props.preflightError}
         </p>
       ) : null}
-      <StudyConfigControls config={props.studyConfig} onChange={props.onStudyConfigChange} />
       <StudyFacts preflight={props.preflight} />
       <StudyWindowDiagnostics preflight={props.preflight} pending={props.preflightPending} />
     </section>
@@ -48,28 +41,18 @@ export function StudyWorkbench(props: StudyWorkbenchProps) {
 function StudyWorkbenchHeader({
   disabled,
   pending,
-  onDiscovery,
-  onQuick,
   onStart,
 }: {
   readonly disabled: boolean;
   readonly pending: boolean;
-  readonly onDiscovery: () => void;
-  readonly onQuick: () => void;
   readonly onStart: () => void;
 }) {
   return (
     <div className="lab-panel__header">
       <h2>Study Setup</h2>
       <div className="lab-panel__actions">
-        <button type="button" className="lab-button lab-button--quiet" onClick={onDiscovery}>
-          Discovery preset
-        </button>
-        <button type="button" className="lab-button lab-button--quiet" onClick={onQuick}>
-          Quick preset
-        </button>
         <button type="button" className="lab-button" disabled={disabled} onClick={onStart}>
-          {pending ? "Running tuning study" : "Start tuning study"}
+          {pending ? "Running research study" : "Start research study"}
         </button>
       </div>
     </div>
@@ -92,102 +75,6 @@ function StudyStatusCards({
         </div>
       ))}
     </div>
-  );
-}
-
-function StudyConfigControls({
-  config,
-  onChange,
-}: {
-  readonly config: TuningStudyConfig;
-  readonly onChange: (config: TuningStudyConfig) => void;
-}) {
-  return (
-    <div className="lab-study-controls" aria-label="Study configuration">
-      <NumberControl
-        label="Trials"
-        value={config.trialCount}
-        min={1}
-        max={500}
-        onChange={(value) => onChange({ ...config, trialCount: value })}
-      />
-      <NumberControl
-        label="Candidates"
-        value={config.candidateCount}
-        min={1}
-        max={20}
-        onChange={(value) => onChange({ ...config, candidateCount: value })}
-      />
-      <NumberControl
-        label="Train days"
-        value={config.trainWindowDays}
-        min={1}
-        max={120}
-        onChange={(value) => onChange({ ...config, trainWindowDays: value })}
-      />
-      <NumberControl
-        label="OOS days"
-        value={config.outOfSampleWindowDays}
-        min={1}
-        max={60}
-        onChange={(value) => onChange({ ...config, outOfSampleWindowDays: value })}
-      />
-      <NumberControl
-        label="Step days"
-        value={config.stepDays}
-        min={1}
-        max={60}
-        onChange={(value) => onChange({ ...config, stepDays: value })}
-      />
-      <NumberControl
-        label="Min IS trades"
-        value={config.minInSampleTrades}
-        min={0}
-        max={200}
-        onChange={(value) => onChange({ ...config, minInSampleTrades: value })}
-      />
-      <NumberControl
-        label="Min OOS trades"
-        value={config.minOutOfSampleTrades}
-        min={0}
-        max={200}
-        onChange={(value) => onChange({ ...config, minOutOfSampleTrades: value })}
-      />
-      <NumberControl
-        label="Robustness"
-        value={config.robustnessNeighborCount}
-        min={0}
-        max={20}
-        onChange={(value) => onChange({ ...config, robustnessNeighborCount: value })}
-      />
-    </div>
-  );
-}
-
-function NumberControl({
-  label,
-  value,
-  min,
-  max,
-  onChange,
-}: {
-  readonly label: string;
-  readonly value: number;
-  readonly min: number;
-  readonly max: number;
-  readonly onChange: (value: number) => void;
-}) {
-  return (
-    <label>
-      <span>{label}</span>
-      <input
-        type="number"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(event) => onChange(clampedInteger(event.currentTarget.value, min, max))}
-      />
-    </label>
   );
 }
 
@@ -218,6 +105,12 @@ function StudyWindowDiagnostics({
       </summary>
       <StudyWindowTable preflight={preflight} pending={pending} />
       <ul className="fact-list">
+        {preflight?.research_protocol ? (
+          <li>
+            research_protocol: {preflight.research_protocol.status} -{" "}
+            {preflight.research_protocol.message}
+          </li>
+        ) : null}
         {(preflight?.readiness ?? []).map((item) => (
           <li key={item.name}>
             {item.name}: {item.status} - {item.message}
@@ -273,19 +166,12 @@ function StudyWindowTable({
   );
 }
 
-function clampedInteger(raw: string, min: number, max: number): number {
-  const parsed = Number.parseInt(raw, 10);
-  if (Number.isNaN(parsed)) {
-    return min;
-  }
-  return Math.min(Math.max(parsed, min), max);
-}
-
 function studyStatusCards(preflight: OptimizationPreflightResponse | null, pending: boolean) {
   return [
     { label: "Preflight", value: preflightStatus(preflight, pending) },
     { label: "Candles", value: candleCount(preflight) },
     { label: "Session days", value: sessionDayCount(preflight) },
+    { label: "Research days", value: researchDayCount(preflight) },
     { label: "Windows", value: windowCount(preflight) },
     { label: "Baseline OOS", value: baselineOosScore(preflight) },
     { label: "OOS trades", value: baselineOosTrades(preflight) },
@@ -308,6 +194,14 @@ function sessionDayCount(preflight: OptimizationPreflightResponse | null) {
     return "0";
   }
   return `${preflight.dataset.evaluable_session_day_count}/${preflight.dataset.session_day_count}`;
+}
+
+function researchDayCount(preflight: OptimizationPreflightResponse | null) {
+  const protocol = preflight?.research_protocol;
+  if (protocol === undefined) {
+    return "0";
+  }
+  return `${protocol.evaluable_day_count}/${protocol.data_requirements.min_evaluable_days}`;
 }
 
 function windowCount(preflight: OptimizationPreflightResponse | null) {
@@ -337,6 +231,10 @@ function studyFacts(preflight: OptimizationPreflightResponse | null) {
     ];
   }
   return [
+    {
+      label: "research protocol",
+      value: preflight.research_protocol?.message ?? preflight.status,
+    },
     { label: "candidate gate", value: preflight.candidate_gate.requires },
     {
       label: "trade floors",
@@ -350,6 +248,10 @@ function studyFacts(preflight: OptimizationPreflightResponse | null) {
     {
       label: "split",
       value: `${preflight.walk_forward.train_window_days} train / ${preflight.walk_forward.out_of_sample_window_days} OOS / ${preflight.walk_forward.step_days} step`,
+    },
+    {
+      label: "holdout",
+      value: `${preflight.research_protocol?.data_requirements.holdout_days ?? 0} final complete days`,
     },
   ];
 }

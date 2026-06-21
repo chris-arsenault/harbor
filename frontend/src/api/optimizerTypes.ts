@@ -30,8 +30,31 @@ export interface OptimizationPreflightResponse {
     omitted_window_count: number;
   };
   baseline: OptimizationBaseline | null;
+  research_protocol: ResearchProtocolReadiness;
   readiness: OptimizationReadinessItem[];
   recommended_payload: OptimizationStartPayload;
+}
+
+export interface ResearchProtocolReadiness {
+  status: string;
+  message: string;
+  data_requirements: {
+    trial_count: number;
+    candidate_count: number;
+    min_evaluable_days: number;
+    min_discovery_days: number;
+    holdout_days: number;
+    max_session_gap_minutes: number;
+    min_holdout_trades: number;
+    train_window_days: number;
+    oos_window_days: number;
+    step_days: number;
+    min_in_sample_trades: number;
+    min_oos_trades: number;
+  };
+  evaluable_day_count: number;
+  partial_day_count: number;
+  evaluable_days: StrategyDayDiagnostic[];
 }
 
 export interface StrategyDayDiagnostic {

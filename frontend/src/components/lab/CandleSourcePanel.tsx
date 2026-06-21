@@ -1,5 +1,7 @@
 import type { CandleImportRequest, CandleImportResult, CandleSourceStatus } from "../../api/types";
 
+const RESEARCH_BACKFILL_COUNT = 259_200;
+
 export function CandleSourcePanel({
   source,
   pending,
@@ -18,6 +20,7 @@ export function CandleSourcePanel({
     instrument: facts.instrument,
     count: facts.importPolicy.pageSize,
   };
+  const researchBackfillCount = Math.max(facts.importPolicy.defaultCount, RESEARCH_BACKFILL_COUNT);
   return (
     <section className="lab-panel" aria-label="Candle source">
       <div className="lab-panel__header">
@@ -38,12 +41,12 @@ export function CandleSourcePanel({
             onClick={() =>
               void onImportCandles({
                 instrument: facts.instrument,
-                count: facts.importPolicy.defaultCount,
-                from: backfillStart(facts.importPolicy.defaultCount),
+                count: researchBackfillCount,
+                from: backfillStart(researchBackfillCount),
               })
             }
           >
-            Backfill {importDaysLabel(facts.importPolicy.defaultCount)}
+            Backfill research dataset
           </button>
         </div>
       </div>
@@ -82,7 +85,7 @@ function candleSourceFacts(source: CandleSourceStatus | null) {
       oandaHistoricalImportConfigured: false,
       guidance:
         "Candles come from OANDA practice REST into the persisted M1 midpoint candle store. Configure OANDA_ACCOUNT_ID and OANDA_API_TOKEN before importing.",
-      importPolicy: { pageSize: 5000, defaultCount: 43200 },
+      importPolicy: { pageSize: 5000, defaultCount: RESEARCH_BACKFILL_COUNT },
       rows: candleSourceRows({
         source: "persisted_candles",
         instrument: "EUR_USD",
@@ -93,7 +96,8 @@ function candleSourceFacts(source: CandleSourceStatus | null) {
         to: "none",
         configured: false,
         pageSize: 5000,
-        defaultCount: 43200,
+        defaultCount: RESEARCH_BACKFILL_COUNT,
+        requestIntervalSeconds: 0.1,
         upsertKey: "instrument+timestamp",
         replacesExisting: false,
       }),
@@ -121,6 +125,7 @@ function candleSourceFacts(source: CandleSourceStatus | null) {
       configured: source.oanda_historical_import_configured,
       pageSize: importPolicy.page_size,
       defaultCount: importPolicy.default_count,
+      requestIntervalSeconds: importPolicy.request_interval_seconds,
       upsertKey: importPolicy.upsert_key,
       replacesExisting: importPolicy.replaces_existing,
     }),
@@ -138,6 +143,7 @@ function candleSourceRows(input: {
   readonly configured: boolean;
   readonly pageSize: number;
   readonly defaultCount: number;
+  readonly requestIntervalSeconds: number;
   readonly upsertKey: string;
   readonly replacesExisting: boolean;
 }) {
@@ -154,26 +160,28 @@ function candleSourceRows(input: {
     { label: "from", value: input.from },
     { label: "to", value: input.to },
     { label: "latest-page request", value: `${input.pageSize.toLocaleString()} M1 candles` },
-    { label: "backfill request", value: `${input.defaultCount.toLocaleString()} M1 candles` },
+    {
+      label: "research backfill request",
+      value: `${Math.max(input.defaultCount, RESEARCH_BACKFILL_COUNT).toLocaleString()} M1 candles`,
+    },
+    {
+      label: "OANDA request pacing",
+      value: `${input.requestIntervalSeconds}s between historical candle pages`,
+    },
     { label: "configured", value: String(input.configured) },
   ];
 }
 
 function candleSourceGuidance(source: CandleSourceStatus) {
   if (!source.oanda_historical_import_configured) {
-    return "OANDA credentials are missing. Import would load practice M1 midpoint candles into Harbor's database for Lab studies.";
+    return "OANDA credentials are missing. Import would load practice M1 midpoint candles into Harbor's database for Lab research studies.";
   }
   if (source.coverage.candle_count === 0) {
-    return "No persisted M1 midpoint candles are available for Lab tuning.";
+    return "No persisted M1 midpoint candles are available for Lab research.";
   }
-  return "Lab tuning reads the persisted M1 midpoint candle dataset shown below.";
+  return "Lab research reads the persisted M1 midpoint candle dataset shown below.";
 }
 
 function backfillStart(count: number): string {
   return new Date(Date.now() - count * 60_000).toISOString();
-}
-
-function importDaysLabel(count: number): string {
-  const days = Math.round(count / 1440);
-  return `${days} days`;
 }

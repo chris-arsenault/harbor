@@ -26,16 +26,16 @@ def test_optimizer_defaults_load_bounded_search_space_and_runtime_config() -> No
     config = load_optimizer_config()
 
     assert isinstance(config, OptimizationConfig)
-    assert config.trial_count == 64
+    assert config.trial_count == 96
     assert config.candidate_count == 5
     assert config.tpe_seed == 17
     assert config.drawdown_floor == Decimal("1")
-    assert config.min_in_sample_trades == 3
-    assert config.min_oos_trades == 1
+    assert config.min_in_sample_trades == 12
+    assert config.min_oos_trades == 4
     assert config.robustness_neighbor_count == 0
-    assert config.walk_forward.train_window_days == 10
-    assert config.walk_forward.oos_window_days == 5
-    assert config.walk_forward.step_days == 5
+    assert config.walk_forward.train_window_days == 60
+    assert config.walk_forward.oos_window_days == 20
+    assert config.walk_forward.step_days == 20
 
     names = set(config.search_space.by_name())
     assert names == {

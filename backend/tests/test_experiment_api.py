@@ -147,36 +147,18 @@ async def test_backtest_service_reads_persisted_candle_ranges_for_ui_requests() 
 
 
 @pytest.mark.asyncio
-async def test_optimizer_service_reads_persisted_ranges_and_returns_best_trial_history() -> None:
-    calls = []
-
-    async def reader(
-        engine,
-        *,
-        instrument: str,
-        start: datetime,
-        end: datetime,
-    ) -> list[dict[str, Any]]:
-        calls.append((engine, instrument, start, end))
-        return [_record("2026-01-15T14:00:00+00:00"), _record("2026-01-15T14:01:00+00:00")]
-
-    service = OptimizerService(candle_reader=reader, optimization_runner=lambda **_: _run_result())
+async def test_optimizer_service_returns_best_trial_history_for_inline_candles() -> None:
+    service = OptimizerService(optimization_runner=lambda **_: _run_result())
     response = await service.start_optimization(
         {
-            "source": "persisted_candles",
             "instrument": "EUR_USD",
-            "candle_range": {
-                "from": "2026-01-15T14:00:00Z",
-                "to": "2026-01-15T14:01:00Z",
-            },
+            "candles": [
+                _record("2026-01-15T14:00:00+00:00"),
+                _record("2026-01-15T14:01:00+00:00"),
+            ],
         }
     )
 
-    assert calls[0][1:] == (
-        "EUR_USD",
-        datetime(2026, 1, 15, 14, 0, tzinfo=UTC),
-        datetime(2026, 1, 15, 14, 1, tzinfo=UTC),
-    )
     assert response["best_trial_history"] == [
         {"trial_no": 0, "oos_score": "0.80000000", "robustness_score": "0.70000000"},
         {"trial_no": 1, "oos_score": "1.50000000", "robustness_score": "1.40000000"},
@@ -242,6 +224,13 @@ class FakeCandleSourceService:
                 "to": None,
             },
             "source_methods": ["oanda_historical_import", "oanda_pricing_stream"],
+            "historical_import": {
+                "page_size": 5000,
+                "default_count": 259200,
+                "request_interval_seconds": 0.1,
+                "upsert_key": "instrument+timestamp",
+                "replaces_existing": False,
+            },
             "oanda_historical_import_configured": True,
         }
 

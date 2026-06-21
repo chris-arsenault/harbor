@@ -25,6 +25,12 @@ def test_historical_ingestion_continues_after_short_advanced_page(postgres_url: 
     asyncio.run(_assert_short_advanced_page_ingestion(postgres_url))
 
 
+def test_historical_ingestion_paces_paginated_oanda_requests(postgres_url: str) -> None:
+    command.upgrade(_alembic_config(postgres_url), "head")
+
+    asyncio.run(_assert_paginated_request_pacing(postgres_url))
+
+
 async def _assert_historical_ingestion(postgres_url: str) -> None:
     engine = create_engine(Settings(DATABASE_URL=postgres_url))
     client = _FakeHistoricalClient()
@@ -133,6 +139,33 @@ async def _assert_short_advanced_page_ingestion(postgres_url: str) -> None:
             datetime(2026, 1, 15, 14, 32, tzinfo=UTC),
             datetime(2026, 1, 15, 14, 33, tzinfo=UTC),
         ]
+    finally:
+        await engine.dispose()
+
+
+async def _assert_paginated_request_pacing(postgres_url: str) -> None:
+    engine = create_engine(Settings(DATABASE_URL=postgres_url))
+    client = _FakeHistoricalClient()
+    sleeps = []
+
+    async def sleeper(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    try:
+        persisted = await ingest_historical_candles(
+            client=client,
+            engine=engine,
+            instrument="EUR_USD",
+            from_time=datetime(2026, 1, 15, 14, 29, tzinfo=UTC),
+            count=3,
+            page_size=1,
+            include_first=False,
+            request_interval_seconds=0.25,
+            sleeper=sleeper,
+        )
+
+        assert persisted == 3
+        assert sleeps == [0.25, 0.25]
     finally:
         await engine.dispose()
 

@@ -1,3 +1,5 @@
+import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
 
@@ -5,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from harbor_bot.persistence.database import transaction
 from harbor_bot.persistence.market_repository import upsert_candle
+
+Sleeper = Callable[[float], Awaitable[None]]
 
 
 async def ingest_historical_candles(
@@ -16,12 +20,20 @@ async def ingest_historical_candles(
     count: int | None = None,
     page_size: int = 5000,
     include_first: bool = True,
+    request_interval_seconds: float = 0.1,
+    sleeper: Sleeper = asyncio.sleep,
 ) -> int:
+    if request_interval_seconds < 0:
+        msg = "request_interval_seconds must be non-negative"
+        raise ValueError(msg)
     remaining = page_size if count is None else count
     cursor = from_time
     next_include_first = include_first
     persisted = 0
+    page_index = 0
     while remaining > 0:
+        if page_index > 0 and request_interval_seconds > 0:
+            await sleeper(request_interval_seconds)
         request_count = min(remaining, page_size)
         candles = await client.get_historical_candles(
             instrument=instrument,
@@ -29,6 +41,7 @@ async def ingest_historical_candles(
             count=request_count,
             include_first=next_include_first,
         )
+        page_index += 1
         if not candles:
             break
 

@@ -29,7 +29,7 @@ test("does not request a fixed lab study when the empty deployment has no studie
   fireEvent.click(screen.getByRole("button", { name: "Lab" }));
 
   expect(screen.getByText("No tuning studies yet")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Start tuning study" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Start research study" })).toBeDisabled();
   expect(screen.getByText("candles: 0")).toBeInTheDocument();
   expect(screen.getByText("write policy: upsert")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Refresh latest 5,000 M1" }));
@@ -147,7 +147,8 @@ function candleSource(count: number) {
     source_methods: ["oanda_historical_import", "oanda_pricing_stream"],
     historical_import: {
       page_size: 5000,
-      default_count: 43200,
+      default_count: 259200,
+      request_interval_seconds: 0.1,
       upsert_key: "instrument+timestamp",
       replaces_existing: false,
     },

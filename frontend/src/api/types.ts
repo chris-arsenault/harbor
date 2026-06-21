@@ -63,6 +63,7 @@ export interface CandleSourceStatus {
 export interface CandleHistoricalImportPolicy {
   page_size: number;
   default_count: number;
+  request_interval_seconds: number;
   upsert_key: string;
   replaces_existing: boolean;
 }
@@ -159,6 +160,7 @@ export interface OptimizationStartResponse {
   candidates: unknown[];
   best_trial_history: BestTrialPoint[];
   data_separation: Record<string, unknown>;
+  research_protocol?: Record<string, unknown> | null;
 }
 
 export interface OptimizationTrialResult {

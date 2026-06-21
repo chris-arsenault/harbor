@@ -38,6 +38,9 @@ class CandleSourceService:
             "historical_import": {
                 "page_size": self.settings.oanda_historical_candle_page_size,
                 "default_count": self.settings.oanda_historical_import_count,
+                "request_interval_seconds": (
+                    self.settings.oanda_historical_request_interval_seconds
+                ),
                 "upsert_key": "instrument+timestamp",
                 "replaces_existing": False,
             },
@@ -64,6 +67,7 @@ class CandleSourceService:
                 from_time=from_time,
                 count=count,
                 page_size=self.settings.oanda_historical_candle_page_size,
+                request_interval_seconds=(self.settings.oanda_historical_request_interval_seconds),
                 include_first=from_time is None,
             )
 
