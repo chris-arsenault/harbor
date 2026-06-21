@@ -47,6 +47,32 @@ async def test_optimizer_service_runs_injected_runner_over_inline_closed_candles
 
 
 @pytest.mark.asyncio
+async def test_optimizer_service_uses_requested_instrument_and_default_jpy_rules() -> None:
+    calls = []
+
+    def runner(**kwargs) -> OptimizationRunResult:
+        calls.append(kwargs)
+        return _run_result()
+
+    service = OptimizerService(optimization_runner=runner)
+    response = await service.start_optimization(
+        {
+            "instrument": "USD_JPY",
+            "candles": [
+                _record("2026-01-15T01:00:00+00:00", instrument="USD_JPY"),
+                _record("2026-01-16T01:00:00+00:00", instrument="USD_JPY"),
+            ],
+        }
+    )
+
+    assert response["status"] == "completed"
+    assert calls[0]["base_strategy_config"].instrument == "USD_JPY"
+    assert calls[0]["instrument_rules"].instrument == "USD_JPY"
+    assert calls[0]["instrument_rules"].pip_location == -2
+    assert calls[0]["instrument_rules"].display_precision == 3
+
+
+@pytest.mark.asyncio
 async def test_optimizer_service_persists_when_engine_is_configured() -> None:
     writes = []
 
@@ -234,9 +260,9 @@ async def _writer(engine, **kwargs) -> int:
     return 42
 
 
-def _record(ts: str) -> dict[str, object]:
+def _record(ts: str, *, instrument: str = "EUR_USD") -> dict[str, object]:
     return {
-        "instrument": "EUR_USD",
+        "instrument": instrument,
         "ts": ts,
         "o": "1.1000",
         "h": "1.1010",

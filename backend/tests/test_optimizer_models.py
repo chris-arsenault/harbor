@@ -49,6 +49,8 @@ def test_optimizer_defaults_load_bounded_search_space_and_runtime_config() -> No
         "fvg_window",
         "swing_lookback",
         "rr_floor",
+        "liquidity_rr_floor",
+        "target_mode",
         "max_spread_pips",
         "max_trades_per_day",
     }
@@ -93,7 +95,7 @@ def test_optimizer_config_validation_rejects_bad_runtime_values() -> None:
         optimizer_config_from_mapping(raw)
 
 
-def test_apply_params_to_strategy_config_keeps_locked_fields_and_updates_search_fields() -> None:
+def test_apply_params_to_strategy_config_keeps_fixed_fields_and_updates_search_fields() -> None:
     base = strategy_config_from_defaults(load_default_config())
     updated = apply_params_to_strategy_config(
         base,
@@ -103,7 +105,9 @@ def test_apply_params_to_strategy_config_keeps_locked_fields_and_updates_search_
             "sweep_buffer_pips": "2.0",
             "fvg_window": 12,
             "swing_lookback": 7,
+            "target_mode": "rr",
             "rr_floor": "2.5",
+            "liquidity_rr_floor": "1.5",
             "max_spread_pips": "1.5",
             "max_trades_per_day": 3,
         },
@@ -111,7 +115,7 @@ def test_apply_params_to_strategy_config_keeps_locked_fields_and_updates_search_
 
     assert updated.instrument == base.instrument
     assert updated.timezone == base.timezone
-    assert updated.target_mode == "rr_or_liquidity"
+    assert updated.target_mode == "rr"
     assert updated.risk_per_trade_pct == base.risk_per_trade_pct
     assert updated.max_daily_loss_pct == base.max_daily_loss_pct
     assert updated.sessions["ny_trade"] == {"start": "09:45", "end": "11:15"}
@@ -119,6 +123,7 @@ def test_apply_params_to_strategy_config_keeps_locked_fields_and_updates_search_
     assert updated.fvg_window == 12
     assert updated.swing_lookback == 7
     assert updated.rr_floor == Decimal("2.5")
+    assert updated.liquidity_rr_floor == Decimal("1.5")
     assert updated.max_spread_pips == Decimal("1.5")
     assert updated.max_trades_per_day == 3
     assert base.sessions["ny_trade"] == {"start": "09:30", "end": "11:30"}

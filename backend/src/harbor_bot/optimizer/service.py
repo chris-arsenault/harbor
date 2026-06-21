@@ -1,5 +1,5 @@
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -11,6 +11,7 @@ from harbor_bot.backtester.data import candles_from_records, load_candle_fixture
 from harbor_bot.backtester.engine import run_backtest
 from harbor_bot.backtester.models import BacktestConfig, BacktestInput, BacktestStats
 from harbor_bot.config.defaults import load_default_config
+from harbor_bot.instruments import default_instrument_rules
 from harbor_bot.optimizer.config import load_optimizer_config, optimizer_config_from_mapping
 from harbor_bot.optimizer.models import OptimizationConfig, OptimizationStatus
 from harbor_bot.optimizer.objective import aggregate_stats, objective_score
@@ -607,9 +608,7 @@ def _request_from_payload(
 ) -> dict[str, Any]:
     strategy_config = strategy_config_from_defaults(load_default_config())
     instrument = str(payload.get("instrument") or strategy_config.instrument)
-    if instrument != strategy_config.instrument:
-        msg = "M6 optimizer uses the configured strategy instrument"
-        raise ValueError(msg)
+    strategy_config = replace(strategy_config, instrument=instrument)
 
     if "candles" in payload:
         raw_candles = payload["candles"]
@@ -673,14 +672,17 @@ def _instrument_rules_from_payload(raw: Any, instrument: str) -> InstrumentRules
     if not isinstance(raw, Mapping):
         msg = "instrument_rules must be an object"
         raise TypeError(msg)
+    defaults = default_instrument_rules(instrument)
     return InstrumentRules(
         instrument=instrument,
-        pip_location=int(raw.get("pip_location", -4)),
-        display_precision=int(raw.get("display_precision", 5)),
-        trade_units_precision=int(raw.get("trade_units_precision", 0)),
-        minimum_trade_size=Decimal(str(raw.get("minimum_trade_size", "1"))),
-        unit_step=Decimal(str(raw.get("unit_step", "1"))),
-        quote_home_conversion=Decimal(str(raw.get("quote_home_conversion", "1"))),
+        pip_location=int(raw.get("pip_location", defaults.pip_location)),
+        display_precision=int(raw.get("display_precision", defaults.display_precision)),
+        trade_units_precision=int(raw.get("trade_units_precision", defaults.trade_units_precision)),
+        minimum_trade_size=Decimal(str(raw.get("minimum_trade_size", defaults.minimum_trade_size))),
+        unit_step=Decimal(str(raw.get("unit_step", defaults.unit_step))),
+        quote_home_conversion=Decimal(
+            str(raw.get("quote_home_conversion", defaults.quote_home_conversion))
+        ),
     )
 
 

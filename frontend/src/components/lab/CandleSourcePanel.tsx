@@ -21,6 +21,12 @@ export function CandleSourcePanel({
     count: facts.importPolicy.pageSize,
   };
   const researchBackfillCount = Math.max(facts.importPolicy.defaultCount, RESEARCH_BACKFILL_COUNT);
+  const researchUniversePayload = {
+    instrument: "research_universe",
+    instruments: facts.researchInstruments,
+    count: researchBackfillCount,
+    from: backfillStart(researchBackfillCount),
+  };
   return (
     <section className="lab-panel" aria-label="Candle source">
       <div className="lab-panel__header">
@@ -38,13 +44,7 @@ export function CandleSourcePanel({
             type="button"
             className="lab-button"
             disabled={pending || !facts.oandaHistoricalImportConfigured}
-            onClick={() =>
-              void onImportCandles({
-                instrument: facts.instrument,
-                count: researchBackfillCount,
-                from: backfillStart(researchBackfillCount),
-              })
-            }
+            onClick={() => void onImportCandles(researchUniversePayload)}
           >
             Backfill research dataset
           </button>
@@ -69,6 +69,25 @@ export function CandleSourcePanel({
 }
 
 function CandleImportNotice({ importResult }: { readonly importResult: CandleImportResult }) {
+  if (importResult.results?.length) {
+    return (
+      <div className="lab-live-status" aria-live="polite">
+        <p>
+          Upserted {importResult.imported_count} of {importResult.requested_count} requested candles
+          across {importResult.results.length} instruments from {importResult.from ?? "latest page"}
+          .
+        </p>
+        <ul className="fact-list">
+          {importResult.results.map((result) => (
+            <li key={result.instrument}>
+              {result.instrument}: {result.imported_count.toLocaleString()} candles, coverage{" "}
+              {result.coverage.from ?? "none"} to {result.coverage.to ?? "none"}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
   return (
     <p className="lab-live-status" aria-live="polite">
       Upserted {importResult.imported_count} of {importResult.requested_count} requested candles
@@ -81,14 +100,16 @@ function CandleImportNotice({ importResult }: { readonly importResult: CandleImp
 function candleSourceFacts(source: CandleSourceStatus | null) {
   if (source === null) {
     return {
-      instrument: "EUR_USD",
+      instrument: "GBP_USD",
+      researchInstruments: ["GBP_USD", "EUR_USD", "USD_JPY", "EUR_JPY", "GBP_JPY"],
       oandaHistoricalImportConfigured: false,
       guidance:
         "Candles come from OANDA practice REST into the persisted M1 midpoint candle store. Configure OANDA_ACCOUNT_ID and OANDA_API_TOKEN before importing.",
       importPolicy: { pageSize: 5000, defaultCount: RESEARCH_BACKFILL_COUNT },
       rows: candleSourceRows({
         source: "persisted_candles",
-        instrument: "EUR_USD",
+        instrument: "GBP_USD",
+        researchInstruments: ["GBP_USD", "EUR_USD", "USD_JPY", "EUR_JPY", "GBP_JPY"],
         granularity: "M1",
         priceComponent: "midpoint",
         candleCount: 0,
@@ -108,6 +129,7 @@ function candleSourceFacts(source: CandleSourceStatus | null) {
   const importPolicy = source.historical_import;
   return {
     instrument: source.instrument,
+    researchInstruments: source.research_instruments,
     oandaHistoricalImportConfigured: source.oanda_historical_import_configured,
     importPolicy: {
       pageSize: importPolicy.page_size,
@@ -117,6 +139,7 @@ function candleSourceFacts(source: CandleSourceStatus | null) {
     rows: candleSourceRows({
       source: source.primary_source,
       instrument: source.instrument,
+      researchInstruments: source.research_instruments,
       granularity: source.granularity,
       priceComponent: source.price_component,
       candleCount: coverage.candle_count,
@@ -135,6 +158,7 @@ function candleSourceFacts(source: CandleSourceStatus | null) {
 function candleSourceRows(input: {
   readonly source: string;
   readonly instrument: string;
+  readonly researchInstruments: string[];
   readonly granularity: string;
   readonly priceComponent: string;
   readonly candleCount: number;
@@ -154,6 +178,7 @@ function candleSourceRows(input: {
     { label: "upsert key", value: input.upsertKey },
     { label: "method", value: "OANDA historical import" },
     { label: "instrument", value: input.instrument },
+    { label: "research universe", value: input.researchInstruments.join(", ") },
     { label: "granularity", value: input.granularity },
     { label: "price", value: input.priceComponent },
     { label: "candles", value: String(input.candleCount) },

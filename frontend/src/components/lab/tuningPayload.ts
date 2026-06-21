@@ -1,5 +1,7 @@
 import type { OptimizationStartPayload } from "../../api/types";
 
+export const DEFAULT_RESEARCH_INSTRUMENT = "GBP_USD";
+
 export interface TuningStudyConfig {
   readonly trialCount: number;
   readonly candidateCount: number;
@@ -25,7 +27,7 @@ export const DISCOVERY_STUDY_CONFIG = {
 export function tuningPayloadFromConfig(config: TuningStudyConfig): OptimizationStartPayload {
   return {
     source: "persisted_candles",
-    instrument: "EUR_USD",
+    instrument: DEFAULT_RESEARCH_INSTRUMENT,
     optimizer_config: {
       trial_count: config.trialCount,
       candidate_count: config.candidateCount,
@@ -49,5 +51,5 @@ export const DEFAULT_TUNING_PAYLOAD = tuningPayloadFromConfig(DISCOVERY_STUDY_CO
 
 export const LEGACY_TUNING_PAYLOAD = {
   source: "persisted_candles",
-  instrument: "EUR_USD",
+  instrument: DEFAULT_RESEARCH_INSTRUMENT,
 } satisfies OptimizationStartPayload;

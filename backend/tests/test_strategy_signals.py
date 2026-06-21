@@ -69,7 +69,7 @@ def test_stop_widens_to_recent_swing_low_for_long_setups() -> None:
     assert setup.stop == Decimal("1.08685")
 
 
-def test_nearer_liquidity_target_must_respect_rr_floor() -> None:
+def test_nearer_liquidity_target_must_respect_liquidity_rr_floor() -> None:
     levels = replace(_levels(), asia_high=Decimal("1.0920"), london_high=Decimal("1.0930"))
 
     assert (
@@ -84,6 +84,54 @@ def test_nearer_liquidity_target_must_respect_rr_floor() -> None:
         )
         is None
     )
+
+
+def test_rr_target_mode_uses_fixed_rr_target_even_when_liquidity_is_nearer() -> None:
+    levels = replace(_levels(), asia_high=Decimal("1.0920"), london_high=Decimal("1.0930"))
+    setup = build_market_entry_setup(
+        fvg=_fvg(Bias.BULLISH),
+        entry_price=Decimal("1.0900"),
+        nav=Decimal("10000"),
+        levels=levels,
+        recent_candles=[],
+        config=replace(_config(), target_mode="rr"),
+        instrument_rules=_rules(),
+    )
+
+    assert setup is not None
+    assert setup.target == Decimal("1.09430")
+
+
+def test_rr_or_liquidity_mode_takes_nearer_liquidity_after_floor() -> None:
+    levels = replace(_levels(), asia_high=Decimal("1.0930"), london_high=Decimal("1.1150"))
+    setup = build_market_entry_setup(
+        fvg=_fvg(Bias.BULLISH),
+        entry_price=Decimal("1.0900"),
+        nav=Decimal("10000"),
+        levels=levels,
+        recent_candles=[],
+        config=_config(),
+        instrument_rules=_rules(),
+    )
+
+    assert setup is not None
+    assert setup.target == Decimal("1.0930")
+
+
+def test_opposite_session_mode_requires_qualified_liquidity_target() -> None:
+    levels = replace(_levels(), asia_high=Decimal("1.0920"), london_high=Decimal("1.0930"))
+    setup = build_market_entry_setup(
+        fvg=_fvg(Bias.BULLISH),
+        entry_price=Decimal("1.0900"),
+        nav=Decimal("10000"),
+        levels=levels,
+        recent_candles=[],
+        config=replace(_config(), target_mode="opposite_session"),
+        instrument_rules=_rules(),
+    )
+
+    assert setup is not None
+    assert setup.target == Decimal("1.0930")
 
 
 def test_units_are_clamped_to_configured_max_units() -> None:

@@ -56,6 +56,7 @@ export interface CandleSourceStatus {
   price_component: string;
   coverage: CandleCoverage;
   source_methods: string[];
+  research_instruments: string[];
   historical_import: CandleHistoricalImportPolicy;
   oanda_historical_import_configured: boolean;
 }
@@ -70,6 +71,7 @@ export interface CandleHistoricalImportPolicy {
 
 export interface CandleImportRequest {
   instrument?: string;
+  instruments?: string[];
   count?: number;
   from?: string;
 }
@@ -81,6 +83,15 @@ export interface CandleImportResult {
   requested_count: number;
   imported_count: number;
   from: string | null;
+  coverage: CandleCoverage;
+  instruments?: string[];
+  results?: CandleImportInstrumentResult[];
+}
+
+export interface CandleImportInstrumentResult {
+  instrument: string;
+  requested_count: number;
+  imported_count: number;
   coverage: CandleCoverage;
 }
 

@@ -1,5 +1,9 @@
 import type { OptimizationPreflightResponse } from "../../api/optimizerTypes";
-import { DISCOVERY_STUDY_CONFIG, tuningPayloadFromConfig } from "./tuningPayload";
+import {
+  DEFAULT_RESEARCH_INSTRUMENT,
+  DISCOVERY_STUDY_CONFIG,
+  tuningPayloadFromConfig,
+} from "./tuningPayload";
 
 const optimizerConfig = {
   trial_count: DISCOVERY_STUDY_CONFIG.trialCount,
@@ -20,7 +24,7 @@ const optimizerConfig = {
 
 export const preflight = {
   status: "ready",
-  instrument: "EUR_USD",
+  instrument: DEFAULT_RESEARCH_INSTRUMENT,
   candle_source: {
     source: "persisted_candles",
     candle_count: 31760,

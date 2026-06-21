@@ -75,7 +75,13 @@ def apply_params_to_strategy_config(
         sweep_buffer_pips=_decimal_param(params, "sweep_buffer_pips", config.sweep_buffer_pips),
         fvg_window=int(params.get("fvg_window", config.fvg_window)),
         swing_lookback=int(params.get("swing_lookback", config.swing_lookback)),
+        target_mode=str(params.get("target_mode", config.target_mode)),
         rr_floor=_decimal_param(params, "rr_floor", config.rr_floor),
+        liquidity_rr_floor=_decimal_param(
+            params,
+            "liquidity_rr_floor",
+            config.liquidity_rr_floor,
+        ),
         max_spread_pips=_decimal_param(params, "max_spread_pips", config.max_spread_pips),
         max_trades_per_day=int(params.get("max_trades_per_day", config.max_trades_per_day)),
     )

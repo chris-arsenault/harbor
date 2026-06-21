@@ -320,6 +320,7 @@ def _strategy_config() -> StrategyConfig:
         max_daily_loss_pct=Decimal("2.0"),
         target_mode="opposite_session",
         rr_floor=Decimal("2"),
+        liquidity_rr_floor=Decimal("1"),
         one_trade_per_level=True,
         max_trades_per_day=1,
         max_spread_pips=Decimal("1.5"),

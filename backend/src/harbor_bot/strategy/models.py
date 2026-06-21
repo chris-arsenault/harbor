@@ -31,6 +31,7 @@ class StrategyConfig:
     max_daily_loss_pct: Decimal
     target_mode: str
     rr_floor: Decimal
+    liquidity_rr_floor: Decimal
     one_trade_per_level: bool
     max_trades_per_day: int
     max_spread_pips: Decimal
@@ -148,6 +149,7 @@ def strategy_config_from_defaults(defaults: dict[str, dict[str, Any]]) -> Strate
         max_daily_loss_pct=_decimal_value(defaults, "max_daily_loss_pct"),
         target_mode=str(_value(defaults, "target_mode")),
         rr_floor=_decimal_value(defaults, "rr_floor"),
+        liquidity_rr_floor=_decimal_value(defaults, "liquidity_rr_floor"),
         one_trade_per_level=bool(_value(defaults, "one_trade_per_level")),
         max_trades_per_day=int(_value(defaults, "max_trades_per_day")),
         max_spread_pips=_decimal_value(defaults, "max_spread_pips"),

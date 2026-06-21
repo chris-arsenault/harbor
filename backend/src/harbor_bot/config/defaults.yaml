@@ -40,6 +40,11 @@ rr_floor:
   bounds:
     min: 1.0
     max: 4.0
+liquidity_rr_floor:
+  value: 1.0
+  bounds:
+    min: 1.0
+    max: 2.0
 one_trade_per_level:
   value: true
 max_trades_per_day:

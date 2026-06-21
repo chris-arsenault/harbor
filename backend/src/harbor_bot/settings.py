@@ -66,6 +66,10 @@ class Settings(BaseSettings):
         default=0.1,
         validation_alias="OANDA_HISTORICAL_REQUEST_INTERVAL_SECONDS",
     )
+    research_instruments_csv: str = Field(
+        default="GBP_USD,EUR_USD,USD_JPY,EUR_JPY,GBP_JPY,AUD_JPY,AUD_USD,EUR_GBP",
+        validation_alias="HARBOR_RESEARCH_INSTRUMENTS",
+    )
 
     @property
     def async_database_url(self) -> str:
@@ -121,6 +125,14 @@ class Settings(BaseSettings):
             "allow_live": self.allow_live,
             "practice_only": normalized_env == "practice",
         }
+
+    @property
+    def research_instruments(self) -> tuple[str, ...]:
+        return tuple(
+            item.strip().upper()
+            for item in self.research_instruments_csv.split(",")
+            if item.strip()
+        )
 
 
 def redact_secret_text(value: object) -> str:

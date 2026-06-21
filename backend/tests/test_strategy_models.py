@@ -38,6 +38,7 @@ def test_strategy_config_loads_from_default_config_mapping() -> None:
         max_daily_loss_pct=Decimal("2.0"),
         target_mode="rr_or_liquidity",
         rr_floor=Decimal("2.0"),
+        liquidity_rr_floor=Decimal("1.0"),
         one_trade_per_level=True,
         max_trades_per_day=2,
         max_spread_pips=Decimal("1.2"),

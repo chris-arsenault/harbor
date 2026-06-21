@@ -66,6 +66,8 @@ def test_default_search_space_samples_all_configured_parameters() -> None:
             "fvg_window": 8,
             "swing_lookback": 5,
             "rr_floor": 2.5,
+            "liquidity_rr_floor": 1.0,
+            "target_mode": "rr_or_liquidity",
             "max_spread_pips": 1.2,
             "max_trades_per_day": 2,
         }
@@ -77,6 +79,8 @@ def test_default_search_space_samples_all_configured_parameters() -> None:
     assert params["ny_trade_start_offset_minutes"] == 15
     assert params["sweep_buffer_pips"] == "2.0"
     assert params["rr_floor"] == "2.5"
+    assert params["liquidity_rr_floor"] == "1.0"
+    assert params["target_mode"] == "rr_or_liquidity"
 
 
 def test_strategy_config_for_params_updates_variant_without_mutating_defaults() -> None:
@@ -86,14 +90,17 @@ def test_strategy_config_for_params_updates_variant_without_mutating_defaults() 
         {
             "ny_trade_start_offset_minutes": 15,
             "ny_trade_end_offset_minutes": -15,
+            "target_mode": "rr",
             "rr_floor": "2.5",
+            "liquidity_rr_floor": "1.5",
             "fvg_window": 10,
         },
     )
 
     assert variant.sessions["ny_trade"] == {"start": "09:45", "end": "11:15"}
+    assert variant.target_mode == "rr"
     assert variant.rr_floor == Decimal("2.5")
+    assert variant.liquidity_rr_floor == Decimal("1.5")
     assert variant.fvg_window == 10
     assert base.sessions["ny_trade"] == {"start": "09:30", "end": "11:30"}
     assert variant.instrument == "EUR_USD"
-    assert variant.target_mode == "rr_or_liquidity"

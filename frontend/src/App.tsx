@@ -43,6 +43,7 @@ import { DashboardView } from "./components/dashboard/DashboardView";
 import { EventsView } from "./components/events/EventsView";
 import { LabScreen } from "./components/lab/LabScreen";
 import {
+  DEFAULT_RESEARCH_INSTRUMENT,
   DISCOVERY_STUDY_CONFIG,
   tuningPayloadFromConfig,
   type TuningStudyConfig,
@@ -195,7 +196,7 @@ function tuningRunState(mutation: ReturnType<typeof useStartOptimizationMutation
 }
 
 function useLabCandleSource() {
-  const candleSourceQuery = useCandleSourceQuery({ instrument: DEFAULT_INSTRUMENT });
+  const candleSourceQuery = useCandleSourceQuery({ instrument: DEFAULT_RESEARCH_INSTRUMENT });
   const importCandlesMutation = useImportHistoricalCandlesMutation();
 
   return {

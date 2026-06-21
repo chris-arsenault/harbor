@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.feed.historical import ingest_historical_candles
+from harbor_bot.instruments import RESEARCH_INSTRUMENTS
 from harbor_bot.oanda.client import OandaClient
 from harbor_bot.persistence.market_repository import get_candle_coverage
 from harbor_bot.settings import Settings
@@ -35,6 +36,7 @@ class CandleSourceService:
             "price_component": "midpoint",
             "coverage": _jsonable_coverage(coverage),
             "source_methods": ["oanda_historical_import", "oanda_pricing_stream"],
+            "research_instruments": list(_research_instruments(self.settings)),
             "historical_import": {
                 "page_size": self.settings.oanda_historical_candle_page_size,
                 "default_count": self.settings.oanda_historical_import_count,
@@ -50,7 +52,7 @@ class CandleSourceService:
         }
 
     async def import_historical(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        instrument = str(payload.get("instrument") or _default_instrument())
+        instruments = _payload_instruments(payload, self.settings)
         count = int(payload.get("count") or self.settings.oanda_historical_import_count)
         if count <= 0:
             msg = "count must be positive"
@@ -59,32 +61,76 @@ class CandleSourceService:
         if from_time is None and count > self.settings.oanda_historical_candle_page_size:
             from_time = datetime.now(UTC) - timedelta(minutes=count)
 
+        results = []
         async with self.client_factory(self.settings) as client:
-            imported_count = await self.historical_ingestor(
-                client=client,
-                engine=self.engine,
-                instrument=instrument,
-                from_time=from_time,
-                count=count,
-                page_size=self.settings.oanda_historical_candle_page_size,
-                request_interval_seconds=(self.settings.oanda_historical_request_interval_seconds),
-                include_first=from_time is None,
-            )
+            for instrument in instruments:
+                imported_count = await self.historical_ingestor(
+                    client=client,
+                    engine=self.engine,
+                    instrument=instrument,
+                    from_time=from_time,
+                    count=count,
+                    page_size=self.settings.oanda_historical_candle_page_size,
+                    request_interval_seconds=(
+                        self.settings.oanda_historical_request_interval_seconds
+                    ),
+                    include_first=from_time is None,
+                )
+                status = await self.get_status(instrument=instrument)
+                results.append(
+                    {
+                        "instrument": instrument,
+                        "requested_count": count,
+                        "imported_count": imported_count,
+                        "coverage": status["coverage"],
+                    }
+                )
 
-        status = await self.get_status(instrument=instrument)
+        if len(results) == 1:
+            return {
+                "status": "completed",
+                "source": "oanda_historical_import",
+                "instrument": results[0]["instrument"],
+                "requested_count": count,
+                "imported_count": results[0]["imported_count"],
+                "from": _iso_or_none(from_time),
+                "coverage": results[0]["coverage"],
+            }
+
         return {
             "status": "completed",
             "source": "oanda_historical_import",
-            "instrument": instrument,
-            "requested_count": count,
-            "imported_count": imported_count,
+            "instrument": "research_universe",
+            "instruments": [result["instrument"] for result in results],
+            "requested_count": count * len(results),
+            "imported_count": sum(int(result["imported_count"]) for result in results),
             "from": _iso_or_none(from_time),
-            "coverage": status["coverage"],
+            "coverage": results[0]["coverage"],
+            "results": results,
         }
 
 
 def _default_instrument() -> str:
     return strategy_config_from_defaults(load_default_config()).instrument
+
+
+def _payload_instruments(payload: Mapping[str, Any], settings: Settings) -> tuple[str, ...]:
+    raw_instruments = payload.get("instruments")
+    if isinstance(raw_instruments, list):
+        instruments = tuple(str(value).strip().upper() for value in raw_instruments if value)
+        if not instruments:
+            msg = "instruments cannot be empty"
+            raise ValueError(msg)
+        return instruments
+
+    raw_instrument = payload.get("instrument")
+    if raw_instrument in (None, "", "research_universe"):
+        return _research_instruments(settings)
+    return (str(raw_instrument).strip().upper(),)
+
+
+def _research_instruments(settings: Settings) -> tuple[str, ...]:
+    return settings.research_instruments or RESEARCH_INSTRUMENTS
 
 
 def _optional_utc_ts(raw: Any) -> datetime | None:

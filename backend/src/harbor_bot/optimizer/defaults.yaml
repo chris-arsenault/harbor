@@ -63,6 +63,17 @@ search_space:
     min: "1.0"
     max: "4.0"
     step: "0.5"
+  liquidity_rr_floor:
+    type: decimal
+    min: "1.0"
+    max: "2.0"
+    step: "0.5"
+  target_mode:
+    type: categorical
+    choices:
+      - rr_or_liquidity
+      - rr
+      - opposite_session
   max_spread_pips:
     type: decimal
     min: "0.5"

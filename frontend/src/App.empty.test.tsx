@@ -145,6 +145,7 @@ function candleSource(count: number) {
       to: count > 0 ? "2026-01-16T23:59:00+00:00" : null,
     },
     source_methods: ["oanda_historical_import", "oanda_pricing_stream"],
+    research_instruments: ["GBP_USD", "EUR_USD", "USD_JPY"],
     historical_import: {
       page_size: 5000,
       default_count: 259200,

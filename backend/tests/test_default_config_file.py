@@ -12,6 +12,7 @@ FIXED_VALUES = {
     "max_daily_loss_pct": 2.0,
     "target_mode": "rr_or_liquidity",
     "rr_floor": 2.0,
+    "liquidity_rr_floor": 1.0,
     "one_trade_per_level": True,
     "min_forward_days": 20,
 }

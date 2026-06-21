@@ -81,6 +81,30 @@ def test_candle_source_routes_report_coverage_and_import_historical_data() -> No
     assert source.import_payloads == [{"instrument": "EUR_USD", "count": 500}]
 
 
+def test_candle_source_routes_accept_research_universe_import() -> None:
+    source = FakeCandleSourceService()
+    client = TestClient(
+        create_app(
+            backtest_service=FakeBacktestService(),
+            optimizer_service=FakeOptimizerService(),
+            lab_service=FakeLabService(),
+            product_query_service=FakeProductQueryService(),
+            candle_source_service=source,
+        )
+    )
+
+    imported = client.post(
+        "/api/candles/import",
+        json={"instrument": "research_universe", "instruments": ["GBP_USD", "USD_JPY"], "count": 2},
+    )
+
+    assert imported.json()["instrument"] == "research_universe"
+    assert imported.json()["imported_count"] == 4
+    assert source.import_payloads == [
+        {"instrument": "research_universe", "instruments": ["GBP_USD", "USD_JPY"], "count": 2}
+    ]
+
+
 def test_default_optimizer_service_loads_packaged_validation_fixture() -> None:
     app = create_app(
         observability_service=object(),
@@ -224,6 +248,7 @@ class FakeCandleSourceService:
                 "to": None,
             },
             "source_methods": ["oanda_historical_import", "oanda_pricing_stream"],
+            "research_instruments": ["GBP_USD", "EUR_USD"],
             "historical_import": {
                 "page_size": 5000,
                 "default_count": 259200,
@@ -236,6 +261,32 @@ class FakeCandleSourceService:
 
     async def import_historical(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.import_payloads.append(payload)
+        if payload.get("instrument") == "research_universe":
+            results = [
+                {
+                    "instrument": instrument,
+                    "requested_count": int(payload.get("count") or 0),
+                    "imported_count": int(payload.get("count") or 0),
+                    "coverage": {
+                        "instrument": instrument,
+                        "candle_count": int(payload.get("count") or 0),
+                        "from": "2026-01-15T00:00:00+00:00",
+                        "to": "2026-01-16T23:59:00+00:00",
+                    },
+                }
+                for instrument in payload.get("instruments", [])
+            ]
+            return {
+                "status": "completed",
+                "source": "oanda_historical_import",
+                "instrument": "research_universe",
+                "instruments": [result["instrument"] for result in results],
+                "requested_count": sum(result["requested_count"] for result in results),
+                "imported_count": sum(result["imported_count"] for result in results),
+                "from": "2026-01-15T00:00:00+00:00",
+                "coverage": results[0]["coverage"],
+                "results": results,
+            }
         return {
             "status": "completed",
             "source": "oanda_historical_import",

@@ -20,6 +20,7 @@ from harbor_bot.config.defaults import load_default_config
 from harbor_bot.config.models import ConfigUpdateRequest
 from harbor_bot.config.service import ConfigService
 from harbor_bot.feed.source_service import CandleSourceService
+from harbor_bot.instruments import default_instrument_rules
 from harbor_bot.lab.service import LabService
 from harbor_bot.oanda.client import OandaApiError
 from harbor_bot.observability.service import ObservabilityService
@@ -503,14 +504,7 @@ def create_app(
 
 
 def _default_instrument_rules(instrument: str) -> InstrumentRules:
-    return InstrumentRules(
-        instrument=instrument,
-        pip_location=-4,
-        display_precision=5,
-        trade_units_precision=0,
-        minimum_trade_size=Decimal("1"),
-        unit_step=Decimal("1"),
-    )
+    return default_instrument_rules(instrument)
 
 
 class ReadinessChecker:

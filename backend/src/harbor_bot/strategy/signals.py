@@ -97,17 +97,40 @@ def choose_target(
         if fvg.fvg_type == Bias.BULLISH
         else entry_price - (risk * config.rr_floor)
     )
-    liquidity_targets = _opposite_liquidity_targets(
+    if config.target_mode == "rr":
+        return rr_target
+
+    all_liquidity_targets = _opposite_liquidity_targets(
         bias=fvg.fvg_type,
         entry_price=entry_price,
         levels=levels,
     )
-    candidates = [rr_target, *liquidity_targets]
-    target = min(candidates, key=lambda value: abs(value - entry_price))
-    achieved_rr = abs(target - entry_price) / risk
-    if achieved_rr < config.rr_floor:
+    if config.target_mode == "opposite_session":
+        return _nearest_qualified_liquidity_target(
+            all_liquidity_targets,
+            entry_price=entry_price,
+            risk=risk,
+            config=config,
+        )
+
+    if config.target_mode != "rr_or_liquidity":
+        msg = f"unsupported target_mode {config.target_mode!r}"
+        raise ValueError(msg)
+
+    nearest_liquidity = _nearest_liquidity_target(
+        all_liquidity_targets,
+        entry_price=entry_price,
+    )
+    if nearest_liquidity is None:
+        return rr_target
+    if _achieved_rr(nearest_liquidity, entry_price=entry_price, risk=risk) < (
+        config.liquidity_rr_floor
+    ):
         return None
-    return target
+    return min(
+        (rr_target, nearest_liquidity),
+        key=lambda value: abs(value - entry_price),
+    )
 
 
 def calculate_position_units(
@@ -134,6 +157,33 @@ def _opposite_liquidity_targets(
     if bias == Bias.BULLISH:
         return [value for value in values if value > entry_price]
     return [value for value in values if value < entry_price]
+
+
+def _nearest_qualified_liquidity_target(
+    targets: list[Decimal],
+    *,
+    entry_price: Decimal,
+    risk: Decimal,
+    config: StrategyConfig,
+) -> Decimal | None:
+    for target in sorted(targets, key=lambda value: abs(value - entry_price)):
+        if _achieved_rr(target, entry_price=entry_price, risk=risk) >= config.liquidity_rr_floor:
+            return target
+    return None
+
+
+def _nearest_liquidity_target(
+    targets: list[Decimal],
+    *,
+    entry_price: Decimal,
+) -> Decimal | None:
+    if not targets:
+        return None
+    return min(targets, key=lambda value: abs(value - entry_price))
+
+
+def _achieved_rr(target: Decimal, *, entry_price: Decimal, risk: Decimal) -> Decimal:
+    return abs(target - entry_price) / risk
 
 
 def _floor_to_step(value: Decimal, step: Decimal) -> Decimal:
