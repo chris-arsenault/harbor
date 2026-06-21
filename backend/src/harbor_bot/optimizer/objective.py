@@ -100,6 +100,16 @@ def objective_score(stats: BacktestStats, optimizer_config: OptimizationConfig) 
     return stats.expectancy / drawdown
 
 
+def candidate_gate_score(score: TrialScore) -> Decimal:
+    if score.in_sample_score <= 0 or score.out_of_sample_score <= 0:
+        return min(score.in_sample_score, score.out_of_sample_score) - (
+            abs(score.in_sample_score - score.out_of_sample_score) * Decimal("0.05")
+        )
+    return min(score.in_sample_score, score.out_of_sample_score) + (
+        (score.in_sample_score + score.out_of_sample_score) * Decimal("0.05")
+    )
+
+
 def aggregate_stats(
     results: list[BacktestRunResult],
     *,

@@ -12,8 +12,14 @@ from harbor_bot.backtester.models import (
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.optimizer.config import load_optimizer_config
-from harbor_bot.optimizer.models import OptimizationConfig, OptimizationStatus, WalkForwardConfig
-from harbor_bot.optimizer.runner import run_optimization
+from harbor_bot.optimizer.models import (
+    OptimizationConfig,
+    OptimizationStatus,
+    TrialRecord,
+    TrialScore,
+    WalkForwardConfig,
+)
+from harbor_bot.optimizer.runner import _rank_candidates, run_optimization
 from harbor_bot.strategy.models import InstrumentRules, strategy_config_from_defaults
 
 
@@ -88,6 +94,39 @@ def test_runner_does_not_rank_zero_score_trials_as_candidates() -> None:
     assert all(trial.status == OptimizationStatus.COMPLETED for trial in result.trials)
     assert all(trial.failure_reason is None for trial in result.trials)
     assert result.candidates == ()
+
+
+def test_runner_ranks_candidates_by_balanced_is_oos_gate_score() -> None:
+    trials = (
+        TrialRecord(
+            trial_no=1,
+            params={"label": "fragile"},
+            score=TrialScore(
+                in_sample_score=Decimal("0.01"),
+                out_of_sample_score=Decimal("5"),
+            ),
+        ),
+        TrialRecord(
+            trial_no=2,
+            params={"label": "balanced"},
+            score=TrialScore(
+                in_sample_score=Decimal("0.4"),
+                out_of_sample_score=Decimal("0.4"),
+            ),
+        ),
+        TrialRecord(
+            trial_no=3,
+            params={"label": "rejected"},
+            score=TrialScore(
+                in_sample_score=Decimal("-0.1"),
+                out_of_sample_score=Decimal("5"),
+            ),
+        ),
+    )
+
+    candidates = _rank_candidates(trials, candidate_count=2)
+
+    assert [candidate.params["label"] for candidate in candidates] == ["balanced", "fragile"]
 
 
 def _scoring_runner(backtest_input: BacktestInput) -> BacktestRunResult:

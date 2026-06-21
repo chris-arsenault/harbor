@@ -45,7 +45,7 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   expect(screen.getByText("Baseline OOS")).toBeInTheDocument();
   expect(screen.getByText("0.75")).toBeInTheDocument();
   expect(screen.getByText("16/18")).toBeInTheDocument();
-  expect(screen.getByLabelText("Trials")).toHaveValue(32);
+  expect(screen.getByLabelText("Trials")).toHaveValue(64);
   expect(screen.getByText("1 parameter")).toBeInTheDocument();
   expect(screen.getByText("fvg_window")).not.toBeVisible();
   fireEvent.click(screen.getByText("Candidate Parameters"));

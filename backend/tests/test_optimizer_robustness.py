@@ -46,7 +46,7 @@ def test_generate_neighbor_params_steps_numeric_parameters_within_bounds() -> No
 
 
 def test_generate_neighbor_params_skips_out_of_bounds_neighbors() -> None:
-    config = load_optimizer_config()
+    config = _optimizer_config_with_neighbor_count(1)
     search_space = SearchSpace(
         (
             SearchParameter(

@@ -15,6 +15,8 @@ from harbor_bot.optimizer.models import (
 from harbor_bot.optimizer.objective import (
     BacktestRunner,
     InsufficientTradeCountError,
+    ObjectiveEvaluation,
+    candidate_gate_score,
     evaluate_params,
 )
 from harbor_bot.optimizer.robustness import calculate_robustness_score
@@ -57,7 +59,8 @@ def run_optimization(
                 optimizer_config=optimizer_config,
                 backtest_runner=backtest_runner,
             )
-            trial.report(float(evaluation.score.out_of_sample_score), step=0)
+            optimization_score = candidate_gate_score(evaluation.score)
+            trial.report(float(optimization_score), step=0)
             if trial.should_prune():
                 records[trial.number] = _record(
                     trial.number,
@@ -69,7 +72,7 @@ def run_optimization(
 
             robustness = calculate_robustness_score(
                 params=params,
-                base_oos_score=evaluation.score.out_of_sample_score,
+                base_oos_score=optimization_score,
                 search_space=optimizer_config.search_space,
                 optimizer_config=optimizer_config,
                 objective_evaluator=lambda neighbor: evaluate_params(
@@ -81,6 +84,7 @@ def run_optimization(
                     optimizer_config=optimizer_config,
                     backtest_runner=backtest_runner,
                 ),
+                score_getter=_optimization_score,
             )
             score = TrialScore(
                 in_sample_score=evaluation.score.in_sample_score,
@@ -93,7 +97,7 @@ def run_optimization(
                 score=score,
                 status=OptimizationStatus.COMPLETED,
             )
-            return float(score.out_of_sample_score)
+            return float(candidate_gate_score(score))
         except InsufficientTradeCountError as exc:
             records[trial.number] = _record(
                 trial.number,
@@ -144,7 +148,11 @@ def _rank_candidates(
     ]
     ranked = sorted(
         completed,
-        key=lambda trial: (trial.score.out_of_sample_score, trial.score.robustness_score),
+        key=lambda trial: (
+            candidate_gate_score(trial.score),
+            trial.score.out_of_sample_score,
+            trial.score.robustness_score,
+        ),
         reverse=True,
     )
     return tuple(
@@ -155,6 +163,10 @@ def _rank_candidates(
         )
         for index, trial in enumerate(ranked[:candidate_count], start=1)
     )
+
+
+def _optimization_score(evaluation: ObjectiveEvaluation) -> Decimal:
+    return candidate_gate_score(evaluation.score)
 
 
 def _record(

@@ -14,10 +14,11 @@ from harbor_bot.backtester.models import (
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.optimizer.config import load_optimizer_config
-from harbor_bot.optimizer.models import OptimizationConfig, WalkForwardConfig
+from harbor_bot.optimizer.models import OptimizationConfig, TrialScore, WalkForwardConfig
 from harbor_bot.optimizer.objective import (
     InsufficientTradeCountError,
     aggregate_stats,
+    candidate_gate_score,
     evaluate_params,
     objective_score,
 )
@@ -38,6 +39,30 @@ def test_objective_score_is_oos_expectancy_divided_by_drawdown_floor() -> None:
     )
 
     assert objective_score(stats, config) == Decimal("10")
+
+
+def test_candidate_gate_score_rewards_positive_balanced_is_and_oos() -> None:
+    high_oos_negative_is = candidate_gate_score(
+        TrialScore(
+            in_sample_score=Decimal("-0.1"),
+            out_of_sample_score=Decimal("5"),
+        )
+    )
+    balanced_positive = candidate_gate_score(
+        TrialScore(
+            in_sample_score=Decimal("0.4"),
+            out_of_sample_score=Decimal("0.4"),
+        )
+    )
+    fragile_positive = candidate_gate_score(
+        TrialScore(
+            in_sample_score=Decimal("0.01"),
+            out_of_sample_score=Decimal("5"),
+        )
+    )
+
+    assert high_oos_negative_is < 0
+    assert balanced_positive > fragile_positive
 
 
 def test_evaluate_params_runs_m5_backtester_for_each_train_and_oos_window() -> None:

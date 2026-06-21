@@ -12,18 +12,18 @@ export interface TuningStudyConfig {
 }
 
 export const DISCOVERY_STUDY_CONFIG = {
-  trialCount: 32,
+  trialCount: 64,
   candidateCount: 5,
   trainWindowDays: 10,
   outOfSampleWindowDays: 5,
   stepDays: 5,
   minInSampleTrades: 3,
   minOutOfSampleTrades: 1,
-  robustnessNeighborCount: 1,
+  robustnessNeighborCount: 0,
 } satisfies TuningStudyConfig;
 
 export const QUICK_STUDY_CONFIG = {
-  trialCount: 8,
+  trialCount: 32,
   candidateCount: 3,
   trainWindowDays: 5,
   outOfSampleWindowDays: 2,

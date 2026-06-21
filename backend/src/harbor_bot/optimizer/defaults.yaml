@@ -1,4 +1,4 @@
-trial_count: 32
+trial_count: 64
 candidate_count: 5
 tpe_seed: 17
 drawdown_floor: "1"
@@ -6,7 +6,7 @@ minimum_trade_count:
   in_sample: 3
   out_of_sample: 1
 robustness:
-  neighbor_count: 1
+  neighbor_count: 0
   step_scale: "1"
 walk_forward:
   train_window_days: 10
