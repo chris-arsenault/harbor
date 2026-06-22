@@ -37,6 +37,7 @@ class StrategyConfig:
     max_spread_pips: Decimal
     swing_lookback: int
     max_units: Decimal
+    require_mss: bool = False
 
 
 @dataclass(frozen=True)
@@ -155,6 +156,7 @@ def strategy_config_from_defaults(defaults: dict[str, dict[str, Any]]) -> Strate
         max_spread_pips=_decimal_value(defaults, "max_spread_pips"),
         swing_lookback=int(_value(defaults, "swing_lookback")),
         max_units=_decimal_value(defaults, "max_units"),
+        require_mss=bool(_value(defaults, "require_mss")),
     )
 
 

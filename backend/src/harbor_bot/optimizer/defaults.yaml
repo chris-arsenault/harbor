@@ -74,6 +74,11 @@ search_space:
       - rr_or_liquidity
       - rr
       - opposite_session
+  require_mss:
+    type: categorical
+    choices:
+      - false
+      - true
   max_spread_pips:
     type: decimal
     min: "0.5"

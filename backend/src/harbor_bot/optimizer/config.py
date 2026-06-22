@@ -84,6 +84,7 @@ def apply_params_to_strategy_config(
         ),
         max_spread_pips=_decimal_param(params, "max_spread_pips", config.max_spread_pips),
         max_trades_per_day=int(params.get("max_trades_per_day", config.max_trades_per_day)),
+        require_mss=_bool_param(params, "require_mss", config.require_mss),
     )
 
 
@@ -120,3 +121,12 @@ def _decimal_param(params: dict[str, Any], key: str, default: Decimal) -> Decima
     if key not in params:
         return default
     return Decimal(str(params[key]))
+
+
+def _bool_param(params: dict[str, Any], key: str, default: bool) -> bool:
+    if key not in params:
+        return default
+    value = params[key]
+    if isinstance(value, str):
+        return value.strip().lower() == "true"
+    return bool(value)

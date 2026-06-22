@@ -51,6 +51,7 @@ def test_optimizer_defaults_load_bounded_search_space_and_runtime_config() -> No
         "rr_floor",
         "liquidity_rr_floor",
         "target_mode",
+        "require_mss",
         "max_spread_pips",
         "max_trades_per_day",
     }
