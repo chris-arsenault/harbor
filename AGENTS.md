@@ -21,6 +21,7 @@ Harbor is a TrueNAS-hosted OANDA practice-trading research system with a Python 
 - Make every strategy decision from closed candles only.
 - Keep `strategy_core` pure: no network, database, clock, broker, or UI I/O.
 - Drive live trading, paper variants, and backtests through the same strategy core.
+- Detect backtest stop/target fills on bid/ask when present (longs on the bid, shorts on the ask), falling back to midpoint only when bid/ask are absent.
 - Keep OANDA practice mode as the default runtime mode.
 - Require `ALLOW_LIVE=true`, `OANDA_ENV=live`, and explicit trading enablement before live trading can place orders.
 - Use America/New_York session definitions and timezone conversion; never hardcode a UTC offset.

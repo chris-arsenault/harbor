@@ -126,7 +126,7 @@ class OandaClient:
     ) -> list[HistoricalCandle]:
         params: dict[str, str | int] = {
             "granularity": "M1",
-            "price": "M",
+            "price": "MBA",
         }
         if count is not None:
             params["count"] = count

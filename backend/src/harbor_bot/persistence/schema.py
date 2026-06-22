@@ -43,6 +43,10 @@ candles = Table(
     Column("c", price, nullable=False),
     Column("volume", BigInteger, nullable=False),
     Column("complete", Boolean, nullable=False),
+    Column("bid_h", price, nullable=True),
+    Column("bid_l", price, nullable=True),
+    Column("ask_h", price, nullable=True),
+    Column("ask_l", price, nullable=True),
     UniqueConstraint("instrument", "ts", name="candles_instrument_ts_key"),
 )
 

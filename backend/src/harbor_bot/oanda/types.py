@@ -36,6 +36,10 @@ class HistoricalCandle:
     c: Decimal
     volume: int
     complete: bool
+    bid_h: Decimal | None = None
+    bid_low: Decimal | None = None
+    ask_h: Decimal | None = None
+    ask_low: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -186,6 +190,8 @@ def parse_historical_candles(payload: dict[str, Any]) -> list[HistoricalCandle]:
     parsed = []
     for candle in payload["candles"]:
         mid = _mapping(candle["mid"])
+        bid = candle.get("bid")
+        ask = candle.get("ask")
         parsed.append(
             HistoricalCandle(
                 instrument=instrument,
@@ -196,9 +202,20 @@ def parse_historical_candles(payload: dict[str, Any]) -> list[HistoricalCandle]:
                 c=_decimal(mid["c"]),
                 volume=int(candle["volume"]),
                 complete=bool(candle["complete"]),
+                bid_h=_optional_ohlc(bid, "h"),
+                bid_low=_optional_ohlc(bid, "l"),
+                ask_h=_optional_ohlc(ask, "h"),
+                ask_low=_optional_ohlc(ask, "l"),
             )
         )
     return parsed
+
+
+def _optional_ohlc(group: Any, key: str) -> Decimal | None:
+    if not isinstance(group, dict):
+        return None
+    value = group.get(key)
+    return None if value is None else _decimal(value)
 
 
 def parse_pricing_frame(payload: dict[str, Any]) -> PricingFrame:

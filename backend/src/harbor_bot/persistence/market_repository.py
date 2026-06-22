@@ -23,30 +23,32 @@ async def upsert_candle(
     c: Decimal,
     volume: int,
     complete: bool,
+    bid_h: Decimal | None = None,
+    bid_l: Decimal | None = None,
+    ask_h: Decimal | None = None,
+    ask_l: Decimal | None = None,
 ) -> None:
     ts = _require_aware_utc(ts)
+    values = {
+        "instrument": instrument,
+        "ts": ts,
+        "o": o,
+        "h": h,
+        "l": low,
+        "c": c,
+        "volume": volume,
+        "complete": complete,
+        "bid_h": bid_h,
+        "bid_l": bid_l,
+        "ask_h": ask_h,
+        "ask_l": ask_l,
+    }
     statement = (
         insert(candles)
-        .values(
-            instrument=instrument,
-            ts=ts,
-            o=o,
-            h=h,
-            l=low,
-            c=c,
-            volume=volume,
-            complete=complete,
-        )
+        .values(**values)
         .on_conflict_do_update(
             index_elements=[candles.c.instrument, candles.c.ts],
-            set_={
-                "o": o,
-                "h": h,
-                "l": low,
-                "c": c,
-                "volume": volume,
-                "complete": complete,
-            },
+            set_={key: value for key, value in values.items() if key not in ("instrument", "ts")},
         )
     )
     await connection.execute(statement)
@@ -67,6 +69,10 @@ async def list_candles(
             candles.c.c,
             candles.c.volume,
             candles.c.complete,
+            candles.c.bid_h,
+            candles.c.bid_l,
+            candles.c.ask_h,
+            candles.c.ask_l,
         )
         .where(candles.c.instrument == instrument)
         .order_by(candles.c.ts)
@@ -91,6 +97,10 @@ async def list_candles_range(
             candles.c.c,
             candles.c.volume,
             candles.c.complete,
+            candles.c.bid_h,
+            candles.c.bid_l,
+            candles.c.ask_h,
+            candles.c.ask_l,
         )
         .where(
             candles.c.instrument == instrument,

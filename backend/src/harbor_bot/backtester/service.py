@@ -107,19 +107,33 @@ async def read_persisted_candle_records(
             start=start,
             end=end,
         )
-    return [
-        {
-            "instrument": row["instrument"],
-            "ts": row["ts"].isoformat(),
-            "o": str(row["o"]),
-            "h": str(row["h"]),
-            "low": str(row["l"]),
-            "c": str(row["c"]),
-            "volume": row["volume"],
-            "complete": row["complete"],
-        }
-        for row in rows
-    ]
+    return [_candle_record(row) for row in rows]
+
+
+def _candle_record(row: Mapping[str, Any]) -> dict[str, Any]:
+    record: dict[str, Any] = {
+        "instrument": row["instrument"],
+        "ts": row["ts"].isoformat(),
+        "o": str(row["o"]),
+        "h": str(row["h"]),
+        "low": str(row["l"]),
+        "c": str(row["c"]),
+        "volume": row["volume"],
+        "complete": row["complete"],
+    }
+    bid = _ohlc_extremes(row.get("bid_h"), row.get("bid_l"))
+    ask = _ohlc_extremes(row.get("ask_h"), row.get("ask_l"))
+    if bid is not None:
+        record["bid"] = bid
+    if ask is not None:
+        record["ask"] = ask
+    return record
+
+
+def _ohlc_extremes(high: Any, low: Any) -> dict[str, str] | None:
+    if high is None or low is None:
+        return None
+    return {"h": str(high), "l": str(low)}
 
 
 async def select_latest_complete_candle_window(

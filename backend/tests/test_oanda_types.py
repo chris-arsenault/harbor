@@ -56,6 +56,36 @@ def test_historical_candles_normalize_rfc3339_and_string_prices() -> None:
     assert candles[0].volume == 128
 
 
+def test_historical_candles_without_bid_ask_have_none_extremes() -> None:
+    candles = parse_historical_candles(_load_json("candles.json"))
+
+    assert candles[0].bid_low is None
+    assert candles[0].ask_h is None
+
+
+def test_historical_candles_parse_bid_and_ask_extremes() -> None:
+    payload = {
+        "instrument": "EUR_USD",
+        "candles": [
+            {
+                "time": "2026-01-15T14:30:00.000000000Z",
+                "volume": 10,
+                "complete": True,
+                "mid": {"o": "1.1000", "h": "1.1050", "l": "1.0990", "c": "1.1040"},
+                "bid": {"o": "1.0999", "h": "1.1049", "l": "1.0989", "c": "1.1039"},
+                "ask": {"o": "1.1001", "h": "1.1051", "l": "1.0991", "c": "1.1041"},
+            }
+        ],
+    }
+
+    candle = parse_historical_candles(payload)[0]
+
+    assert candle.bid_low == Decimal("1.0989")
+    assert candle.bid_h == Decimal("1.1049")
+    assert candle.ask_low == Decimal("1.0991")
+    assert candle.ask_h == Decimal("1.1051")
+
+
 def test_pricing_price_and_heartbeat_frames_are_distinct() -> None:
     price = parse_pricing_frame(_load_json("pricing_price.json"))
     heartbeat = parse_pricing_frame(_load_json("pricing_heartbeat.json"))

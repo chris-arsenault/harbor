@@ -66,7 +66,7 @@ async def test_client_requests_historical_m1_midpoint_candles() -> None:
     params = requests[0].url.params
     assert requests[0].url.path == "/v3/instruments/EUR_USD/candles"
     assert params["granularity"] == "M1"
-    assert params["price"] == "M"
+    assert params["price"] == "MBA"
     assert params["count"] == "500"
     assert params["from"] == "2026-01-15T14:30:00Z"
     assert params["includeFirst"] == "false"
@@ -91,7 +91,7 @@ async def test_client_omits_include_first_without_from_time() -> None:
 
     params = requests[0].url.params
     assert params["granularity"] == "M1"
-    assert params["price"] == "M"
+    assert params["price"] == "MBA"
     assert params["count"] == "500"
     assert "from" not in params
     assert "includeFirst" not in params

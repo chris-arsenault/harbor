@@ -59,6 +59,10 @@ async def ingest_historical_candles(
                     c=candle.c,
                     volume=candle.volume,
                     complete=True,
+                    bid_h=candle.bid_h,
+                    bid_l=candle.bid_low,
+                    ask_h=candle.ask_h,
+                    ask_l=candle.ask_low,
                 )
                 persisted += 1
 
