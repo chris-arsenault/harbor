@@ -129,10 +129,11 @@ export function useLabStudyQuery(studyId: number | null) {
   });
 }
 
-export function useEdgeStudyQuery(instrument: string, horizon?: number) {
+export function useEdgeStudyQuery(instrument: string, enabled: boolean, horizon?: number) {
   return useQuery({
     queryKey: ["edge-study", instrument, horizon],
     queryFn: () => fetchEdgeStudy({ instrument, horizon }),
+    enabled,
   });
 }
 

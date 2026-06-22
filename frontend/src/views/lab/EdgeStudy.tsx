@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { useEdgeStudyQuery } from "../../api/hooks";
 import type { ConditionalEdge, EdgeStudyResult } from "../../api/research";
 import { fmtNum, fmtPct, valueTone } from "../../ui/format";
@@ -84,8 +86,23 @@ function EdgeBody({ query }: { readonly query: ReturnType<typeof useEdgeStudyQue
   );
 }
 
+function IdlePrompt({ onRun }: { readonly onRun: () => void }) {
+  return (
+    <div className="stack">
+      <p className="mute">
+        Runs a statistical edge study against persisted candles to check whether sweep-based entries
+        have a measurable base-rate advantage.
+      </p>
+      <button type="button" className="btn btn--primary" onClick={onRun}>
+        Run edge study
+      </button>
+    </div>
+  );
+}
+
 export function EdgeStudy({ instrument }: { readonly instrument: string }) {
-  const query = useEdgeStudyQuery(instrument);
+  const [enabled, setEnabled] = useState(false);
+  const query = useEdgeStudyQuery(instrument, enabled);
   const verdict = query.data?.has_edge ?? false;
   return (
     <Panel
@@ -98,7 +115,7 @@ export function EdgeStudy({ instrument }: { readonly instrument: string }) {
         ) : null
       }
     >
-      <EdgeBody query={query} />
+      {enabled ? <EdgeBody query={query} /> : <IdlePrompt onRun={() => setEnabled(true)} />}
     </Panel>
   );
 }

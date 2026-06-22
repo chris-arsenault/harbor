@@ -215,11 +215,11 @@ async def _assert_candle_coverage_and_window(postgres_url: str) -> None:
         assert coverage["from"] == datetime(2026, 1, 15, 14, 30, tzinfo=UTC)
         assert coverage["to"] == datetime(2026, 1, 18, 14, 30, tzinfo=UTC)
         assert latest_two_days is not None
-        assert latest_two_days["from"] == datetime(2026, 1, 16, 0, 0, tzinfo=UTC)
-        assert latest_two_days["to"] == datetime(2026, 1, 18, 23, 59, 59, 999999, tzinfo=UTC)
+        assert latest_two_days["from"] == datetime(2026, 1, 15, 14, 30, tzinfo=UTC)
+        assert latest_two_days["to"] == datetime(2026, 1, 18, 14, 30, tzinfo=UTC)
         assert latest_three_days is not None
-        assert latest_three_days["from"] == datetime(2026, 1, 15, 0, 0, tzinfo=UTC)
-        assert latest_three_days["to"] == datetime(2026, 1, 18, 23, 59, 59, 999999, tzinfo=UTC)
+        assert latest_three_days["from"] == datetime(2026, 1, 15, 14, 30, tzinfo=UTC)
+        assert latest_three_days["to"] == datetime(2026, 1, 18, 14, 30, tzinfo=UTC)
     finally:
         await engine.dispose()
 

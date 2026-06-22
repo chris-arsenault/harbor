@@ -52,7 +52,7 @@ def test_migrations_apply_to_empty_postgres(postgres_url: str) -> None:
         )
     )
 
-    assert rows == [("0004_candle_bid_ask",)]
+    assert rows == [("0005_candle_coverage_index",)]
 
 
 def test_expected_tables_and_constraints_exist(postgres_url: str) -> None:

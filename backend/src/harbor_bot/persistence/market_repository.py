@@ -1,10 +1,10 @@
 from collections.abc import Mapping
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 from datetime import date as Date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -135,6 +135,59 @@ async def get_candle_coverage(
     }
 
 
+async def get_candle_coverage_with_quality(
+    connection: AsyncConnection,
+    *,
+    instrument: str,
+) -> dict[str, Any]:
+    result = await connection.execute(
+        select(
+            func.count(candles.c.id).label("candle_count"),
+            func.min(candles.c.ts).label("from_ts"),
+            func.max(candles.c.ts).label("to_ts"),
+            func.count(candles.c.bid_h).label("bid_ask_count"),
+        ).where(candles.c.instrument == instrument, candles.c.complete.is_(True))
+    )
+    row = result.mappings().one()
+    return {
+        "instrument": instrument,
+        "candle_count": int(row["candle_count"]),
+        "from": row["from_ts"],
+        "to": row["to_ts"],
+        "bid_ask_count": int(row["bid_ask_count"]),
+    }
+
+
+async def get_bulk_candle_coverage(
+    connection: AsyncConnection,
+    *,
+    instruments: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    result = await connection.execute(
+        select(
+            candles.c.instrument,
+            func.count(candles.c.id).label("candle_count"),
+            func.min(candles.c.ts).label("from_ts"),
+            func.max(candles.c.ts).label("to_ts"),
+            func.count(candles.c.bid_h).label("bid_ask_count"),
+        )
+        .where(candles.c.instrument.in_(instruments), candles.c.complete.is_(True))
+        .group_by(candles.c.instrument)
+    )
+    by_instrument = {
+        row["instrument"]: {
+            "instrument": row["instrument"],
+            "candle_count": int(row["candle_count"]),
+            "from": row["from_ts"],
+            "to": row["to_ts"],
+            "bid_ask_count": int(row["bid_ask_count"]),
+        }
+        for row in result.mappings()
+    }
+    empty = {"candle_count": 0, "from": None, "to": None, "bid_ask_count": 0}
+    return [by_instrument.get(inst, {"instrument": inst, **empty}) for inst in instruments]
+
+
 async def get_prior_day_range(
     connection: AsyncConnection,
     *,
@@ -181,37 +234,35 @@ async def latest_complete_candle_window(
     instrument: str,
     required_days: int,
 ) -> dict[str, Any] | None:
-    """Select the most recent date range covering *required_days* trading days.
+    """Return the full persisted date range when at least *required_days* trading
+    days exist.  Forex markets close on weekends, so only distinct dates with
+    complete candles are counted — calendar-day contiguity is not required.
 
-    Forex markets close on weekends, so calendar-day contiguity is not
-    required — only that enough distinct dates with complete candles exist.
+    The full range (not just the most recent N days) is returned so the
+    walk-forward builder receives all available data and can maximise the
+    number of evaluable session days.
     """
     if required_days <= 0:
         msg = "required_days must be positive"
         raise ValueError(msg)
 
-    result = await connection.execute(
-        select(func.date(candles.c.ts).label("candle_date"))
-        .where(candles.c.instrument == instrument, candles.c.complete.is_(True))
-        .group_by("candle_date")
-        .order_by(desc("candle_date"))
-        .limit(required_days)
-    )
-    dates = [_date_value(row["candle_date"]) for row in result.mappings()]
-    if len(dates) < required_days:
+    coverage = await get_candle_coverage(connection, instrument=instrument)
+    if coverage["candle_count"] <= 0 or coverage["from"] is None:
         return None
 
-    latest = dates[0]
-    earliest = dates[-1]
-    start = datetime.combine(earliest, time.min, tzinfo=UTC)
-    end = datetime.combine(latest + timedelta(days=1), time.min, tzinfo=UTC) - timedelta(
-        microseconds=1
+    result = await connection.execute(
+        select(func.count(func.distinct(func.date(candles.c.ts)))).where(
+            candles.c.instrument == instrument, candles.c.complete.is_(True)
+        )
     )
-    coverage = await get_candle_coverage(connection, instrument=instrument)
+    trading_days = result.scalar_one()
+    if trading_days < required_days:
+        return None
+
     return {
         "instrument": instrument,
-        "from": start,
-        "to": end,
+        "from": coverage["from"],
+        "to": coverage["to"],
         "required_days": required_days,
         "coverage": coverage,
     }
@@ -306,9 +357,3 @@ def _require_aware_utc(value: datetime) -> datetime:
         msg = "candle timestamps must be timezone-aware UTC datetimes"
         raise ValueError(msg)
     return value.astimezone(UTC)
-
-
-def _date_value(value: Any) -> date:
-    if isinstance(value, date):
-        return value
-    return datetime.fromisoformat(str(value)).date()

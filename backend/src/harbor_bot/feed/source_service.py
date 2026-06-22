@@ -12,6 +12,7 @@ from harbor_bot.instruments import RESEARCH_INSTRUMENTS
 from harbor_bot.oanda.client import OandaClient
 from harbor_bot.persistence.market_repository import (
     get_bid_ask_candle_count,
+    get_bulk_candle_coverage,
     get_candle_coverage,
 )
 from harbor_bot.settings import Settings
@@ -35,11 +36,10 @@ class CandleSourceService:
         resolved_instrument = instrument or _default_instrument()
         research_instruments = _research_instruments(self.settings)
         async with self.engine.connect() as connection:
-            coverage = await _coverage_with_quality(connection, resolved_instrument)
-            instrument_coverages = [
-                await _coverage_with_quality(connection, research_instrument)
-                for research_instrument in research_instruments
-            ]
+            instrument_coverages = await _bulk_coverage(connection, research_instruments)
+            coverage = _find_coverage(instrument_coverages, resolved_instrument)
+            if coverage is None:
+                coverage = await _coverage_with_quality(connection, resolved_instrument)
         return {
             "instrument": resolved_instrument,
             "primary_source": "persisted_candles",
@@ -165,6 +165,30 @@ async def _coverage_with_quality(connection: AsyncConnection, instrument: str) -
     coverage = _jsonable_coverage(await get_candle_coverage(connection, instrument=instrument))
     coverage["bid_ask_count"] = await get_bid_ask_candle_count(connection, instrument=instrument)
     return coverage
+
+
+async def _bulk_coverage(
+    connection: AsyncConnection, instruments: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    rows = await get_bulk_candle_coverage(connection, instruments=instruments)
+    return [_jsonable_coverage_with_quality(row) for row in rows]
+
+
+def _find_coverage(coverages: list[dict[str, Any]], instrument: str) -> dict[str, Any] | None:
+    for coverage in coverages:
+        if coverage.get("instrument") == instrument:
+            return coverage
+    return None
+
+
+def _jsonable_coverage_with_quality(coverage: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "instrument": coverage["instrument"],
+        "candle_count": int(coverage["candle_count"]),
+        "from": _iso_or_none(coverage["from"]),
+        "to": _iso_or_none(coverage["to"]),
+        "bid_ask_count": int(coverage.get("bid_ask_count", 0)),
+    }
 
 
 def _default_instrument() -> str:
