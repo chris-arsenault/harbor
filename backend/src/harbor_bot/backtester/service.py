@@ -15,6 +15,7 @@ from harbor_bot.instruments import default_instrument_rules
 from harbor_bot.optimizer.config import apply_params_to_strategy_config
 from harbor_bot.persistence.backtest_repository import append_backtest_result, get_backtest_run
 from harbor_bot.persistence.market_repository import (
+    candle_record_from_row,
     latest_complete_candle_window,
     list_candles_range,
 )
@@ -107,33 +108,7 @@ async def read_persisted_candle_records(
             start=start,
             end=end,
         )
-    return [_candle_record(row) for row in rows]
-
-
-def _candle_record(row: Mapping[str, Any]) -> dict[str, Any]:
-    record: dict[str, Any] = {
-        "instrument": row["instrument"],
-        "ts": row["ts"].isoformat(),
-        "o": str(row["o"]),
-        "h": str(row["h"]),
-        "low": str(row["l"]),
-        "c": str(row["c"]),
-        "volume": row["volume"],
-        "complete": row["complete"],
-    }
-    bid = _ohlc_extremes(row.get("bid_h"), row.get("bid_l"))
-    ask = _ohlc_extremes(row.get("ask_h"), row.get("ask_l"))
-    if bid is not None:
-        record["bid"] = bid
-    if ask is not None:
-        record["ask"] = ask
-    return record
-
-
-def _ohlc_extremes(high: Any, low: Any) -> dict[str, str] | None:
-    if high is None or low is None:
-        return None
-    return {"h": str(high), "l": str(low)}
+    return [candle_record_from_row(row) for row in rows]
 
 
 async def select_latest_complete_candle_window(

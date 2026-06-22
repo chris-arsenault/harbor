@@ -28,6 +28,7 @@ from harbor_bot.optimizer.walkforward import (
     summarize_strategy_days,
 )
 from harbor_bot.persistence.market_repository import (
+    candle_record_from_row,
     get_candle_coverage,
     latest_complete_candle_window,
     list_candles_range,
@@ -652,19 +653,7 @@ async def read_persisted_candle_records(
             start=start,
             end=end,
         )
-    return [
-        {
-            "instrument": row["instrument"],
-            "ts": row["ts"].isoformat(),
-            "o": str(row["o"]),
-            "h": str(row["h"]),
-            "low": str(row["l"]),
-            "c": str(row["c"]),
-            "volume": row["volume"],
-            "complete": row["complete"],
-        }
-        for row in rows
-    ]
+    return [candle_record_from_row(row) for row in rows]
 
 
 async def select_persisted_candle_coverage(

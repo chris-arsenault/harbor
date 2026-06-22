@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from datetime import UTC, date, datetime, time, timedelta
 from datetime import date as Date
 from decimal import Decimal
@@ -236,6 +237,35 @@ async def get_session_levels(
     if row is None:
         return None
     return dict(row)
+
+
+def candle_record_from_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Shape a persisted candle row into a backtester/optimizer record, carrying
+    bid/ask extremes when present so honest fill detection (ADR 0006) applies on
+    every consumer, not just the backtest service."""
+    record: dict[str, Any] = {
+        "instrument": row["instrument"],
+        "ts": row["ts"].isoformat(),
+        "o": str(row["o"]),
+        "h": str(row["h"]),
+        "low": str(row["l"]),
+        "c": str(row["c"]),
+        "volume": row["volume"],
+        "complete": row["complete"],
+    }
+    bid = _ohlc_extremes(row.get("bid_h"), row.get("bid_l"))
+    ask = _ohlc_extremes(row.get("ask_h"), row.get("ask_l"))
+    if bid is not None:
+        record["bid"] = bid
+    if ask is not None:
+        record["ask"] = ask
+    return record
+
+
+def _ohlc_extremes(high: Any, low: Any) -> dict[str, str] | None:
+    if high is None or low is None:
+        return None
+    return {"h": str(high), "l": str(low)}
 
 
 def _require_aware_utc(value: datetime) -> datetime:
