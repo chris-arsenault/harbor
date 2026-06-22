@@ -65,7 +65,20 @@ def _candle_from_record(
         c=Decimal(str(prices["c"])),
         volume=int(record.get("volume", 0)),
         complete=True,
+        bid_h=_optional_price(record.get("bid"), "h"),
+        bid_low=_optional_price(record.get("bid"), "low", "l"),
+        ask_h=_optional_price(record.get("ask"), "h"),
+        ask_low=_optional_price(record.get("ask"), "low", "l"),
     )
+
+
+def _optional_price(group: Any, *keys: str) -> Decimal | None:
+    if not isinstance(group, Mapping):
+        return None
+    for key in keys:
+        if key in group:
+            return Decimal(str(group[key]))
+    return None
 
 
 def _parse_utc_ts(raw: str) -> datetime:

@@ -15,6 +15,12 @@ class ClosedCandle:
     c: Decimal
     volume: int
     complete: bool = True
+    # Optional bid/ask extremes for honest fill detection (ADR 0006). When absent,
+    # the backtester falls back to midpoint OHLC. Longs exit on the bid, shorts on the ask.
+    bid_h: Decimal | None = None
+    bid_low: Decimal | None = None
+    ask_h: Decimal | None = None
+    ask_low: Decimal | None = None
 
 
 @dataclass

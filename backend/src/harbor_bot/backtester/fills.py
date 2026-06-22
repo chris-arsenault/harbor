@@ -188,13 +188,30 @@ def _pnl(
     return (entry_price - exit_price) * units
 
 
+def _exit_low(candle: ClosedCandle, side: str) -> Decimal:
+    """Low the position is filled against on the downside (ADR 0006).
+
+    A long exits by selling at the bid; a short exits by buying at the ask.
+    Falls back to the midpoint low when bid/ask extremes are absent.
+    """
+    if side == "long":
+        return candle.bid_low if candle.bid_low is not None else candle.low
+    return candle.ask_low if candle.ask_low is not None else candle.low
+
+
+def _exit_high(candle: ClosedCandle, side: str) -> Decimal:
+    if side == "long":
+        return candle.bid_h if candle.bid_h is not None else candle.h
+    return candle.ask_h if candle.ask_h is not None else candle.h
+
+
 def _stop_touched(position: OpenBacktestPosition, candle: ClosedCandle) -> bool:
     if position.side == "long":
-        return candle.low <= position.stop
-    return candle.h >= position.stop
+        return _exit_low(candle, "long") <= position.stop
+    return _exit_high(candle, "short") >= position.stop
 
 
 def _target_touched(position: OpenBacktestPosition, candle: ClosedCandle) -> bool:
     if position.side == "long":
-        return candle.h >= position.target
-    return candle.low <= position.target
+        return _exit_high(candle, "long") >= position.target
+    return _exit_low(candle, "short") <= position.target
