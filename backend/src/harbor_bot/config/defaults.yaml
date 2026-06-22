@@ -47,6 +47,8 @@ liquidity_rr_floor:
     max: 2.0
 require_mss:
   value: false
+require_volume_spike:
+  value: false
 exit_mode:
   value: bracket
 time_stop_minutes:

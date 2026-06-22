@@ -21,7 +21,7 @@ from harbor_bot.strategy.risk import (
     ny_close_flatten_decision,
 )
 from harbor_bot.strategy.signals import build_market_entry_setup
-from harbor_bot.strategy.structure import mss_confirmed
+from harbor_bot.strategy.structure import mss_confirmed, volume_spike
 from harbor_bot.strategy.sweeps import detect_sweep, mark_level_taken, with_active_sweep
 
 
@@ -106,6 +106,10 @@ def evaluate_closed_candle(
             candle_index=candle_index,
         )
         if sweep is None:
+            return StrategyResult(state=day_state, decisions=[])
+        if config.require_volume_spike and not volume_spike(
+            candle_history, current_index=candle_index, config=config
+        ):
             return StrategyResult(state=day_state, decisions=[])
         return StrategyResult(
             state=with_active_sweep(day_state, sweep),

@@ -29,3 +29,23 @@ def mss_confirmed(
         return any(candle.c > swing_high for candle in after_sweep)
     swing_low = min(candle.low for candle in pre_swing)
     return any(candle.c < swing_low for candle in after_sweep)
+
+
+def volume_spike(
+    candle_history: list[ClosedCandle],
+    *,
+    current_index: int,
+    config: StrategyConfig,
+) -> bool:
+    """Displacement filter: the sweep candle traded on above-average tick volume.
+
+    True when the current candle's volume exceeds the mean volume of the prior
+    ``swing_lookback`` candles. With no prior baseline this is False, so an
+    enabled filter conservatively rejects early-window sweeps.
+    """
+    window_start = max(0, current_index - config.swing_lookback)
+    prior = candle_history[window_start:current_index]
+    if not prior:
+        return False
+    average = sum(candle.volume for candle in prior) / len(prior)
+    return candle_history[current_index].volume > average

@@ -16,7 +16,7 @@ from harbor_bot.strategy.models import (
     SweepState,
     strategy_config_from_defaults,
 )
-from harbor_bot.strategy.structure import mss_confirmed
+from harbor_bot.strategy.structure import mss_confirmed, volume_spike
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "backtester"
 TS = datetime(2026, 1, 15, 14, 0, tzinfo=UTC)
@@ -129,6 +129,32 @@ def test_bearish_mss_confirms_on_swing_low_break() -> None:
     sweep = _sweep(Bias.BEARISH, index=2)
 
     assert mss_confirmed(history, sweep=sweep, current_index=3, config=_config()) is True
+
+
+def test_default_config_does_not_require_volume_spike() -> None:
+    assert _config().require_volume_spike is False
+
+
+def test_volume_spike_requires_above_average_volume() -> None:
+    config = _config()  # swing_lookback 5
+    baseline = [_volume_candle(index, 10) for index in range(5)]
+
+    assert volume_spike(baseline + [_volume_candle(5, 25)], current_index=5, config=config) is True
+    assert volume_spike(baseline + [_volume_candle(5, 5)], current_index=5, config=config) is False
+    assert volume_spike([_volume_candle(0, 25)], current_index=0, config=config) is False
+
+
+def _volume_candle(index: int, volume: int) -> ClosedCandle:
+    price = Decimal("1.10000")
+    return ClosedCandle(
+        instrument="EUR_USD",
+        ts=TS + timedelta(minutes=index),
+        o=price,
+        h=price,
+        low=price,
+        c=price,
+        volume=volume,
+    )
 
 
 def test_require_mss_never_adds_trades() -> None:

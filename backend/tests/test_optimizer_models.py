@@ -39,12 +39,6 @@ def test_optimizer_defaults_load_bounded_search_space_and_runtime_config() -> No
 
     names = set(config.search_space.by_name())
     assert names == {
-        "asia_start_offset_minutes",
-        "asia_end_offset_minutes",
-        "london_start_offset_minutes",
-        "london_end_offset_minutes",
-        "ny_trade_start_offset_minutes",
-        "ny_trade_end_offset_minutes",
         "sweep_buffer_pips",
         "fvg_window",
         "swing_lookback",
@@ -52,10 +46,14 @@ def test_optimizer_defaults_load_bounded_search_space_and_runtime_config() -> No
         "liquidity_rr_floor",
         "target_mode",
         "require_mss",
+        "require_volume_spike",
         "exit_mode",
         "max_spread_pips",
         "max_trades_per_day",
     }
+    # Net search dimensionality (11) is below the pre-M3 count (14): the six
+    # session-offset micro-timing dimensions were pruned in M5.
+    assert len(names) < 14
     assert config.search_space.by_name()["sweep_buffer_pips"].minimum == Decimal("0.5")
     assert config.to_jsonable()["search_space"]["rr_floor"]["max"] == "4.0"
 

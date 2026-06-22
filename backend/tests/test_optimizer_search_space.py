@@ -56,12 +56,6 @@ def test_default_search_space_samples_all_configured_parameters() -> None:
     config = load_optimizer_config()
     trial = optuna.trial.FixedTrial(
         {
-            "asia_start_offset_minutes": 0,
-            "asia_end_offset_minutes": 0,
-            "london_start_offset_minutes": 0,
-            "london_end_offset_minutes": 0,
-            "ny_trade_start_offset_minutes": 15,
-            "ny_trade_end_offset_minutes": -15,
             "sweep_buffer_pips": 2.0,
             "fvg_window": 8,
             "swing_lookback": 5,
@@ -69,6 +63,7 @@ def test_default_search_space_samples_all_configured_parameters() -> None:
             "liquidity_rr_floor": 1.0,
             "target_mode": "rr_or_liquidity",
             "require_mss": False,
+            "require_volume_spike": False,
             "exit_mode": "bracket",
             "max_spread_pips": 1.2,
             "max_trades_per_day": 2,
@@ -78,7 +73,6 @@ def test_default_search_space_samples_all_configured_parameters() -> None:
     params = sample_search_space(trial, config.search_space)
 
     assert set(params) == set(config.search_space.by_name())
-    assert params["ny_trade_start_offset_minutes"] == 15
     assert params["sweep_buffer_pips"] == "2.0"
     assert params["rr_floor"] == "2.5"
     assert params["liquidity_rr_floor"] == "1.0"

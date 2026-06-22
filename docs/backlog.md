@@ -5,6 +5,7 @@ Planned-but-not-built work. Each item is a positive assertion of future-state be
 ## Strategy Research
 
 - Add a high-impact news pause filter fed by a maintained calendar source.
+- Add previous-day-high/low (PDH/PDL) levels alongside the Asia/London session levels, which requires tracking the prior trading day's range and extending the persisted session-levels schema.
 - Add multi-instrument support after the EUR_USD system is validated.
 - Add richer slippage models from recorded practice fills.
 - Add an OANDA order-book and position-book snapshot recorder that captures the ~20-minute liquidity-cluster snapshots forward, building local history for a future "sweep sits on a visible cluster" entry filter and "next cluster as draw" target.

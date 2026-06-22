@@ -12,37 +12,9 @@ walk_forward:
   train_window_days: 60
   oos_window_days: 20
   step_days: 20
+# Session-boundary micro-offsets were pruned (M5): six low-prior dimensions that
+# invited overfitting. Session windows stay at their configured defaults.
 search_space:
-  asia_start_offset_minutes:
-    type: int
-    min: -30
-    max: 30
-    step: 15
-  asia_end_offset_minutes:
-    type: int
-    min: -30
-    max: 30
-    step: 15
-  london_start_offset_minutes:
-    type: int
-    min: -30
-    max: 30
-    step: 15
-  london_end_offset_minutes:
-    type: int
-    min: -30
-    max: 30
-    step: 15
-  ny_trade_start_offset_minutes:
-    type: int
-    min: -30
-    max: 30
-    step: 15
-  ny_trade_end_offset_minutes:
-    type: int
-    min: -30
-    max: 30
-    step: 15
   sweep_buffer_pips:
     type: decimal
     min: "0.5"
@@ -75,6 +47,11 @@ search_space:
       - rr
       - opposite_session
   require_mss:
+    type: categorical
+    choices:
+      - false
+      - true
+  require_volume_spike:
     type: categorical
     choices:
       - false

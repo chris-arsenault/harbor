@@ -38,6 +38,7 @@ class StrategyConfig:
     swing_lookback: int
     max_units: Decimal
     require_mss: bool = False
+    require_volume_spike: bool = False
     exit_mode: str = "bracket"
     time_stop_minutes: int = 120
     atr_trail_mult: Decimal = Decimal("1.5")
@@ -160,6 +161,7 @@ def strategy_config_from_defaults(defaults: dict[str, dict[str, Any]]) -> Strate
         swing_lookback=int(_value(defaults, "swing_lookback")),
         max_units=_decimal_value(defaults, "max_units"),
         require_mss=bool(_value(defaults, "require_mss")),
+        require_volume_spike=bool(_value(defaults, "require_volume_spike")),
         exit_mode=str(_value(defaults, "exit_mode")),
         time_stop_minutes=int(_value(defaults, "time_stop_minutes")),
         atr_trail_mult=_decimal_value(defaults, "atr_trail_mult"),
