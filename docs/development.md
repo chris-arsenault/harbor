@@ -6,11 +6,24 @@ Harbor uses the Ahara project layout with a Python backend in `backend/`, a Type
 
 `make ci` is the canonical verification command. It mirrors the shared Ahara workflow:
 
-- Python: `uv sync --extra dev`, `ruff check`, `ruff format --check`, and tests.
+- Python: `uv sync --extra dev`, `ruff check`, `ruff format --check`, and fast unit/API tests.
 - TypeScript: `pnpm install --frozen-lockfile`, ESLint, Prettier, `tsc --noEmit`, Vitest, and Vite build.
 - Deploy files: manifest, compose, and shell checks.
 - Compose: static validation without starting long-lived services.
 - Shell: syntax checks for deployment hooks.
+
+The per-commit gate intentionally excludes `backend/tests/integration` and `backend/tests/e2e`.
+Those suites use real services or broker-shaped paths and should run when the touched work changes
+persistence, migrations, ingestion, deployment behavior, or OANDA practice execution.
+
+Useful backend gates:
+
+```bash
+make backend-test             # fast tests used by make ci
+make backend-test-integration # real Postgres and repository/service integration tests
+make backend-test-e2e         # broker-shaped e2e tests
+make backend-test-all         # complete backend suite
+```
 
 ## Persistence
 

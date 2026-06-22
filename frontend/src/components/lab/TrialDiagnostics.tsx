@@ -10,8 +10,11 @@ export function TrialDiagnostics({ candidates, optimizationResult }: TrialDiagno
   const rows = trialDiagnosticRows({ candidates, optimizationResult });
 
   return (
-    <section className="lab-panel" aria-label="Trial diagnostics">
-      <h2>Trial Diagnostics</h2>
+    <details className="lab-panel lab-disclosure" aria-label="Trial diagnostics">
+      <summary className="lab-disclosure__summary">
+        <h2>Trial Diagnostics</h2>
+        <span>{rows.length === 1 ? "1 trial" : `${rows.length} trials`}</span>
+      </summary>
       <div className="lab-table-wrap">
         <table className="lab-table">
           <thead>
@@ -42,6 +45,6 @@ export function TrialDiagnostics({ candidates, optimizationResult }: TrialDiagno
           </tbody>
         </table>
       </div>
-    </section>
+    </details>
   );
 }

@@ -15,11 +15,13 @@ export function StudyResults({
   const rows = rankedTrialDiagnosticRows({ candidates, optimizationResult });
   const bestOutOfSample = rows.length > 0 ? rows[0].outOfSampleScore : "none";
   const bestTrial = rows.length > 0 ? `#${rows[0].trialNo}` : "none";
+  const passedRows = rows.filter(passesScoreGate);
+  const visibleRows = rows.slice(0, 8);
 
   return (
     <section className="lab-panel" aria-label="Study results">
       <div className="lab-panel__header">
-        <h2>Study Results</h2>
+        <h2>Study Outcome</h2>
         <span>{rows.length === 1 ? "1 trial" : `${rows.length} trials`}</span>
       </div>
       <div className="lab-study-status-grid lab-study-status-grid--compact">
@@ -29,7 +31,7 @@ export function StudyResults({
         </div>
         <div>
           <span>Passed score gate</span>
-          <strong>{rows.filter(passesScoreGate).length}</strong>
+          <strong>{passedRows.length}</strong>
         </div>
         <div>
           <span>Best OOS</span>
@@ -41,41 +43,53 @@ export function StudyResults({
         </div>
       </div>
       <p className="lab-result-summary">{resultSummary(rows, paperCandidateCount)}</p>
-      <div className="lab-table-wrap">
-        <table className="lab-table">
-          <thead>
-            <tr>
-              <th>Rank</th>
-              <th>Trial</th>
-              <th>Gate</th>
-              <th>IS</th>
-              <th>OOS</th>
-              <th>Robust</th>
-              <th>Reason</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={7}>No study results yet.</td>
-              </tr>
-            ) : (
-              rows.map((row, index) => (
-                <tr key={row.id}>
-                  <td>{index + 1}</td>
-                  <td>{row.trialNo}</td>
-                  <td>{passesScoreGate(row) ? "passes score gate" : "blocked"}</td>
-                  <td>{row.inSampleScore}</td>
-                  <td>{row.outOfSampleScore}</td>
-                  <td>{row.robustnessScore}</td>
-                  <td>{row.reason}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <details className="lab-disclosure" aria-label="Top ranked trials">
+        <summary className="lab-disclosure__summary">
+          <h3>Top ranked trials</h3>
+          <span>{visibleRows.length} shown</span>
+        </summary>
+        <TrialRows rows={visibleRows} />
+      </details>
     </section>
+  );
+}
+
+function TrialRows({ rows }: { readonly rows: readonly TrialDiagnosticRow[] }) {
+  return (
+    <div className="lab-table-wrap">
+      <table className="lab-table">
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Trial</th>
+            <th>Gate</th>
+            <th>IS</th>
+            <th>OOS</th>
+            <th>Robust</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={7}>No study results yet.</td>
+            </tr>
+          ) : (
+            rows.map((row, index) => (
+              <tr key={row.id}>
+                <td>{index + 1}</td>
+                <td>{row.trialNo}</td>
+                <td>{passesScoreGate(row) ? "passes score gate" : "blocked"}</td>
+                <td>{row.inSampleScore}</td>
+                <td>{row.outOfSampleScore}</td>
+                <td>{row.robustnessScore}</td>
+                <td>{row.reason}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

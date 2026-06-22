@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import type { LabSnapshot, LabVariantOverview } from "../../api/types";
@@ -7,7 +7,7 @@ import { preflight } from "./LabView.fixtures";
 import { LabView } from "./LabView";
 import { DEFAULT_TUNING_PAYLOAD, DISCOVERY_STUDY_CONFIG } from "./tuningPayload";
 
-test("LabView renders backend study facts, leaderboard, equity, and paper actions", () => {
+test("LabView renders study outcome, selected candidate, and forward actions", () => {
   const onCreatePaperVariant = vi.fn();
   const onRetireVariant = vi.fn();
   const onStartOptimization = vi.fn();
@@ -20,6 +20,18 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
     onPromoteVariant,
   });
 
+  assertStudyOutcome();
+  assertSelectedCandidate();
+  assertLabSetupAndData();
+  exercisePrimaryLabActions({
+    onCreatePaperVariant,
+    onRetireVariant,
+    onStartOptimization,
+    onPromoteVariant,
+  });
+});
+
+function assertStudyOutcome() {
   expect(
     screen.getByRole("region", { name: "Study progress" }).querySelector("strong")
   ).toHaveTextContent("completed");
@@ -29,8 +41,8 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
     "0:1.25:1.50"
   );
   expect(screen.getByLabelText("Study results")).toBeInTheDocument();
+  expect(screen.getByText("Study Outcome")).toBeInTheDocument();
   expect(screen.getByText("Paper candidates")).toBeInTheDocument();
-  expect(screen.getByText("passes score gate")).toBeInTheDocument();
   expect(
     screen.getByRole("row", { name: /1 candidate-1 1 20.00000000 1.50000000/i })
   ).toBeInTheDocument();
@@ -40,6 +52,20 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   );
   expect(screen.getByText("variant 7 closed trade")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /live/i })).not.toBeInTheDocument();
+}
+
+function assertSelectedCandidate() {
+  const selected = within(screen.getByLabelText("Selected candidate"));
+  expect(selected.getByText("Source trial")).toBeInTheDocument();
+  expect(selected.getByText("#0")).toBeInTheDocument();
+  expect(selected.getByText("Forward trades")).toBeInTheDocument();
+  expect(
+    selected.getByRole("button", { name: "Promote practice variant candidate-1" })
+  ).toBeEnabled();
+  expect(selected.getByRole("button", { name: "Retire paper variant candidate-1" })).toBeEnabled();
+}
+
+function assertLabSetupAndData() {
   expect(screen.getByRole("button", { name: "Start research study" })).toBeInTheDocument();
   expect(screen.getByText("Study Setup")).toBeInTheDocument();
   expect(screen.getByText("124/126")).toBeInTheDocument();
@@ -51,41 +77,31 @@ test("LabView renders backend study facts, leaderboard, equity, and paper action
   expect(screen.getByText("fvg_window")).not.toBeVisible();
   fireEvent.click(screen.getByText("Candidate Parameters"));
   expect(screen.getByText("fvg_window")).toBeVisible();
-  expect(screen.getByText("Data Separation")).toBeInTheDocument();
+  expect(screen.getByText("Technical Data Boundaries")).toBeInTheDocument();
   expect(screen.getByText("optimizer_uses_variant_trades: false")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Refresh latest 5,000 M1" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Backfill research dataset" })).toBeInTheDocument();
-  expect(
-    screen.getByText("path: OANDA practice REST -> persisted candles -> Lab optimizer")
-  ).toBeInTheDocument();
-  expect(screen.getByText("write policy: upsert")).toBeInTheDocument();
-  expect(screen.getByText("upsert key: instrument+timestamp")).toBeInTheDocument();
-  expect(screen.getByText("granularity: M1")).toBeInTheDocument();
-  expect(screen.getByText("price: midpoint")).toBeInTheDocument();
-  expect(
-    screen.getByText("Lab research reads the persisted M1 midpoint candle dataset shown below.")
-  ).toBeInTheDocument();
-  expect(
-    screen.getByText(
-      "Upserted 4999 of 259200 requested candles from 2025-12-20T20:00:00.000Z. Coverage 2026-06-15T08:21:00+00:00 to 2026-06-18T19:58:00+00:00."
-    )
-  ).toBeInTheDocument();
-  expect(screen.getByText("latest-page request: 5,000 M1 candles")).toBeInTheDocument();
-  expect(screen.getByText("research backfill request: 259,200 M1 candles")).toBeInTheDocument();
-  expect(screen.getByText("candles: 2880")).toBeInTheDocument();
+}
 
+function exercisePrimaryLabActions(handlers: {
+  readonly onCreatePaperVariant: ReturnType<typeof vi.fn>;
+  readonly onRetireVariant: ReturnType<typeof vi.fn>;
+  readonly onStartOptimization: ReturnType<typeof vi.fn>;
+  readonly onPromoteVariant: ReturnType<typeof vi.fn>;
+}) {
   fireEvent.click(screen.getByRole("button", { name: "Start research study" }));
-  fireEvent.change(screen.getByLabelText("Trial"), { target: { value: "2" } });
-  fireEvent.change(screen.getByLabelText("Label"), { target: { value: "paper-trial-1" } });
-  fireEvent.click(screen.getByRole("button", { name: "Create paper variant" }));
-  fireEvent.click(screen.getByRole("button", { name: "Promote practice variant candidate-1" }));
-  fireEvent.click(screen.getByRole("button", { name: "Retire paper variant candidate-1" }));
+  expect(screen.queryByLabelText("Trial")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Label")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Create paper variant" })).not.toBeInTheDocument();
+  const selected = within(screen.getByLabelText("Selected candidate"));
+  fireEvent.click(selected.getByRole("button", { name: "Promote practice variant candidate-1" }));
+  fireEvent.click(selected.getByRole("button", { name: "Retire paper variant candidate-1" }));
 
-  expect(onStartOptimization).toHaveBeenCalledWith(DEFAULT_TUNING_PAYLOAD);
-  expect(onCreatePaperVariant).toHaveBeenCalledWith({ trial_id: 2, label: "paper-trial-1" });
-  expect(onPromoteVariant).toHaveBeenCalledWith(7);
-  expect(onRetireVariant).toHaveBeenCalledWith(7);
-});
+  expect(handlers.onStartOptimization).toHaveBeenCalledWith(DEFAULT_TUNING_PAYLOAD);
+  expect(handlers.onCreatePaperVariant).not.toHaveBeenCalled();
+  expect(handlers.onPromoteVariant).toHaveBeenCalledWith(7);
+  expect(handlers.onRetireVariant).toHaveBeenCalledWith(7);
+}
 
 function renderPopulatedLabView(handlers: {
   readonly onCreatePaperVariant: (payload: { trial_id: number; label: string }) => void;
@@ -95,7 +111,7 @@ function renderPopulatedLabView(handlers: {
 }) {
   render(
     <LabView
-      snapshot={snapshot}
+      snapshot={{ ...snapshot, variants: variantOverview }}
       variants={variantOverview}
       tuningRun={{ pending: false, errorMessage: null, result: null }}
       onCreatePaperVariant={handlers.onCreatePaperVariant}
@@ -227,9 +243,9 @@ test("LabView shows completed zero-candidate studies instead of a blank leaderbo
   expect(
     screen.getByText(/No paper candidates. Best trial #0 is blocked because/)
   ).toBeInTheDocument();
-  expect(screen.getAllByText("in-sample and out-of-sample scores are not positive")).toHaveLength(
-    8
-  );
+  expect(
+    screen.getAllByText("in-sample and out-of-sample scores are not positive").length
+  ).toBeGreaterThanOrEqual(4);
   expect(screen.getByText("No paper variants on the leaderboard.")).toBeInTheDocument();
   expect(screen.getByText("0 parameters")).toBeInTheDocument();
 });

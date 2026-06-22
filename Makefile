@@ -5,6 +5,9 @@
 	backend-install \
 	backend-lint \
 	backend-test \
+	backend-test-all \
+	backend-test-e2e \
+	backend-test-integration \
 	ci \
 	compose-config \
 	deploy \
@@ -42,6 +45,15 @@ backend-format-check: backend-install
 	cd backend && uv run --extra dev ruff format --check src tests
 
 backend-test: backend-install
+	cd backend && uv run --extra dev pytest tests --ignore=tests/integration --ignore=tests/e2e
+
+backend-test-integration: backend-install
+	cd backend && uv run --extra dev pytest tests/integration
+
+backend-test-e2e: backend-install
+	cd backend && uv run --extra dev pytest tests/e2e
+
+backend-test-all: backend-install
 	cd backend && uv run --extra dev pytest
 
 frontend-ci: frontend-install frontend-lint frontend-format-check frontend-typecheck frontend-test frontend-build

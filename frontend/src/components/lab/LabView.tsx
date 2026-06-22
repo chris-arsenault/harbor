@@ -11,7 +11,7 @@ import type { OptimizationPreflightResponse } from "../../api/optimizerTypes";
 import { displayValue } from "../../utils/format";
 import { CandidateScatter } from "./CandidateScatter";
 import { CandleSourcePanel } from "./CandleSourcePanel";
-import { LabActions } from "./LabActions";
+import { SelectedCandidate } from "./SelectedCandidate";
 import { StudyResults } from "./StudyResults";
 import { StudyWorkbench } from "./StudyWorkbench";
 import { StudyProgress } from "./StudyProgress";
@@ -57,7 +57,6 @@ export function LabView({
   variants,
   tuningRun,
   onStartOptimization,
-  onCreatePaperVariant,
   onRetireVariant,
   onPromoteVariant,
   liveStatus,
@@ -97,24 +96,29 @@ export function LabView({
       />
       <TuningRunNotice tuningRun={tuningRun} snapshot={snapshot} />
       <StudyProgress study={snapshot.study} />
+      <SelectedCandidate
+        candidates={snapshot.candidates}
+        variants={snapshot.variants}
+        onRetireVariant={onRetireVariant}
+        onPromoteVariant={onPromoteVariant}
+      />
       <StudyResults
         candidates={snapshot.candidates}
         optimizationResult={tuningRun.result}
         paperCandidateCount={tuningRun.result?.candidates.length ?? snapshot.study.candidate_count}
       />
-      <TrialDiagnostics candidates={snapshot.candidates} optimizationResult={tuningRun.result} />
       <div className="lab-grid">
         <CandidateScatter candidates={snapshot.candidates} />
         <VariantEquityChart curve={firstCurve} />
       </div>
-      <CandidateParameters snapshot={snapshot} />
       <VariantLeaderboard
         rows={variants.leaderboard}
         onRetireVariant={onRetireVariant}
         onPromoteVariant={onPromoteVariant}
       />
+      <TrialDiagnostics candidates={snapshot.candidates} optimizationResult={tuningRun.result} />
+      <CandidateParameters snapshot={snapshot} />
       <DataSeparation snapshot={snapshot} variants={variants} />
-      <LabActions onCreatePaperVariant={onCreatePaperVariant} />
       {liveStatus ? (
         <p className="lab-live-status" aria-live="polite">
           {liveStatus}
@@ -307,8 +311,11 @@ function DataSeparation({
   readonly variants: LabVariantOverview;
 }) {
   return (
-    <section className="lab-panel" aria-label="Data separation">
-      <h2>Data Separation</h2>
+    <details className="lab-panel lab-disclosure" aria-label="Technical data boundaries">
+      <summary className="lab-disclosure__summary">
+        <h2>Technical Data Boundaries</h2>
+        <span>audit</span>
+      </summary>
       <ul className="fact-list">
         {Object.entries({ ...snapshot.data_separation, ...variants.data_separation }).map(
           ([key, value]) => (
@@ -318,6 +325,6 @@ function DataSeparation({
           )
         )}
       </ul>
-    </section>
+    </details>
   );
 }

@@ -11,9 +11,21 @@ export function VariantLeaderboard({
   onRetireVariant,
   onPromoteVariant,
 }: VariantLeaderboardProps) {
+  const waitingForForwardTrades =
+    rows.length > 0 && rows.every((row) => row.stats.trade_count === 0);
+
   return (
     <section className="lab-panel" aria-label="Variant leaderboard">
-      <h2>Leaderboard</h2>
+      <div className="lab-panel__header">
+        <h2>Paper Forward Leaderboard</h2>
+        <span>{rows.length === 1 ? "1 variant" : `${rows.length} variants`}</span>
+      </div>
+      {waitingForForwardTrades ? (
+        <p className="lab-result-summary">
+          Paper variants exist, but no forward paper trades have closed yet. Promotion stays
+          disabled until there is forward evidence to review.
+        </p>
+      ) : null}
       <div className="lab-table-wrap">
         <table className="lab-table">
           <thead>
@@ -43,6 +55,7 @@ export function VariantLeaderboard({
                     <button
                       type="button"
                       className="lab-button lab-button--quiet"
+                      disabled={row.stats.trade_count === 0 || row.variant.status !== "paper"}
                       aria-label={`Promote practice variant ${row.variant.label}`}
                       onClick={() => void onPromoteVariant(row.variant.id)}
                     >
@@ -51,6 +64,7 @@ export function VariantLeaderboard({
                     <button
                       type="button"
                       className="lab-button lab-button--quiet"
+                      disabled={row.variant.status !== "paper"}
                       aria-label={`Retire paper variant ${row.variant.label}`}
                       onClick={() => void onRetireVariant(row.variant.id)}
                     >

@@ -695,6 +695,16 @@ p {
   font-size: 1rem;
 }
 
+.lab-panel h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.lab-primary-result {
+  border-color: #9fc5b1;
+  background: #fbfdfb;
+}
+
 .lab-disclosure {
   gap: 0.75rem;
 }
@@ -728,6 +738,12 @@ p {
   gap: 0.75rem;
   align-items: center;
   justify-content: space-between;
+}
+
+.lab-panel__header span {
+  color: #65736b;
+  font-size: 0.86rem;
+  font-weight: 700;
 }
 
 .lab-panel__actions {
