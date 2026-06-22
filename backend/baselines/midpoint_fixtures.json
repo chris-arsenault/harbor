@@ -1,0 +1,45 @@
+{
+  "clean_signal_day": {
+    "stats": {
+      "trade_count": 1,
+      "win_rate": "1",
+      "net_pnl": "95.996160",
+      "expectancy": "95.996160",
+      "average_r": "1.782857142857142857142857143",
+      "max_drawdown": "0",
+      "ending_nav": "10095.996160",
+      "lookahead_sanity_passed": true
+    },
+    "trades": [
+      {
+        "instrument": "EUR_USD",
+        "side": "long",
+        "units": "15384",
+        "entry_price": "1.09105",
+        "entry_ts": "2026-01-15T14:34:00+00:00",
+        "stop": "1.08755",
+        "target": "1.097300",
+        "exit_price": "1.097290",
+        "exit_ts": "2026-01-15T14:40:00+00:00",
+        "pnl": "95.996160",
+        "r_multiple": "1.782857142857142857142857143",
+        "exit_reason": "take_profit",
+        "source_signal_ts": "2026-01-15T14:33:00+00:00",
+        "level_name": "asia_low"
+      }
+    ]
+  },
+  "no_trade_day": {
+    "stats": {
+      "trade_count": 0,
+      "win_rate": "0",
+      "net_pnl": "0",
+      "expectancy": "0",
+      "average_r": "0",
+      "max_drawdown": "0",
+      "ending_nav": "10000",
+      "lookahead_sanity_passed": true
+    },
+    "trades": []
+  }
+}
