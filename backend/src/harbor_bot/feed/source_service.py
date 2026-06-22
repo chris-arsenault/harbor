@@ -15,6 +15,7 @@ from harbor_bot.strategy.models import strategy_config_from_defaults
 
 OandaClientFactory = Callable[[Settings], Any]
 HistoricalIngestor = Callable[..., Awaitable[int]]
+LiveStreamStatusProvider = Callable[[], Mapping[str, Any]]
 _UTC_OFFSET = timedelta(0)
 
 
@@ -24,19 +25,28 @@ class CandleSourceService:
     settings: Settings
     client_factory: OandaClientFactory = OandaClient.from_settings
     historical_ingestor: HistoricalIngestor = ingest_historical_candles
+    live_stream_status_provider: LiveStreamStatusProvider | None = None
 
     async def get_status(self, *, instrument: str | None = None) -> dict[str, Any]:
         resolved_instrument = instrument or _default_instrument()
+        research_instruments = _research_instruments(self.settings)
         async with self.engine.connect() as connection:
             coverage = await get_candle_coverage(connection, instrument=resolved_instrument)
+            instrument_coverages = [
+                _jsonable_coverage(
+                    await get_candle_coverage(connection, instrument=research_instrument)
+                )
+                for research_instrument in research_instruments
+            ]
         return {
             "instrument": resolved_instrument,
             "primary_source": "persisted_candles",
             "granularity": "M1",
             "price_component": "midpoint",
             "coverage": _jsonable_coverage(coverage),
+            "instrument_coverages": instrument_coverages,
             "source_methods": ["oanda_historical_import", "oanda_pricing_stream"],
-            "research_instruments": list(_research_instruments(self.settings)),
+            "research_instruments": list(research_instruments),
             "historical_import": {
                 "page_size": self.settings.oanda_historical_candle_page_size,
                 "default_count": self.settings.oanda_historical_import_count,
@@ -48,6 +58,11 @@ class CandleSourceService:
             },
             "oanda_historical_import_configured": bool(
                 self.settings.oanda_api_token and self.settings.oanda_account_id
+            ),
+            "live_stream": _live_stream_status(
+                settings=self.settings,
+                instruments=research_instruments,
+                provider=self.live_stream_status_provider,
             ),
         }
 
@@ -161,3 +176,28 @@ def _iso_or_none(value: Any) -> str | None:
     if isinstance(value, datetime):
         return value.isoformat()
     return str(value)
+
+
+def _live_stream_status(
+    *,
+    settings: Settings,
+    instruments: tuple[str, ...],
+    provider: LiveStreamStatusProvider | None,
+) -> dict[str, Any]:
+    configured = bool(settings.oanda_api_token and settings.oanda_account_id)
+    runtime = dict(provider()) if provider is not None else {}
+    return {
+        "configured": configured,
+        "enabled": bool(settings.oanda_pricing_stream_enabled),
+        "running": bool(runtime.get("running", False)),
+        "state": str(runtime.get("state", "disabled")),
+        "starts_on_api_boot": bool(settings.oanda_pricing_stream_enabled and configured),
+        "paper_forward_on_closed_candle": True,
+        "instruments": list(instruments),
+        "heartbeat_timeout_seconds": settings.oanda_stream_heartbeat_timeout_seconds,
+        "reconnect_initial_seconds": settings.oanda_reconnect_initial_seconds,
+        "reconnect_max_seconds": settings.oanda_reconnect_max_seconds,
+        "last_started_at": _iso_or_none(runtime.get("last_started_at")),
+        "last_stopped_at": _iso_or_none(runtime.get("last_stopped_at")),
+        "last_error": runtime.get("last_error"),
+    }

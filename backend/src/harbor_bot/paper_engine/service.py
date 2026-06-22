@@ -1,10 +1,12 @@
 from collections.abc import Callable, Iterable
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from harbor_bot.feed.candles import ClosedCandle
+from harbor_bot.instruments import default_instrument_rules
 from harbor_bot.observability.websocket import WebSocketHub
 from harbor_bot.paper_engine.engine import ShadowPaperEngine, StrategyEvaluator
 from harbor_bot.paper_engine.models import PaperEngineConfig, VariantTrade
@@ -49,17 +51,18 @@ class PaperForwardService:
         if not variants:
             return ()
 
-        engine_kwargs: dict[str, Any] = {
-            "variants": variants,
-            "base_strategy_config": self._base_strategy_config,
-            "instrument_rules": self._instrument_rules,
-            "paper_config": self._paper_config,
-        }
-        if self._strategy_evaluator is not None:
-            engine_kwargs["strategy_evaluator"] = self._strategy_evaluator
-
-        shadow_engine = ShadowPaperEngine(**engine_kwargs)
-        emitted = shadow_engine.run(candle_batch)
+        emitted = tuple(
+            trade
+            for instrument, instrument_variants in _variants_by_instrument(
+                variants,
+                default_instrument=self._base_strategy_config.instrument,
+            ).items()
+            for trade in self._run_instrument_batch(
+                instrument=instrument,
+                variants=instrument_variants,
+                candles=tuple(candle for candle in candle_batch if candle.instrument == instrument),
+            )
+        )
         if not emitted:
             return ()
 
@@ -120,6 +123,25 @@ class PaperForwardService:
     def _now_utc(self) -> datetime:
         return self._clock().astimezone(UTC)
 
+    def _run_instrument_batch(
+        self,
+        *,
+        instrument: str,
+        variants: tuple[Any, ...],
+        candles: tuple[ClosedCandle, ...],
+    ) -> tuple[VariantTrade, ...]:
+        if not candles:
+            return ()
+        engine_kwargs: dict[str, Any] = {
+            "variants": variants,
+            "base_strategy_config": replace(self._base_strategy_config, instrument=instrument),
+            "instrument_rules": _instrument_rules(instrument, self._instrument_rules),
+            "paper_config": self._paper_config,
+        }
+        if self._strategy_evaluator is not None:
+            engine_kwargs["strategy_evaluator"] = self._strategy_evaluator
+        return ShadowPaperEngine(**engine_kwargs).run(candles)
+
 
 def _trade_with_id(trade: VariantTrade, trade_id: int) -> VariantTrade:
     return VariantTrade(
@@ -143,3 +165,21 @@ def _ordered_variant_ids(trades: Iterable[VariantTrade]) -> tuple[int, ...]:
         if trade.variant_id not in variant_ids:
             variant_ids.append(trade.variant_id)
     return tuple(variant_ids)
+
+
+def _variants_by_instrument(
+    variants: Iterable[Any],
+    *,
+    default_instrument: str,
+) -> dict[str, tuple[Any, ...]]:
+    grouped: dict[str, list[Any]] = {}
+    for variant in variants:
+        instrument = str(variant.params.get("instrument") or default_instrument).upper()
+        grouped.setdefault(instrument, []).append(variant)
+    return {instrument: tuple(items) for instrument, items in grouped.items()}
+
+
+def _instrument_rules(instrument: str, fallback: InstrumentRules) -> InstrumentRules:
+    if instrument == fallback.instrument:
+        return fallback
+    return default_instrument_rules(instrument)

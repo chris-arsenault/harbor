@@ -34,7 +34,7 @@ export async function apiGet<TResponse>(path: string): Promise<TResponse> {
     headers: { Accept: "application/json" },
   });
   if (!response.ok) {
-    throw new Error(`GET ${path} failed with ${response.status}`);
+    throw new Error(await responseErrorMessage(response, "GET", path));
   }
   return (await response.json()) as TResponse;
 }
@@ -46,7 +46,7 @@ export async function apiPost<TResponse>(path: string, payload: unknown = {}): P
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(`POST ${path} failed with ${response.status}`);
+    throw new Error(await responseErrorMessage(response, "POST", path));
   }
   return (await response.json()) as TResponse;
 }
@@ -58,9 +58,35 @@ export async function apiPut<TResponse>(path: string, payload: unknown): Promise
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(`PUT ${path} failed with ${response.status}`);
+    throw new Error(await responseErrorMessage(response, "PUT", path));
   }
   return (await response.json()) as TResponse;
+}
+
+async function responseErrorMessage(response: Response, method: string, path: string) {
+  const fallback = `${method} ${path} failed with ${response.status}`;
+  const detail = await responseDetail(response);
+  return detail ? `${fallback}: ${detail}` : fallback;
+}
+
+async function responseDetail(response: Response): Promise<string | null> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    const payload: unknown = await response.json().catch((): null => null);
+    if (isRecord(payload) && typeof payload.detail === "string") {
+      return payload.detail;
+    }
+    if (isRecord(payload) && payload.detail !== undefined) {
+      return JSON.stringify(payload.detail);
+    }
+    return null;
+  }
+  const text = await response.text().catch(() => "");
+  return text.trim() || null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function fetchStatus(): Promise<StatusSnapshot> {

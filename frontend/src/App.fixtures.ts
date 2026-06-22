@@ -82,7 +82,7 @@ export const labSnapshot = {
     {
       trial_id: 2,
       trial_no: 0,
-      params: { fvg_window: 8 },
+      params: { instrument: "GBP_USD", fvg_window: 8 },
       in_sample_score: "1.25",
       out_of_sample_score: "1.50",
       robustness_score: "1.40",
@@ -106,7 +106,7 @@ export const labVariants = {
     {
       id: 7,
       label: "candidate-1",
-      params: { fvg_window: 8 },
+      params: { instrument: "GBP_USD", fvg_window: 8 },
       source_trial_id: 2,
       status: "paper",
       created_ts: null,
@@ -123,7 +123,7 @@ export const labVariants = {
       variant: {
         id: 7,
         label: "candidate-1",
-        params: { fvg_window: 8 },
+        params: { instrument: "GBP_USD", fvg_window: 8 },
         source_trial_id: 2,
         status: "paper",
         created_ts: null,

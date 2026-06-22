@@ -13,7 +13,9 @@ services:
       DB_PASSWORD: "${DB_PASSWORD}"
       DB_PORT: "5432"
       DB_USER: "${DB_USER}"
+      HARBOR_LIVE_INGEST_ENABLED: "true"
       OANDA_ACCOUNT_ID: "${OANDA_ACCOUNT_ID}"
+      OANDA_API_KEY: "${OANDA_API_KEY}"
       OANDA_API_TOKEN: "${OANDA_API_TOKEN}"
       OANDA_ENV: "practice"
     healthcheck:

@@ -59,6 +59,16 @@ def test_oanda_settings_default_to_practice_without_credentials(monkeypatch) -> 
     assert settings.oanda_historical_candle_page_size == 5000
     assert settings.oanda_historical_import_count == 259_200
     assert settings.oanda_historical_request_interval_seconds == 0.1
+    assert settings.oanda_pricing_stream_enabled is False
+
+
+def test_oanda_api_key_alias_populates_api_token(monkeypatch) -> None:
+    _clear_oanda_env(monkeypatch)
+    monkeypatch.setenv("OANDA_API_KEY", "practice-key")
+
+    settings = Settings()
+
+    assert settings.oanda_api_token == "practice-key"
 
 
 def test_oanda_base_url_overrides_are_configuration(monkeypatch) -> None:
@@ -129,7 +139,9 @@ def _clear_oanda_env(monkeypatch) -> None:
         "OANDA_ENV",
         "ALLOW_LIVE",
         "OANDA_API_TOKEN",
+        "OANDA_API_KEY",
         "OANDA_ACCOUNT_ID",
+        "HARBOR_LIVE_INGEST_ENABLED",
         "OANDA_REST_BASE_URL",
         "OANDA_STREAM_BASE_URL",
         "OANDA_REQUEST_TIMEOUT_SECONDS",

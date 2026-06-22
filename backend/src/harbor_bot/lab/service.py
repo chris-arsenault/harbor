@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -51,6 +52,7 @@ class LabService:
             variants=variants,
             trades_by_variant=trades_by_variant,
         )
+        study_instrument = _instrument_from_walkforward(study.get("walkforward_json"))
         return LabSnapshot(
             study=LabStudySnapshot(
                 study_id=int(study["id"]),
@@ -60,7 +62,9 @@ class LabService:
                 paper_variant_count=int(study["paper_variant_count"]),
                 created_ts=study["created_ts"],
             ),
-            candidates=tuple(_candidate(trial) for trial in study["trials"]),
+            candidates=tuple(
+                _candidate(trial, instrument=study_instrument) for trial in study["trials"]
+            ),
             variants=overview,
             data_separation=_data_separation(),
         )
@@ -163,11 +167,14 @@ class LabService:
         )
 
 
-def _candidate(row: dict[str, Any]) -> CandidateScatterPoint:
+def _candidate(row: dict[str, Any], *, instrument: str | None) -> CandidateScatterPoint:
+    params = dict(row["params_json"])
+    if instrument is not None and "instrument" not in params:
+        params["instrument"] = instrument
     return CandidateScatterPoint(
         trial_id=int(row["id"]),
         trial_no=int(row["trial_no"]),
-        params=dict(row["params_json"]),
+        params=params,
         in_sample_score=row["is_score"],
         out_of_sample_score=row["oos_score"],
         robustness_score=row["robustness_score"],
@@ -175,6 +182,20 @@ def _candidate(row: dict[str, Any]) -> CandidateScatterPoint:
         status=str(row.get("status") or ("pruned" if row["pruned"] else "completed")),
         failure_reason=row.get("failure_reason"),
     )
+
+
+def _instrument_from_walkforward(walkforward: Any) -> str | None:
+    if not isinstance(walkforward, Mapping):
+        return None
+    candle_source = walkforward.get("candle_source")
+    if isinstance(candle_source, Mapping) and candle_source.get("instrument"):
+        return str(candle_source["instrument"])
+    research_protocol = walkforward.get("research_protocol")
+    if isinstance(research_protocol, Mapping):
+        candle_source = research_protocol.get("candle_source")
+        if isinstance(candle_source, Mapping) and candle_source.get("instrument"):
+            return str(candle_source["instrument"])
+    return None
 
 
 def _data_separation() -> dict[str, Any]:

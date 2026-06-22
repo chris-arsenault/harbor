@@ -24,10 +24,13 @@ export const DISCOVERY_STUDY_CONFIG = {
   robustnessNeighborCount: 0,
 } satisfies TuningStudyConfig;
 
-export function tuningPayloadFromConfig(config: TuningStudyConfig): OptimizationStartPayload {
+export function tuningPayloadFromConfig(
+  config: TuningStudyConfig,
+  instrument = DEFAULT_RESEARCH_INSTRUMENT
+): OptimizationStartPayload {
   return {
     source: "persisted_candles",
-    instrument: DEFAULT_RESEARCH_INSTRUMENT,
+    instrument,
     optimizer_config: {
       trial_count: config.trialCount,
       candidate_count: config.candidateCount,

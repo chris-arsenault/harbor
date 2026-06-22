@@ -29,6 +29,7 @@ from harbor_bot.optimizer.walkforward import (
 )
 from harbor_bot.persistence.market_repository import (
     get_candle_coverage,
+    latest_complete_candle_window,
     list_candles_range,
 )
 from harbor_bot.persistence.optimization_repository import (
@@ -68,7 +69,7 @@ class OptimizerService:
             engine=self.persistence_engine,
             candle_reader=self.candle_reader or read_persisted_candle_records,
             candle_window_selector=(
-                self.candle_window_selector or select_persisted_candle_coverage
+                self.candle_window_selector or select_latest_complete_persisted_candle_window
             ),
         )
         request = _request_from_payload(payload, fixture_base_path=self.fixture_base_path)
@@ -236,7 +237,7 @@ class OptimizerService:
             payload,
             engine=self.persistence_engine,
             candle_window_selector=(
-                self.candle_window_selector or select_persisted_candle_coverage
+                self.candle_window_selector or select_latest_complete_persisted_candle_window
             ),
         )
         candle_source = _candle_source_from_selection(selection)
@@ -309,7 +310,7 @@ class OptimizerService:
             engine=self.persistence_engine,
             candle_reader=self.candle_reader or read_persisted_candle_records,
             candle_window_selector=(
-                self.candle_window_selector or select_persisted_candle_coverage
+                self.candle_window_selector or select_latest_complete_persisted_candle_window
             ),
         )
         request = _request_from_payload(payload, fixture_base_path=self.fixture_base_path)
@@ -689,6 +690,23 @@ async def select_persisted_candle_coverage(
         "required_days": required_days,
         "coverage": coverage,
     }
+
+
+async def select_latest_complete_persisted_candle_window(
+    engine: AsyncEngine | None,
+    *,
+    instrument: str,
+    required_days: int,
+) -> dict[str, Any] | None:
+    if engine is None:
+        msg = "persisted candle optimization requires a persistence engine"
+        raise ValueError(msg)
+    async with engine.connect() as connection:
+        return await latest_complete_candle_window(
+            connection,
+            instrument=instrument,
+            required_days=required_days,
+        )
 
 
 async def _payload_with_persisted_candles(

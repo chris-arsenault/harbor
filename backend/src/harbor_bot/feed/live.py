@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterable, Mapping, Sequence
+from collections.abc import AsyncIterable, Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -15,12 +15,15 @@ from harbor_bot.persistence.market_repository import upsert_candle
 async def ingest_pricing_stream(
     *,
     engine: AsyncEngine,
-    instrument: str,
     frames: AsyncIterable[PricingFrame],
     heartbeat_timeout_seconds: float,
+    instrument: str | None = None,
+    instruments: Sequence[str] | None = None,
     reconnect_attempts: Sequence[Mapping[str, Any]] = (),
     event_ts: datetime | None = None,
+    on_closed_candle: Callable[[ClosedCandle], Awaitable[None]] | None = None,
 ) -> int:
+    tracked_instruments = _tracked_instruments(instrument=instrument, instruments=instruments)
     event_ts = event_ts or datetime.now(UTC)
     await _append_lifecycle_event(
         engine,
@@ -28,7 +31,7 @@ async def ingest_pricing_stream(
         level="info",
         event_type="pricing_stream.connected",
         message="pricing stream connected",
-        data={"instrument": instrument},
+        data={"instruments": list(tracked_instruments)},
     )
     for attempt in reconnect_attempts:
         await _append_lifecycle_event(
@@ -37,7 +40,7 @@ async def ingest_pricing_stream(
             level="warning",
             event_type="pricing_stream.reconnect_attempt",
             message="pricing stream reconnect attempt",
-            data={"instrument": instrument, **dict(attempt)},
+            data={"instruments": list(tracked_instruments), **dict(attempt)},
         )
 
     builder = CandleBuilder()
@@ -60,22 +63,39 @@ async def ingest_pricing_stream(
                 event_type="pricing_stream.heartbeat_timeout",
                 message="pricing stream heartbeat timeout",
                 data={
-                    "instrument": instrument,
+                    "instruments": list(tracked_instruments),
                     "last_heartbeat": monitor.last_heartbeat.isoformat(),
                 },
             )
 
         monitor.record(frame)
-        if isinstance(frame, PriceFrame) and frame.instrument != instrument:
+        if isinstance(frame, PriceFrame) and frame.instrument not in tracked_instruments:
             continue
 
         closed = builder.add(frame)
         if closed is None:
             continue
         await _persist_closed_candle(engine, closed)
+        if on_closed_candle is not None:
+            await on_closed_candle(closed)
         persisted += 1
 
     return persisted
+
+
+def _tracked_instruments(
+    *,
+    instrument: str | None,
+    instruments: Sequence[str] | None,
+) -> tuple[str, ...]:
+    if instruments is not None:
+        tracked = tuple(str(value).strip().upper() for value in instruments if value)
+        if tracked:
+            return tracked
+    if instrument is None:
+        msg = "instrument or instruments is required"
+        raise ValueError(msg)
+    return (instrument.strip().upper(),)
 
 
 async def _persist_closed_candle(engine: AsyncEngine, candle: ClosedCandle) -> None:

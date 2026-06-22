@@ -82,8 +82,10 @@ async def get_variant_detail(
             opt_trials.c.is_score,
             opt_trials.c.oos_score,
             opt_trials.c.robustness_score,
+            opt_studies.c.walkforward_json,
         )
         .join(opt_trials, variants.c.source_trial_id == opt_trials.c.id)
+        .join(opt_studies, opt_trials.c.study_id == opt_studies.c.id)
         .where(variants.c.id == variant_id)
     )
     row = result.mappings().first()
@@ -104,7 +106,7 @@ async def get_variant_detail(
         "variant": {
             "id": int(row["id"]),
             "label": row["label"],
-            "params": dict(row["params_json"]),
+            "params": _params_with_study_instrument(row),
             "source_trial_id": int(row["source_trial_id"]),
             "status": row["status"],
             "trial_scores": {
@@ -193,8 +195,10 @@ async def list_active_paper_variants(
             opt_trials.c.is_score,
             opt_trials.c.oos_score,
             opt_trials.c.robustness_score,
+            opt_studies.c.walkforward_json,
         )
         .join(opt_trials, variants.c.source_trial_id == opt_trials.c.id)
+        .join(opt_studies, opt_trials.c.study_id == opt_studies.c.id)
         .where(variants.c.status == "paper")
         .order_by(variants.c.id)
         .limit(limit)
@@ -215,7 +219,10 @@ async def create_paper_variant_from_trial(
                 opt_trials.c.study_id,
                 opt_trials.c.trial_no,
                 opt_trials.c.params_json,
-            ).where(opt_trials.c.id == trial_id)
+                opt_studies.c.walkforward_json,
+            )
+            .join(opt_studies, opt_trials.c.study_id == opt_studies.c.id)
+            .where(opt_trials.c.id == trial_id)
         )
         trial = trial_result.mappings().first()
         if trial is None:
@@ -226,7 +233,7 @@ async def create_paper_variant_from_trial(
             insert(variants)
             .values(
                 label=label or f"study-{trial['study_id']}-trial-{trial['trial_no']}",
-                params_json=dict(trial["params_json"]),
+                params_json=_params_with_study_instrument(trial),
                 source_trial_id=trial["id"],
                 status="paper",
             )
@@ -304,8 +311,10 @@ async def get_promoted_variant(connection: AsyncConnection) -> dict[str, Any] | 
             opt_trials.c.is_score,
             opt_trials.c.oos_score,
             opt_trials.c.robustness_score,
+            opt_studies.c.walkforward_json,
         )
         .join(opt_trials, variants.c.source_trial_id == opt_trials.c.id)
+        .join(opt_studies, opt_trials.c.study_id == opt_studies.c.id)
         .where(variants.c.status == "promoted")
         .order_by(variants.c.id)
         .limit(1)
@@ -316,7 +325,7 @@ async def get_promoted_variant(connection: AsyncConnection) -> dict[str, Any] | 
     return {
         "id": int(row["id"]),
         "label": row["label"],
-        "params": dict(row["params_json"]),
+        "params": _params_with_study_instrument(row),
         "source_trial_id": int(row["source_trial_id"]),
         "status": row["status"],
         "trial_scores": {
@@ -480,7 +489,7 @@ def _paper_variant_from_row(row: Mapping[str, Any]) -> PaperVariant:
     return PaperVariant(
         id=int(row["id"]),
         label=row["label"],
-        params=dict(row["params_json"]),
+        params=_params_with_study_instrument(row),
         source_trial_id=int(row["source_trial_id"]),
         status=row["status"],
         trial_scores={
@@ -489,6 +498,31 @@ def _paper_variant_from_row(row: Mapping[str, Any]) -> PaperVariant:
             "robustness_score": row["robustness_score"],
         },
     )
+
+
+def _params_with_study_instrument(row: Mapping[str, Any]) -> dict[str, Any]:
+    params = dict(row["params_json"])
+    if "instrument" in params:
+        return params
+
+    instrument = _instrument_from_walkforward(row.get("walkforward_json"))
+    if instrument is not None:
+        params["instrument"] = instrument
+    return params
+
+
+def _instrument_from_walkforward(walkforward: Any) -> str | None:
+    if not isinstance(walkforward, Mapping):
+        return None
+    candle_source = walkforward.get("candle_source")
+    if isinstance(candle_source, Mapping) and candle_source.get("instrument"):
+        return str(candle_source["instrument"])
+    research_protocol = walkforward.get("research_protocol")
+    if isinstance(research_protocol, Mapping):
+        candle_source = research_protocol.get("candle_source")
+        if isinstance(candle_source, Mapping) and candle_source.get("instrument"):
+            return str(candle_source["instrument"])
+    return None
 
 
 def _variant_trade_from_row(row: Mapping[str, Any]) -> VariantTrade:

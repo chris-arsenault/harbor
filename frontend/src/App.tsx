@@ -24,6 +24,7 @@ import {
   useVariantsQuery,
 } from "./api/hooks";
 import type { CandleImportRequest, CandleImportResult, VariantEquityCurve } from "./api/types";
+import { aggregateImportResult } from "./app/candleImport";
 import {
   emptyMarkers,
   emptyStatus,
@@ -52,10 +53,12 @@ import {
 import { ProductNav, type ProductView } from "./components/navigation/ProductNav";
 import { OperationsView } from "./components/operations/OperationsView";
 import { TradesView } from "./components/trades/TradesView";
+import { AppWorkflowRoute } from "./components/workflow/AppWorkflowRoute";
 
 const DEFAULT_INSTRUMENT = "EUR_USD";
 const DEFAULT_EVENTS_LIMIT = 25;
 const APP_VIEWS: ProductView[] = [
+  "workflow",
   "dashboard",
   "trades",
   "backtests",
@@ -71,7 +74,10 @@ interface AppProps {
 
 export function App({ chartAdapter }: AppProps) {
   const windowParams = useMemo(() => dashboardWindow(new Date()), []);
-  const [activeView, setActiveView] = useState<ProductView>("dashboard");
+  const [activeView, setActiveView] = useState<ProductView>("workflow");
+  const [selectedResearchInstrument, setSelectedResearchInstrument] = useState(
+    DEFAULT_RESEARCH_INSTRUMENT
+  );
   const live = useLiveState();
   const dashboard = useDashboardData(windowParams, live);
   const trades = useTradesQuery({
@@ -84,7 +90,7 @@ export function App({ chartAdapter }: AppProps) {
   const config = useConfigQuery();
   const updateConfig = useUpdateConfigMutation();
   const eventsPage = useEventsQuery({ limit: 200 });
-  const lab = useLabData(live.liveEquityCurves, live.labLiveStatus);
+  const lab = useLabData(selectedResearchInstrument, live.liveEquityCurves, live.labLiveStatus);
   const backtestPage = useBacktestPageState(backtests, startBacktest);
   const controls = usePracticeControls();
   const productEvents = mergeEvents(live.liveEvents, eventsPage.data ?? dashboard.events);
@@ -108,6 +114,8 @@ export function App({ chartAdapter }: AppProps) {
         eventsPage={eventsPage}
         productEvents={productEvents}
         lab={lab}
+        selectedResearchInstrument={selectedResearchInstrument}
+        onResearchInstrumentChange={setSelectedResearchInstrument}
         controls={controls}
         chartAdapter={chartAdapter}
       />
@@ -141,15 +149,22 @@ function useDashboardData(windowParams: ReturnType<typeof dashboardWindow>, live
   };
 }
 
-function useLabData(liveEquityCurves: VariantEquityCurve[], liveStatus: string | null) {
+function useLabData(
+  selectedInstrument: string,
+  liveEquityCurves: VariantEquityCurve[],
+  liveStatus: string | null
+) {
   const [studyConfig, setStudyConfig] = useState<TuningStudyConfig>(DISCOVERY_STUDY_CONFIG);
-  const studyPayload = useMemo(() => tuningPayloadFromConfig(studyConfig), [studyConfig]);
+  const studyPayload = useMemo(
+    () => tuningPayloadFromConfig(studyConfig, selectedInstrument),
+    [studyConfig, selectedInstrument]
+  );
   const studiesQuery = useOptimizationStudiesQuery({ limit: 50 });
   const startOptimizationMutation = useStartOptimizationMutation();
   const selectedStudyId = latestLabStudyId(studiesQuery.data, startOptimizationMutation.data);
   const labStudyQuery = useLabStudyQuery(selectedStudyId);
   const variantsQuery = useVariantsQuery();
-  const candleSource = useLabCandleSource();
+  const candleSource = useLabCandleSource(selectedInstrument);
   const canPreflight = (candleSource.status?.coverage?.candle_count ?? 0) > 0;
   const preflightQuery = useOptimizationPreflightQuery(studyPayload, canPreflight);
   const createVariantMutation = useCreatePaperVariantMutation();
@@ -197,8 +212,8 @@ function tuningRunState(mutation: ReturnType<typeof useStartOptimizationMutation
   };
 }
 
-function useLabCandleSource() {
-  const candleSourceQuery = useCandleSourceQuery({ instrument: DEFAULT_RESEARCH_INSTRUMENT });
+function useLabCandleSource(selectedInstrument: string) {
+  const candleSourceQuery = useCandleSourceQuery({ instrument: selectedInstrument });
   const importCandlesMutation = useImportHistoricalCandlesMutation();
   const [batchImportPending, setBatchImportPending] = useState(false);
   const [batchImportResult, setBatchImportResult] = useState<CandleImportResult | null>(null);
@@ -238,40 +253,12 @@ function useLabCandleSource() {
   };
 }
 
-function aggregateImportResult(
-  results: CandleImportResult[],
-  payload: CandleImportRequest
-): CandleImportResult {
-  const first = results[0];
-  return {
-    status: "completed",
-    source: "oanda_historical_import",
-    instrument: "research_universe",
-    instruments: results.map((result) => result.instrument),
-    requested_count: results.reduce((total, result) => total + result.requested_count, 0),
-    imported_count: results.reduce((total, result) => total + result.imported_count, 0),
-    from: payload.from ?? first?.from ?? null,
-    coverage: first?.coverage ?? {
-      instrument: "research_universe",
-      candle_count: 0,
-      from: null,
-      to: null,
-    },
-    results: results.map((result) => ({
-      instrument: result.instrument,
-      requested_count: result.requested_count,
-      imported_count: result.imported_count,
-      coverage: result.coverage,
-    })),
-  };
-}
-
 function firstErrorMessage(...errors: unknown[]) {
   const error = errors.find((item) => item instanceof Error);
   return error instanceof Error ? error.message : null;
 }
 
-interface ProductPageProps {
+export interface ProductPageProps {
   readonly activeView: ProductView;
   readonly windowParams: ReturnType<typeof dashboardWindow>;
   readonly dashboard: ReturnType<typeof useDashboardData>;
@@ -283,11 +270,14 @@ interface ProductPageProps {
   readonly eventsPage: ReturnType<typeof useEventsQuery>;
   readonly productEvents: ReturnType<typeof mergeEvents>;
   readonly lab: ReturnType<typeof useLabData>;
+  readonly selectedResearchInstrument: string;
+  readonly onResearchInstrumentChange: (instrument: string) => void;
   readonly controls: ReturnType<typeof usePracticeControls>;
   readonly chartAdapter?: LiveChartAdapter;
 }
 
 const PRODUCT_ROUTES = {
+  workflow: AppWorkflowRoute,
   dashboard: DashboardRoute,
   trades: TradesRoute,
   backtests: BacktestsRoute,

@@ -1,4 +1,5 @@
 export type ProductView =
+  | "workflow"
   | "dashboard"
   | "trades"
   | "backtests"
@@ -14,6 +15,7 @@ interface ProductNavProps {
 }
 
 const LABELS: Record<ProductView, string> = {
+  workflow: "Workflow",
   dashboard: "Dashboard",
   trades: "Trades",
   backtests: "Backtests",

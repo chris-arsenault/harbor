@@ -58,6 +58,39 @@ def test_paper_forward_service_persists_events_and_broadcasts_from_injected_batc
     assert hub.broadcasts[-1]["payload"]["points"][-1]["variant_id"] == 2
 
 
+def test_paper_forward_service_evaluates_only_matching_variant_instruments() -> None:
+    repository = FakeVariantRepository(
+        (
+            PaperVariant(
+                id=1,
+                label="gbp-trial",
+                params={"instrument": "GBP_USD", "fvg_window": 7},
+                source_trial_id=1,
+            ),
+            PaperVariant(
+                id=2,
+                label="eur-trial",
+                params={"instrument": "EUR_USD", "fvg_window": 11},
+                source_trial_id=2,
+            ),
+        )
+    )
+    service = PaperForwardService(
+        engine=FakeEngine(),
+        base_strategy_config=strategy_config_from_defaults(load_default_config()),
+        instrument_rules=_rules(),
+        paper_config=PaperEngineConfig(),
+        repository=repository,
+        event_repository=FakeEventRepository(),
+        strategy_evaluator=_entry_evaluator,
+    )
+
+    trades = run(service.run_closed_candles(_trade_candles()))
+
+    assert [trade.variant_id for trade in trades] == [2]
+    assert repository.persisted_variant_ids == [2]
+
+
 def test_paper_forward_service_returns_empty_without_active_variants() -> None:
     repository = FakeVariantRepository(())
     event_repository = FakeEventRepository()

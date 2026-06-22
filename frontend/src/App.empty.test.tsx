@@ -20,7 +20,7 @@ afterEach(() => {
 test("does not request a fixed lab study when the empty deployment has no studies", async () => {
   renderWithClient(<App chartAdapter={fakeChartAdapter()} />);
 
-  expect(await screen.findByText("WAIT_SWEEP")).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Strategy Workflow" })).toBeInTheDocument();
   await waitFor(() =>
     expect(fetch).toHaveBeenCalledWith("/api/optimize?limit=50", expect.anything())
   );

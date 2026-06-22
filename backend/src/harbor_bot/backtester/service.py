@@ -14,7 +14,10 @@ from harbor_bot.config.defaults import load_default_config
 from harbor_bot.instruments import default_instrument_rules
 from harbor_bot.optimizer.config import apply_params_to_strategy_config
 from harbor_bot.persistence.backtest_repository import append_backtest_result, get_backtest_run
-from harbor_bot.persistence.market_repository import list_candles_range
+from harbor_bot.persistence.market_repository import (
+    latest_complete_candle_window,
+    list_candles_range,
+)
 from harbor_bot.strategy.models import (
     InstrumentRules,
     StrategyConfig,
@@ -22,8 +25,10 @@ from harbor_bot.strategy.models import (
 )
 
 CandleRangeReader = Callable[..., Awaitable[list[dict[str, Any]]]]
+BacktestWindowSelector = Callable[..., Awaitable[dict[str, Any] | None]]
 BacktestRunner = Callable[[BacktestInput], BacktestRunResult]
 _UTC_OFFSET = timedelta(0)
+DEFAULT_BACKTEST_WINDOW_DAYS = 30
 
 
 @dataclass(frozen=True)
@@ -31,6 +36,7 @@ class BacktestService:
     persistence_engine: AsyncEngine | None = None
     fixture_base_path: Path | None = None
     candle_reader: CandleRangeReader = None
+    candle_window_selector: BacktestWindowSelector = None
     backtest_runner: BacktestRunner = run_backtest
 
     async def start_backtest(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -39,6 +45,9 @@ class BacktestService:
             engine=self.persistence_engine,
             fixture_base_path=self.fixture_base_path,
             candle_reader=self.candle_reader or read_persisted_candle_records,
+            candle_window_selector=(
+                self.candle_window_selector or select_latest_complete_candle_window
+            ),
         )
         result = self.backtest_runner(
             _input_from_payload(payload, fixture_base_path=self.fixture_base_path)
@@ -113,12 +122,30 @@ async def read_persisted_candle_records(
     ]
 
 
+async def select_latest_complete_candle_window(
+    engine: AsyncEngine | None,
+    *,
+    instrument: str,
+    required_days: int,
+) -> dict[str, Any] | None:
+    if engine is None:
+        msg = "persisted candle range requests require a persistence engine"
+        raise ValueError(msg)
+    async with engine.connect() as connection:
+        return await latest_complete_candle_window(
+            connection,
+            instrument=instrument,
+            required_days=required_days,
+        )
+
+
 async def _payload_with_persisted_candles(
     payload: Mapping[str, Any],
     *,
     engine: AsyncEngine | None,
     fixture_base_path: Path | None,
     candle_reader: CandleRangeReader,
+    candle_window_selector: BacktestWindowSelector,
 ) -> dict[str, Any]:
     if "candles" in payload or "fixture" in payload:
         return dict(payload)
@@ -128,14 +155,27 @@ async def _payload_with_persisted_candles(
     strategy_config = strategy_config_from_defaults(load_default_config())
     instrument = str(payload.get("instrument") or strategy_config.instrument)
     raw_range = payload.get("candle_range")
-    if not isinstance(raw_range, Mapping):
-        msg = "candle_range must include from and to"
-        raise TypeError(msg)
-    start = _parse_utc_ts(str(raw_range["from"]))
-    end = _parse_utc_ts(str(raw_range["to"]))
+    if isinstance(raw_range, Mapping):
+        start = _parse_utc_ts(str(raw_range["from"]))
+        end = _parse_utc_ts(str(raw_range["to"]))
+    else:
+        selected_window = await candle_window_selector(
+            engine,
+            instrument=instrument,
+            required_days=_backtest_window_days(payload),
+        )
+        if selected_window is None:
+            msg = (
+                f"no complete persisted backtest window is available for {instrument}; "
+                "import historical candles before running a backtest"
+            )
+            raise ValueError(msg)
+        start = selected_window["from"]
+        end = selected_window["to"]
     candles = await candle_reader(engine, instrument=instrument, start=start, end=end)
     next_payload = dict(payload)
     next_payload["candles"] = candles
+    next_payload["candle_range"] = {"from": start.isoformat(), "to": end.isoformat()}
     next_payload.pop("fixture", None)
     return next_payload
 
@@ -259,6 +299,15 @@ def _result_params_from_payload(
             value = payload[key]
             params[key] = dict(value) if isinstance(value, Mapping) else value
     return params
+
+
+def _backtest_window_days(payload: Mapping[str, Any]) -> int:
+    raw = payload.get("candle_window_days", DEFAULT_BACKTEST_WINDOW_DAYS)
+    days = int(raw)
+    if days <= 0:
+        msg = "candle_window_days must be positive"
+        raise ValueError(msg)
+    return days
 
 
 def _parse_utc_ts(raw: str) -> datetime:

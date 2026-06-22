@@ -4,6 +4,7 @@ import { expect, test, vi } from "vitest";
 import { ProductNav, type ProductView } from "./ProductNav";
 
 const views: ProductView[] = [
+  "workflow",
   "dashboard",
   "trades",
   "backtests",
@@ -13,12 +14,13 @@ const views: ProductView[] = [
   "operations",
 ];
 
-test("renders every product workflow with dashboard selected by default", () => {
+test("renders every product workflow with workflow selected by default", () => {
   const onViewChange = vi.fn();
 
-  render(<ProductNav activeView="dashboard" views={views} onViewChange={onViewChange} />);
+  render(<ProductNav activeView="workflow" views={views} onViewChange={onViewChange} />);
 
   for (const label of [
+    "Workflow",
     "Dashboard",
     "Trades",
     "Backtests",
@@ -29,7 +31,7 @@ test("renders every product workflow with dashboard selected by default", () => 
   ]) {
     expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
   }
-  expect(screen.getByRole("button", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
+  expect(screen.getByRole("button", { name: "Workflow" })).toHaveAttribute("aria-current", "page");
 
   fireEvent.click(screen.getByRole("button", { name: "Operations" }));
 

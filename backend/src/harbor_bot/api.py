@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import suppress
+from datetime import UTC
 from datetime import date as Date
 from datetime import datetime as DateTime
 from decimal import Decimal
@@ -20,10 +23,12 @@ from harbor_bot.backtester.service import BacktestService
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.config.models import ConfigUpdateRequest
 from harbor_bot.config.service import ConfigService
+from harbor_bot.feed.live import ingest_pricing_stream
 from harbor_bot.feed.source_service import CandleSourceService
 from harbor_bot.instruments import default_instrument_rules
 from harbor_bot.lab.service import LabService
-from harbor_bot.oanda.client import OandaApiError
+from harbor_bot.oanda.client import OandaApiError, OandaClient
+from harbor_bot.oanda.stream import parse_pricing_stream_lines, reconnecting_frames
 from harbor_bot.observability.service import ObservabilityService
 from harbor_bot.observability.websocket import WebSocketHub
 from harbor_bot.optimizer.service import OptimizerService
@@ -133,6 +138,8 @@ def create_app(
     app.state.settings.validate_startup()
     app.state.websocket_hub = websocket_hub or WebSocketHub()
     app.state.control_service = control_service
+    app.state.live_pricing_stream_state = {"state": "disabled", "running": False}
+    app.state.live_pricing_stream_task = None
     persistence_engine = None
     if (
         observability_service is None
@@ -173,6 +180,7 @@ def create_app(
         candle_source_service = CandleSourceService(
             engine=persistence_engine,
             settings=app.state.settings,
+            live_stream_status_provider=lambda: _live_pricing_stream_status(app),
         )
     app.state.candle_source_service = candle_source_service
     if config_service is None:
@@ -197,6 +205,40 @@ def create_app(
             settings=app.state.settings,
         )
     app.state.readiness_checker = readiness_checker
+
+    @app.on_event("startup")
+    async def start_runtime_workers() -> None:
+        if not _should_start_live_pricing_stream(app):
+            return
+        now = DateTime.now(tz=UTC)
+        app.state.live_pricing_stream_state = {
+            "state": "starting",
+            "running": False,
+            "last_started_at": now,
+        }
+        task = asyncio.create_task(_run_live_pricing_stream(app))
+        app.state.live_pricing_stream_task = task
+        app.state.live_pricing_stream_state = {
+            "state": "running",
+            "running": True,
+            "last_started_at": now,
+        }
+        task.add_done_callback(lambda done: _record_live_pricing_stream_done(app, done))
+
+    @app.on_event("shutdown")
+    async def stop_runtime_workers() -> None:
+        task = app.state.live_pricing_stream_task
+        if task is None:
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        app.state.live_pricing_stream_state = {
+            **dict(app.state.live_pricing_stream_state),
+            "state": "stopped",
+            "running": False,
+            "last_stopped_at": DateTime.now(tz=UTC),
+        }
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -507,6 +549,67 @@ def create_app(
 
 def _default_instrument_rules(instrument: str) -> InstrumentRules:
     return default_instrument_rules(instrument)
+
+
+def _should_start_live_pricing_stream(app: FastAPI) -> bool:
+    settings = app.state.settings
+    return bool(
+        settings.oanda_pricing_stream_enabled
+        and settings.oanda_api_token
+        and settings.oanda_account_id
+        and getattr(app.state, "persistence_engine", None) is not None
+        and getattr(app.state, "paper_forward_service", None) is not None
+    )
+
+
+async def _run_live_pricing_stream(app: FastAPI) -> None:
+    settings = app.state.settings
+    instruments = settings.research_instruments
+
+    async def on_closed_candle(candle: Any) -> None:
+        await app.state.paper_forward_service.run_closed_candles((candle,))
+
+    async with OandaClient.from_settings(settings) as client:
+        frames = reconnecting_frames(
+            lambda: parse_pricing_stream_lines(client.stream_pricing_lines(instruments)),
+            initial_delay_seconds=settings.oanda_reconnect_initial_seconds,
+            max_delay_seconds=settings.oanda_reconnect_max_seconds,
+            sleep=asyncio.sleep,
+        )
+        await ingest_pricing_stream(
+            engine=app.state.persistence_engine,
+            frames=frames,
+            instruments=instruments,
+            heartbeat_timeout_seconds=settings.oanda_stream_heartbeat_timeout_seconds,
+            on_closed_candle=on_closed_candle,
+        )
+
+
+def _live_pricing_stream_status(app: FastAPI) -> dict[str, Any]:
+    state = dict(getattr(app.state, "live_pricing_stream_state", {}))
+    task = getattr(app.state, "live_pricing_stream_task", None)
+    if task is not None and not task.done():
+        state["running"] = True
+        state["state"] = "running"
+    else:
+        state["running"] = False
+    return state
+
+
+def _record_live_pricing_stream_done(app: FastAPI, task: asyncio.Task[Any]) -> None:
+    state = dict(getattr(app.state, "live_pricing_stream_state", {}))
+    state["running"] = False
+    state["last_stopped_at"] = DateTime.now(tz=UTC)
+    if task.cancelled():
+        state["state"] = "stopped"
+    else:
+        error = task.exception()
+        if error is None:
+            state["state"] = "stopped"
+        else:
+            state["state"] = "failed"
+            state["last_error"] = redact_secret_text(error)
+    app.state.live_pricing_stream_state = state
 
 
 class ReadinessChecker:

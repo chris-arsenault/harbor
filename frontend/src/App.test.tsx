@@ -16,14 +16,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("renders the dashboard from REST data as the first screen", async () => {
+test("renders the workflow from REST data as the first screen", async () => {
   renderWithClient(<App chartAdapter={fakeChartAdapter()} />);
 
-  expect(await screen.findByText("WAIT_SWEEP")).toBeInTheDocument();
-  expect(screen.getByText("ny_trade")).toBeInTheDocument();
-  expect(screen.getByText("60.00000000")).toBeInTheDocument();
-  expect(screen.getByLabelText("Live chart")).toBeInTheDocument();
-  expect(screen.getByText("heartbeat stale")).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Strategy Workflow" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Data stage" })).toHaveTextContent("GBP_USD");
+  await waitFor(() =>
+    expect(screen.getByRole("region", { name: "Research stage" })).toHaveTextContent("ready")
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("region", { name: "Candidate stage" })).toHaveTextContent("candidate-1")
+  );
+  expect(screen.getByLabelText("WebSocket heartbeat")).toHaveTextContent("stale");
 });
 
 test("applies live websocket status and candle envelopes", async () => {
@@ -34,6 +38,8 @@ test("applies live websocket status and candle envelopes", async () => {
     destroy: vi.fn(),
   };
   renderWithClient(<App chartAdapter={fakeChartAdapter(handle)} />);
+  expect(await screen.findByRole("heading", { name: "Strategy Workflow" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Dashboard" }));
   expect(await screen.findByText("WAIT_SWEEP")).toBeInTheDocument();
 
   fakeWebSocketInstances[0]?.emit({
@@ -66,7 +72,7 @@ test("applies live websocket status and candle envelopes", async () => {
 
 test("renders Lab as a secondary view and applies variant live envelopes", async () => {
   renderWithClient(<App chartAdapter={fakeChartAdapter()} />);
-  expect(await screen.findByText("WAIT_SWEEP")).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Strategy Workflow" })).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Lab" }));
 
@@ -114,7 +120,8 @@ test("renders Lab as a secondary view and applies variant live envelopes", async
 test("renders guarded practice controls and posts enable requests", async () => {
   renderWithClient(<App chartAdapter={fakeChartAdapter()} />);
 
-  expect(await screen.findByText("WAIT_SWEEP")).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Strategy Workflow" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Operations" }));
   fireEvent.change(screen.getByLabelText("Confirmation"), {
     target: { value: "OANDA_PRACTICE" },
   });
@@ -220,11 +227,25 @@ function dashboardRoutePayload(url: string): unknown {
       granularity: "M1",
       price_component: "midpoint",
       coverage: {
-        instrument: "EUR_USD",
-        candle_count: 2880,
+        instrument: "GBP_USD",
+        candle_count: 70000,
         from: "2026-01-15T00:00:00+00:00",
         to: "2026-01-16T23:59:00+00:00",
       },
+      instrument_coverages: [
+        {
+          instrument: "GBP_USD",
+          candle_count: 70000,
+          from: "2026-01-15T00:00:00+00:00",
+          to: "2026-01-16T23:59:00+00:00",
+        },
+        {
+          instrument: "EUR_USD",
+          candle_count: 2880,
+          from: "2026-01-15T00:00:00+00:00",
+          to: "2026-01-16T23:59:00+00:00",
+        },
+      ],
       source_methods: ["oanda_historical_import", "oanda_pricing_stream"],
       research_instruments: ["GBP_USD", "EUR_USD", "USD_JPY"],
       historical_import: {
@@ -235,6 +256,21 @@ function dashboardRoutePayload(url: string): unknown {
         replaces_existing: false,
       },
       oanda_historical_import_configured: true,
+      live_stream: {
+        configured: true,
+        enabled: true,
+        running: true,
+        state: "running",
+        starts_on_api_boot: true,
+        paper_forward_on_closed_candle: true,
+        instruments: ["GBP_USD", "EUR_USD", "USD_JPY"],
+        heartbeat_timeout_seconds: 20,
+        reconnect_initial_seconds: 1,
+        reconnect_max_seconds: 30,
+        last_started_at: "2026-01-15T13:55:00Z",
+        last_stopped_at: null,
+        last_error: null,
+      },
     };
   }
   if (url.startsWith("/api/candles")) {
@@ -263,6 +299,9 @@ function productRoutePayload(url: string): unknown {
 }
 
 function labRoutePayload(url: string): unknown {
+  if (url.startsWith("/api/optimize/preflight")) {
+    return preflightRoutePayload();
+  }
   if (url.startsWith("/api/optimize?")) {
     return { studies: [{ study_id: 1 }] };
   }
@@ -273,6 +312,71 @@ function labRoutePayload(url: string): unknown {
     return labVariants;
   }
   return undefined;
+}
+
+function preflightRoutePayload(): unknown {
+  return {
+    status: "ready",
+    instrument: "GBP_USD",
+    candle_source: {
+      source: "persisted_candles",
+      instrument: "GBP_USD",
+      from: "2026-01-15T00:00:00+00:00",
+      to: "2026-01-16T23:59:00+00:00",
+    },
+    study_config: {},
+    candidate_gate: {
+      requires: "completed trials with positive in-sample and out-of-sample scores",
+      min_in_sample_trades: 12,
+      min_out_of_sample_trades: 4,
+    },
+    dataset: {
+      candle_count: 70000,
+      session_day_count: 120,
+      evaluable_session_day_count: 120,
+      partial_session_day_count: 0,
+      first_evaluable_trading_date: "2026-01-15",
+      last_evaluable_trading_date: "2026-06-15",
+      day_diagnostics: [],
+    },
+    walk_forward: {
+      window_count: 3,
+      required_session_days: 80,
+      train_window_days: 60,
+      out_of_sample_window_days: 20,
+      step_days: 20,
+      window_error: null,
+      windows: [],
+      omitted_window_count: 0,
+    },
+    baseline: null,
+    research_protocol: {
+      status: "ready",
+      message: "ready",
+      data_requirements: {
+        trial_count: 96,
+        candidate_count: 5,
+        discovery_candidate_count: 5,
+        min_evaluable_days: 120,
+        min_discovery_days: 90,
+        holdout_days: 30,
+        max_session_gap_minutes: 1,
+        min_holdout_trades: 5,
+        train_window_days: 60,
+        oos_window_days: 20,
+        step_days: 20,
+        min_in_sample_trades: 12,
+        min_oos_trades: 4,
+      },
+      evaluable_day_count: 120,
+      partial_day_count: 0,
+      evaluable_days: [],
+    },
+    readiness: [
+      { name: "candles", status: "pass", message: "70000 persisted closed candles selected" },
+    ],
+    recommended_payload: { source: "persisted_candles", instrument: "GBP_USD" },
+  };
 }
 
 interface FakeWebSocketInstance {

@@ -172,6 +172,57 @@ async def test_backtest_service_reads_persisted_candle_ranges_for_ui_requests() 
 
 
 @pytest.mark.asyncio
+async def test_backtest_service_selects_latest_complete_window_when_ui_omits_range() -> None:
+    calls = []
+
+    async def selector(engine, *, instrument: str, required_days: int) -> dict[str, Any]:
+        assert engine is None
+        assert instrument == "GBP_USD"
+        assert required_days == 30
+        return {
+            "instrument": instrument,
+            "from": datetime(2026, 2, 1, tzinfo=UTC),
+            "to": datetime(2026, 3, 2, 23, 59, tzinfo=UTC),
+        }
+
+    async def reader(
+        engine,
+        *,
+        instrument: str,
+        start: datetime,
+        end: datetime,
+    ) -> list[dict[str, Any]]:
+        calls.append((engine, instrument, start, end))
+        return [
+            {**_record("2026-02-01T14:00:00+00:00"), "instrument": "GBP_USD"},
+            {**_record("2026-02-01T14:01:00+00:00"), "instrument": "GBP_USD"},
+        ]
+
+    service = BacktestService(
+        candle_reader=reader,
+        candle_window_selector=selector,
+    )
+
+    response = await service.start_backtest(
+        {"source": "persisted_candles", "instrument": "GBP_USD"}
+    )
+
+    assert response["status"] == "completed"
+    assert response["params"]["candle_range"] == {
+        "from": "2026-02-01T00:00:00+00:00",
+        "to": "2026-03-02T23:59:00+00:00",
+    }
+    assert calls == [
+        (
+            None,
+            "GBP_USD",
+            datetime(2026, 2, 1, tzinfo=UTC),
+            datetime(2026, 3, 2, 23, 59, tzinfo=UTC),
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_backtest_service_applies_strategy_params_to_ui_requests() -> None:
     seen = []
 

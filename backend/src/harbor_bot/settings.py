@@ -1,7 +1,7 @@
 import re
 from typing import Any
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL, make_url
 
@@ -28,7 +28,10 @@ class Settings(BaseSettings):
 
     oanda_env: str = Field(default="practice", validation_alias="OANDA_ENV")
     allow_live: bool = Field(default=False, validation_alias="ALLOW_LIVE")
-    oanda_api_token: str | None = Field(default=None, validation_alias="OANDA_API_TOKEN")
+    oanda_api_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("OANDA_API_TOKEN", "OANDA_API_KEY"),
+    )
     oanda_account_id: str | None = Field(default=None, validation_alias="OANDA_ACCOUNT_ID")
     oanda_rest_base_url_override: str | None = Field(
         default=None,
@@ -65,6 +68,10 @@ class Settings(BaseSettings):
     oanda_historical_request_interval_seconds: float = Field(
         default=0.1,
         validation_alias="OANDA_HISTORICAL_REQUEST_INTERVAL_SECONDS",
+    )
+    oanda_pricing_stream_enabled: bool = Field(
+        default=False,
+        validation_alias="HARBOR_LIVE_INGEST_ENABLED",
     )
     research_instruments_csv: str = Field(
         default="GBP_USD,EUR_USD,USD_JPY,EUR_JPY,GBP_JPY,AUD_JPY,AUD_USD,EUR_GBP",

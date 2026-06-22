@@ -55,18 +55,12 @@ export interface CandleSourceStatus {
   granularity: string;
   price_component: string;
   coverage: CandleCoverage;
+  instrument_coverages?: CandleCoverage[];
   source_methods: string[];
   research_instruments: string[];
   historical_import: CandleHistoricalImportPolicy;
   oanda_historical_import_configured: boolean;
-}
-
-export interface CandleHistoricalImportPolicy {
-  page_size: number;
-  default_count: number;
-  request_interval_seconds: number;
-  upsert_key: string;
-  replaces_existing: boolean;
+  live_stream?: CandleLiveStreamStatus;
 }
 
 export interface CandleImportRequest {
@@ -367,6 +361,7 @@ export interface BacktestStartPayload {
   source?: "persisted_candles";
   instrument: string;
   candle_range?: { from: string; to: string };
+  candle_window_days?: number;
   fixture?: string;
   candles?: Record<string, unknown>[];
   strategy_params?: Record<string, unknown>;
@@ -446,3 +441,4 @@ export interface LabStatusEnvelope {
 }
 
 export type { OptimizationPreflightResponse } from "./optimizerTypes";
+import type { CandleHistoricalImportPolicy, CandleLiveStreamStatus } from "./candleTypes";
