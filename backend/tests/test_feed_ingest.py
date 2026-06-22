@@ -2,7 +2,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from harbor_bot.feed.ingest import gap_plan, sync_instrument
+from harbor_bot.feed.ingest import gap_plan, repair_plan, sync_instrument
 
 NOW = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
 START = NOW - timedelta(days=180)
@@ -57,6 +57,78 @@ def test_gap_plan_fetches_head_and_tail_when_both_missing() -> None:
     assert [fetch.include_first for fetch in plan] == [True, False]
     assert plan[0].from_time == START
     assert plan[1].from_time == NOW - timedelta(days=2)
+
+
+def test_repair_plan_refetches_the_full_covered_range() -> None:
+    coverage = {
+        "candle_count": 1000,
+        "from": START,
+        "to": NOW - timedelta(hours=1),
+        "bid_ask_count": 0,
+    }
+
+    plan = repair_plan(coverage, target_start=START, now=NOW)
+
+    assert len(plan) == 1
+    assert plan[0].from_time == START  # not just the tail — the whole range
+    assert plan[0].include_first is True
+
+
+def test_sync_instrument_repair_refetches_when_bid_ask_incomplete() -> None:
+    coverages = iter(
+        [
+            {"candle_count": 1000, "from": START, "to": NOW, "bid_ask_count": 0},
+            {"candle_count": 1000, "from": START, "to": NOW, "bid_ask_count": 1000},
+        ]
+    )
+    calls: list[dict[str, Any]] = []
+
+    async def coverage_provider(instrument: str) -> dict[str, Any]:
+        return next(coverages)
+
+    async def ingestor(**kwargs: Any) -> int:
+        calls.append(kwargs)
+        return 1000
+
+    report = asyncio.run(_sync(coverage_provider, ingestor, repair=True))
+
+    assert len(calls) == 1
+    assert calls[0]["from_time"] == START
+    assert calls[0]["include_first"] is True
+    assert report.imported == 1000
+
+
+def test_sync_instrument_repair_skips_when_bid_ask_already_complete() -> None:
+    coverage = {"candle_count": 1000, "from": START, "to": NOW, "bid_ask_count": 1000}
+    calls: list[dict[str, Any]] = []
+
+    async def coverage_provider(instrument: str) -> dict[str, Any]:
+        return coverage
+
+    async def ingestor(**kwargs: Any) -> int:
+        calls.append(kwargs)
+        return 0
+
+    report = asyncio.run(_sync(coverage_provider, ingestor, repair=True))
+
+    assert calls == []  # already complete — no wasted re-fetch
+    assert report.imported == 0
+    assert report.candle_count == 1000
+
+
+def _sync(coverage_provider: Any, ingestor: Any, *, repair: bool):
+    return sync_instrument(
+        client=object(),
+        engine=object(),
+        instrument="EUR_USD",
+        target_start=START,
+        now=NOW,
+        page_size=5000,
+        request_interval_seconds=0.0,
+        coverage_provider=coverage_provider,
+        ingestor=ingestor,
+        repair=repair,
+    )
 
 
 def test_sync_instrument_runs_plan_and_reports_final_coverage() -> None:

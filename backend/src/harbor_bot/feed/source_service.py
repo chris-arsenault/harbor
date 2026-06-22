@@ -133,17 +133,20 @@ class CandleSourceService:
         if days <= 0:
             msg = "days must be positive"
             raise ValueError(msg)
+        repair = bool(payload.get("repair"))
         instruments = _payload_instruments(payload, self.settings)
         reports = await sync_universe(
             settings=self.settings,
             engine=self.engine,
             days=days,
             instruments=instruments,
+            repair=repair,
             client_factory=self.client_factory,
         )
         return {
             "status": "completed",
             "days": days,
+            "repair": repair,
             "reports": [_report_jsonable(report) for report in reports],
         }
 

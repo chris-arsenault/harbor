@@ -15,7 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from harbor_bot.feed.historical import ingest_historical_candles
 from harbor_bot.instruments import RESEARCH_INSTRUMENTS
 from harbor_bot.oanda.client import OandaClient
-from harbor_bot.persistence.market_repository import get_candle_coverage
+from harbor_bot.persistence.market_repository import (
+    get_bid_ask_candle_count,
+    get_candle_coverage,
+)
 from harbor_bot.settings import Settings
 
 MIN_GAP = timedelta(minutes=2)
@@ -72,6 +75,19 @@ def gap_plan(
     return ranges
 
 
+def _bid_ask_complete(coverage: dict) -> bool:
+    count = int(coverage["candle_count"])
+    return count > 0 and int(coverage.get("bid_ask_count", 0)) >= count
+
+
+def repair_plan(coverage: dict, *, target_start: datetime, now: datetime) -> list[FetchRange]:
+    """Re-fetch the whole covered range so midpoint-only candles are overwritten
+    with bid/ask (the import upserts on instrument+timestamp). A data-quality gap
+    is invisible to date-based gap detection, so a forced re-fetch is required."""
+    start = coverage["from"] if coverage.get("from") is not None else target_start
+    return [FetchRange(start, _minutes(start, now), include_first=True)]
+
+
 async def sync_instrument(
     *,
     client: object,
@@ -83,15 +99,21 @@ async def sync_instrument(
     request_interval_seconds: float,
     coverage_provider: CoverageProvider,
     ingestor: Ingestor = ingest_historical_candles,
+    repair: bool = False,
 ) -> SyncReport:
     before = await coverage_provider(instrument)
-    plan = gap_plan(
-        coverage_from=before["from"],
-        coverage_to=before["to"],
-        candle_count=int(before["candle_count"]),
-        target_start=target_start,
-        now=now,
-    )
+    if repair and _bid_ask_complete(before):
+        return _report(instrument, imported=0, coverage=before)
+    if repair:
+        plan = repair_plan(before, target_start=target_start, now=now)
+    else:
+        plan = gap_plan(
+            coverage_from=before["from"],
+            coverage_to=before["to"],
+            candle_count=int(before["candle_count"]),
+            target_start=target_start,
+            now=now,
+        )
     imported = 0
     for fetch in plan:
         imported += await ingestor(
@@ -105,12 +127,16 @@ async def sync_instrument(
             include_first=fetch.include_first,
         )
     after = await coverage_provider(instrument)
+    return _report(instrument, imported=imported, coverage=after)
+
+
+def _report(instrument: str, *, imported: int, coverage: dict) -> SyncReport:
     return SyncReport(
         instrument=instrument,
         imported=imported,
-        candle_count=int(after["candle_count"]),
-        coverage_from=after["from"],
-        coverage_to=after["to"],
+        candle_count=int(coverage["candle_count"]),
+        coverage_from=coverage["from"],
+        coverage_to=coverage["to"],
     )
 
 
@@ -121,6 +147,7 @@ async def sync_universe(
     days: int,
     instruments: tuple[str, ...] | None = None,
     now: datetime | None = None,
+    repair: bool = False,
     client_factory: ClientFactory = OandaClient.from_settings,
 ) -> list[SyncReport]:
     if days <= 0:
@@ -132,7 +159,11 @@ async def sync_universe(
 
     async def coverage_provider(instrument: str) -> dict:
         async with engine.connect() as connection:
-            return await get_candle_coverage(connection, instrument=instrument)
+            coverage = dict(await get_candle_coverage(connection, instrument=instrument))
+            coverage["bid_ask_count"] = await get_bid_ask_candle_count(
+                connection, instrument=instrument
+            )
+            return coverage
 
     reports: list[SyncReport] = []
     async with client_factory(settings) as client:  # type: ignore[attr-defined]
@@ -147,6 +178,7 @@ async def sync_universe(
                     page_size=settings.oanda_historical_candle_page_size,
                     request_interval_seconds=settings.oanda_historical_request_interval_seconds,
                     coverage_provider=coverage_provider,
+                    repair=repair,
                 )
             )
     return reports

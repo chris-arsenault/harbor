@@ -36,6 +36,21 @@ test("shows universe coverage with data quality and syncs the universe", async (
   expect(await screen.findByText(/new candles\s+sourced/)).toBeInTheDocument();
 });
 
+test("repairs bid/ask on an instrument that lacks it via a forced re-fetch", async () => {
+  renderWithClient(<DataImportView />);
+
+  // EUR_USD has bid/ask 0%, so its row action is "Repair" (not "Sync").
+  fireEvent.click(await screen.findByRole("button", { name: "Repair" }));
+
+  await waitFor(() =>
+    expect(fetch).toHaveBeenCalledWith("/api/candles/sync", {
+      body: JSON.stringify({ instrument: "EUR_USD", days: 180, repair: true }),
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      method: "POST",
+    })
+  );
+});
+
 function renderWithClient(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);

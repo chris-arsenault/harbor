@@ -73,10 +73,12 @@ function CoverageRow({
 }: {
   readonly coverage: CandleCoverage;
   readonly pending: boolean;
-  readonly onSync: (instrument: string) => void;
+  readonly onSync: (instrument: string, repair: boolean) => void;
 }) {
   const fresh = freshness(coverage.to);
   const dataQuality = quality(coverage);
+  const incomplete =
+    coverage.candle_count > 0 && (coverage.bid_ask_count ?? 0) < coverage.candle_count;
   return (
     <tr>
       <td className="cell-strong">{coverage.instrument}</td>
@@ -92,11 +94,12 @@ function CoverageRow({
       <td>
         <button
           type="button"
-          className="btn btn--sm"
+          className={incomplete ? "btn btn--sm btn--primary" : "btn btn--sm"}
           disabled={pending}
-          onClick={() => onSync(coverage.instrument)}
+          onClick={() => onSync(coverage.instrument, incomplete)}
+          title={incomplete ? "Re-fetch to backfill bid/ask data" : "Fetch missing candles"}
         >
-          Sync
+          {incomplete ? "Repair" : "Sync"}
         </button>
       </td>
     </tr>
@@ -110,7 +113,7 @@ function CoverageTable({
 }: {
   readonly coverages: CandleCoverage[];
   readonly pending: boolean;
-  readonly onSync: (instrument: string) => void;
+  readonly onSync: (instrument: string, repair: boolean) => void;
 }) {
   if (coverages.length === 0) {
     return <EmptyState glyph="⛁" title="No instruments" hint="Configure the research universe." />;
@@ -174,6 +177,15 @@ function SyncControls({
       >
         {sync.isPending ? "Syncing…" : "Sync universe"}
       </button>
+      <button
+        type="button"
+        className="btn btn--ghost"
+        disabled={sync.isPending || !ready}
+        title="Re-fetch covered ranges to backfill bid/ask on instruments that lack it"
+        onClick={() => sync.mutate({ days, repair: true })}
+      >
+        Repair bid/ask
+      </button>
     </div>
   );
 }
@@ -219,7 +231,7 @@ export function DataImportView() {
         <CoverageTable
           coverages={coverages}
           pending={sync.isPending}
-          onSync={(instrument) => sync.mutate({ instrument, days })}
+          onSync={(instrument, repair) => sync.mutate({ instrument, days, repair })}
         />
       </Panel>
       {sync.error ? <Notice tone="error">{sync.error.message}</Notice> : null}

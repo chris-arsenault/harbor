@@ -17,6 +17,7 @@ export interface CandleSyncResult {
 export function syncCandles(payload: {
   instrument?: string;
   days?: number;
+  repair?: boolean;
 }): Promise<CandleSyncResult> {
   return apiPost<CandleSyncResult>("/api/candles/sync", payload);
 }

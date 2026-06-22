@@ -26,11 +26,16 @@ def main() -> None:
         default=None,
         help="instruments to source (defaults to the research universe)",
     )
+    parser.add_argument(
+        "--repair",
+        action="store_true",
+        help="re-fetch covered ranges to backfill bid/ask on midpoint-only candles",
+    )
     args = parser.parse_args()
-    asyncio.run(_run(days=args.days, instruments=args.instruments))
+    asyncio.run(_run(days=args.days, instruments=args.instruments, repair=args.repair))
 
 
-async def _run(*, days: int, instruments: list[str] | None) -> None:
+async def _run(*, days: int, instruments: list[str] | None, repair: bool) -> None:
     settings = Settings()
     settings.validate_startup()
     selected = (
@@ -39,7 +44,7 @@ async def _run(*, days: int, instruments: list[str] | None) -> None:
     engine = create_engine(settings)
     try:
         reports = await sync_universe(
-            settings=settings, engine=engine, days=days, instruments=selected
+            settings=settings, engine=engine, days=days, instruments=selected, repair=repair
         )
     finally:
         await engine.dispose()
