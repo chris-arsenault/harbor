@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from harbor_bot.feed.candles import ClosedCandle
@@ -76,6 +77,8 @@ def compute_session_levels(
     trading_date: date,
     instrument: str,
     config: StrategyConfig,
+    prev_day_high: Decimal | None = None,
+    prev_day_low: Decimal | None = None,
 ) -> SessionLevels:
     for candle in candles:
         require_closed_candle(candle)
@@ -97,6 +100,8 @@ def compute_session_levels(
         asia_low=min(candle.low for candle in asia),
         london_high=max(candle.h for candle in london),
         london_low=min(candle.low for candle in london),
+        prev_day_high=prev_day_high,
+        prev_day_low=prev_day_low,
     )
 
 

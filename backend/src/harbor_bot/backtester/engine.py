@@ -55,6 +55,10 @@ def run_backtest(
     position: OpenBacktestPosition | None = None
     trades: list[BacktestTrade] = []
     equity_curve = [EquityPoint(ts=candles[0].ts, nav=nav)]
+    prev_day_high: Decimal | None = None
+    prev_day_low: Decimal | None = None
+    current_day_high: Decimal | None = None
+    current_day_low: Decimal | None = None
 
     for candle in candles:
         if not candle.complete:
@@ -70,9 +74,16 @@ def run_backtest(
             day_history = []
             pending_entry = None
             position = None
+            prev_day_high, prev_day_low = current_day_high, current_day_low
+            current_day_high = None
+            current_day_low = None
 
         candle_index += 1
         day_history.append(candle)
+        current_day_high = candle.h if current_day_high is None else max(current_day_high, candle.h)
+        current_day_low = (
+            candle.low if current_day_low is None else min(current_day_low, candle.low)
+        )
         if session_levels is None and _is_at_or_after_ny_window(
             candle, trading_date, backtest_input
         ):
@@ -81,6 +92,8 @@ def run_backtest(
                 trading_date=trading_date,
                 instrument=backtest_input.instrument,
                 config=backtest_input.strategy_config,
+                prev_day_high=prev_day_high,
+                prev_day_low=prev_day_low,
             )
 
         if pending_entry is not None:

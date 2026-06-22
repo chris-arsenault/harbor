@@ -13,6 +13,8 @@ class LevelName(StrEnum):
     ASIA_LOW = "asia_low"
     LONDON_HIGH = "london_high"
     LONDON_LOW = "london_low"
+    PREV_DAY_HIGH = "prev_day_high"
+    PREV_DAY_LOW = "prev_day_low"
 
 
 class Bias(StrEnum):
@@ -73,13 +75,17 @@ class SessionLevels:
     asia_low: Decimal
     london_high: Decimal
     london_low: Decimal
+    prev_day_high: Decimal | None = None
+    prev_day_low: Decimal | None = None
 
-    def price_for(self, level_name: LevelName) -> Decimal:
+    def price_for(self, level_name: LevelName) -> Decimal | None:
         return {
             LevelName.ASIA_HIGH: self.asia_high,
             LevelName.ASIA_LOW: self.asia_low,
             LevelName.LONDON_HIGH: self.london_high,
             LevelName.LONDON_LOW: self.london_low,
+            LevelName.PREV_DAY_HIGH: self.prev_day_high,
+            LevelName.PREV_DAY_LOW: self.prev_day_low,
         }[level_name]
 
     def opposite_levels(self, bias: Bias) -> dict[LevelName, Decimal]:

@@ -15,10 +15,12 @@ from harbor_bot.strategy.models import (
 _HIGH_LEVELS = (
     LevelName.ASIA_HIGH,
     LevelName.LONDON_HIGH,
+    LevelName.PREV_DAY_HIGH,
 )
 _LOW_LEVELS = (
     LevelName.ASIA_LOW,
     LevelName.LONDON_LOW,
+    LevelName.PREV_DAY_LOW,
 )
 
 
@@ -38,6 +40,8 @@ def detect_sweep(
         if config.one_trade_per_level and level_name in day_state.taken_levels:
             continue
         level_price = levels.price_for(level_name)
+        if level_price is None:
+            continue
         if candle.h > level_price + buffer and candle.c < level_price:
             return SweepState(
                 level_name=level_name,
@@ -53,6 +57,8 @@ def detect_sweep(
         if config.one_trade_per_level and level_name in day_state.taken_levels:
             continue
         level_price = levels.price_for(level_name)
+        if level_price is None:
+            continue
         if candle.low < level_price - buffer and candle.c > level_price:
             return SweepState(
                 level_name=level_name,
