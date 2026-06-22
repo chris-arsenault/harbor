@@ -12,11 +12,17 @@ from harbor_bot.backtester.engine import run_backtest
 from harbor_bot.backtester.models import BacktestConfig, BacktestInput, BacktestRunResult
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.instruments import default_instrument_rules
+from harbor_bot.optimizer.config import apply_params_to_strategy_config
 from harbor_bot.persistence.backtest_repository import append_backtest_result, get_backtest_run
 from harbor_bot.persistence.market_repository import list_candles_range
-from harbor_bot.strategy.models import InstrumentRules, strategy_config_from_defaults
+from harbor_bot.strategy.models import (
+    InstrumentRules,
+    StrategyConfig,
+    strategy_config_from_defaults,
+)
 
 CandleRangeReader = Callable[..., Awaitable[list[dict[str, Any]]]]
+BacktestRunner = Callable[[BacktestInput], BacktestRunResult]
 _UTC_OFFSET = timedelta(0)
 
 
@@ -25,6 +31,7 @@ class BacktestService:
     persistence_engine: AsyncEngine | None = None
     fixture_base_path: Path | None = None
     candle_reader: CandleRangeReader = None
+    backtest_runner: BacktestRunner = run_backtest
 
     async def start_backtest(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         payload = await _payload_with_persisted_candles(
@@ -33,8 +40,12 @@ class BacktestService:
             fixture_base_path=self.fixture_base_path,
             candle_reader=self.candle_reader or read_persisted_candle_records,
         )
-        result = run_backtest(
+        result = self.backtest_runner(
             _input_from_payload(payload, fixture_base_path=self.fixture_base_path)
+        )
+        result = replace(
+            result,
+            params_json=_result_params_from_payload(payload, base=result.params_json),
         )
         run_id = None
         if self.persistence_engine is not None:
@@ -133,6 +144,7 @@ def result_to_response(result: BacktestRunResult, *, run_id: int | None = None) 
     return {
         "run_id": run_id,
         "status": result.status.value,
+        "params": result.params_json,
         "stats": result.stats.to_jsonable(),
         "trades": [trade.to_jsonable() for trade in result.trades],
     }
@@ -145,7 +157,7 @@ def _input_from_payload(
 ) -> BacktestInput:
     strategy_config = strategy_config_from_defaults(load_default_config())
     instrument = str(payload.get("instrument") or strategy_config.instrument)
-    strategy_config = replace(strategy_config, instrument=instrument)
+    strategy_config = _strategy_config_from_payload(payload, instrument=instrument)
 
     if "candles" in payload:
         raw_candles = payload["candles"]
@@ -172,6 +184,24 @@ def _input_from_payload(
         ),
         backtest_config=backtest_config,
     )
+
+
+def _strategy_config_from_payload(
+    payload: Mapping[str, Any],
+    *,
+    instrument: str,
+) -> StrategyConfig:
+    strategy_config = replace(
+        strategy_config_from_defaults(load_default_config()),
+        instrument=instrument,
+    )
+    raw_params = payload.get("strategy_params", {})
+    if not isinstance(raw_params, Mapping):
+        msg = "strategy_params must be an object"
+        raise TypeError(msg)
+    if raw_params:
+        strategy_config = apply_params_to_strategy_config(strategy_config, dict(raw_params))
+    return strategy_config
 
 
 def _backtest_config_from_payload(raw: Any) -> BacktestConfig:
@@ -207,6 +237,28 @@ def _instrument_rules_from_payload(raw: Any, instrument: str) -> InstrumentRules
             str(raw.get("quote_home_conversion", defaults.quote_home_conversion))
         ),
     )
+
+
+def _result_params_from_payload(
+    payload: Mapping[str, Any],
+    *,
+    base: Mapping[str, Any],
+) -> dict[str, Any]:
+    params = dict(base)
+    default_source = "inline_candles" if "candles" in payload else "fixture"
+    params["source"] = payload.get("source", default_source)
+    params["target"] = (
+        "paper_variant"
+        if payload.get("strategy_params") and payload.get("variant_id") is not None
+        else "strategy_params"
+        if payload.get("strategy_params")
+        else "default_strategy"
+    )
+    for key in ("instrument", "candle_range", "strategy_params", "variant_id", "variant_label"):
+        if key in payload:
+            value = payload[key]
+            params[key] = dict(value) if isinstance(value, Mapping) else value
+    return params
 
 
 def _parse_utc_ts(raw: str) -> datetime:

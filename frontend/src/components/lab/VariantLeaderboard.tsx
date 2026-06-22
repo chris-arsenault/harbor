@@ -22,8 +22,8 @@ export function VariantLeaderboard({
       </div>
       {waitingForForwardTrades ? (
         <p className="lab-result-summary">
-          Paper variants exist, but no forward paper trades have closed yet. Promotion stays
-          disabled until there is forward evidence to review.
+          Paper variants are armed, but no simulated forward trades have closed yet. Promotion stays
+          disabled until live candles produce forward evidence.
         </p>
       ) : null}
       <div className="lab-table-wrap">

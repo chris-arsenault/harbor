@@ -1,5 +1,6 @@
 import type {
   CandleSourceStatus,
+  EventLogItem,
   LabVariantOverview,
   OptimizationStartPayload,
 } from "../../api/types";
@@ -12,6 +13,7 @@ import type { TuningStudyConfig } from "./tuningPayload";
 interface LabScreenProps {
   readonly snapshot: Parameters<typeof LabView>[0]["snapshot"] | null;
   readonly variants: LabVariantOverview;
+  readonly events: readonly EventLogItem[];
   readonly liveStatus: string | null;
   readonly tuningRun: Parameters<typeof LabView>[0]["tuningRun"];
   readonly onStartOptimization: Parameters<typeof LabView>[0]["onStartOptimization"];
@@ -60,6 +62,7 @@ export function LabScreen(props: LabScreenProps) {
     <LabView
       snapshot={snapshot}
       variants={variants}
+      events={props.events}
       onStartOptimization={onStartOptimization}
       onCreatePaperVariant={onCreatePaperVariant}
       onRetireVariant={onRetireVariant}

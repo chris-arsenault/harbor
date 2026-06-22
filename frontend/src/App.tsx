@@ -35,6 +35,7 @@ import {
   useLiveState,
   type LiveState,
 } from "./app/liveState";
+import { backtestTargetVariant, useBacktestPageState } from "./app/backtestPageState";
 import { HeartbeatIndicator } from "./components/HeartbeatIndicator";
 import { BacktestsView } from "./components/backtests/BacktestsView";
 import type { LiveChartAdapter } from "./components/chartAdapter";
@@ -84,6 +85,7 @@ export function App({ chartAdapter }: AppProps) {
   const updateConfig = useUpdateConfigMutation();
   const eventsPage = useEventsQuery({ limit: 200 });
   const lab = useLabData(live.liveEquityCurves, live.labLiveStatus);
+  const backtestPage = useBacktestPageState(backtests, startBacktest);
   const controls = usePracticeControls();
   const productEvents = mergeEvents(live.liveEvents, eventsPage.data ?? dashboard.events);
 
@@ -100,7 +102,7 @@ export function App({ chartAdapter }: AppProps) {
         dashboard={dashboard}
         trades={trades}
         backtests={backtests}
-        startBacktest={startBacktest}
+        backtestPage={backtestPage}
         config={config}
         updateConfig={updateConfig}
         eventsPage={eventsPage}
@@ -275,7 +277,7 @@ interface ProductPageProps {
   readonly dashboard: ReturnType<typeof useDashboardData>;
   readonly trades: ReturnType<typeof useTradesQuery>;
   readonly backtests: ReturnType<typeof useBacktestRunsQuery>;
-  readonly startBacktest: ReturnType<typeof useStartBacktestMutation>;
+  readonly backtestPage: ReturnType<typeof useBacktestPageState>;
   readonly config: ReturnType<typeof useConfigQuery>;
   readonly updateConfig: ReturnType<typeof useUpdateConfigMutation>;
   readonly eventsPage: ReturnType<typeof useEventsQuery>;
@@ -324,13 +326,20 @@ function TradesRoute({ trades, windowParams }: ProductPageProps) {
   );
 }
 
-function BacktestsRoute({ backtests, startBacktest }: ProductPageProps) {
+function BacktestsRoute({ backtests, backtestPage, lab }: ProductPageProps) {
   return (
     <BacktestsView
       runs={backtests.data?.runs ?? []}
-      selectedRun={null}
-      pending={startBacktest.isPending}
-      onStartBacktest={startBacktest.mutate}
+      selectedRunId={backtestPage.selectedRunId}
+      selectedRun={backtestPage.selectedRun}
+      selectedRunPending={backtestPage.selectedRunPending}
+      selectedRunError={backtestPage.selectedRunError}
+      candleSource={lab.candleSource}
+      targetVariant={backtestTargetVariant(lab.variantOverview)}
+      pending={backtestPage.startPending}
+      errorMessage={backtestPage.startError}
+      onStartBacktest={backtestPage.startBacktest}
+      onSelectRun={backtestPage.selectRun}
     />
   );
 }
@@ -355,11 +364,12 @@ function EventsRoute({ productEvents, eventsPage }: ProductPageProps) {
   );
 }
 
-function LabRoute({ lab }: ProductPageProps) {
+function LabRoute({ lab, productEvents }: ProductPageProps) {
   return (
     <LabScreen
       snapshot={lab.snapshot}
       variants={lab.variantOverview}
+      events={productEvents}
       liveStatus={lab.liveStatus}
       onStartOptimization={lab.startOptimization}
       onCreatePaperVariant={lab.createPaperVariant}

@@ -356,7 +356,7 @@ export interface BacktestRunsResponse {
 }
 
 export interface BacktestRunDetail {
-  run_id: number;
+  run_id: number | null;
   created_ts: string;
   params: Record<string, unknown>;
   stats: Record<string, unknown>;
@@ -369,6 +369,9 @@ export interface BacktestStartPayload {
   candle_range?: { from: string; to: string };
   fixture?: string;
   candles?: Record<string, unknown>[];
+  strategy_params?: Record<string, unknown>;
+  variant_id?: number;
+  variant_label?: string;
   backtest_config?: Record<string, unknown>;
   instrument_rules?: Record<string, unknown>;
 }

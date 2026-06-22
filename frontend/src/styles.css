@@ -363,7 +363,9 @@ p {
 
 .filter-row input,
 .filter-row select,
-.run-form input {
+.run-form input,
+.backtest-run-panel input,
+.backtest-run-panel select {
   min-height: 2.25rem;
   border: 1px solid #c8d2cc;
   border-radius: 8px;
@@ -431,6 +433,92 @@ p {
   background: #edf2ef;
   color: #65736b;
   cursor: not-allowed;
+}
+
+.backtests-view {
+  gap: 0.75rem;
+}
+
+.backtest-run-panel {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid #d6ded8;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.875rem;
+}
+
+.backtest-run-panel h3 {
+  margin: 0;
+  color: #26312b;
+  font-size: 1rem;
+}
+
+.backtest-run-panel button {
+  min-height: 2.35rem;
+  border: 1px solid #1f6f8b;
+  border-radius: 8px;
+  padding: 0 0.9rem;
+  background: #1f6f8b;
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.backtest-run-panel button:disabled {
+  border-color: #c8d2cc;
+  background: #edf2ef;
+  color: #65736b;
+  cursor: not-allowed;
+}
+
+.backtest-run-panel__summary {
+  margin: 0.25rem 0 0;
+  color: #65736b;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.backtest-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.65rem;
+}
+
+.backtest-form-grid label,
+.backtest-fact {
+  display: grid;
+  gap: 0.35rem;
+  color: #65736b;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.backtest-fact {
+  min-height: 3.8rem;
+  align-content: center;
+  border: 1px solid #d6ded8;
+  border-radius: 8px;
+  padding: 0.65rem;
+}
+
+.backtest-fact strong {
+  overflow-wrap: anywhere;
+  color: #26312b;
+  font-size: 0.92rem;
+  text-transform: none;
+}
+
+.backtest-window-editor summary {
+  min-height: 2rem;
+  cursor: pointer;
+  color: #26312b;
+  font-weight: 700;
+}
+
+.backtest-window-editor[open] summary {
+  margin-bottom: 0.65rem;
 }
 
 .table-panel {
@@ -506,6 +594,10 @@ p {
   border-bottom: 0;
 }
 
+.data-table__row--selected td {
+  background: #f3f8f5;
+}
+
 .detail-panel {
   display: grid;
   gap: 0.65rem;
@@ -535,6 +627,15 @@ p {
 .detail-panel dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.backtest-result-panel {
+  overflow-x: auto;
+}
+
+.muted-table-text {
+  color: #65736b;
+  font-size: 0.78rem;
 }
 
 .fact-list {
@@ -882,6 +983,24 @@ p {
 }
 
 .lab-result-summary {
+  margin: 0;
+  color: #26312b;
+}
+
+.paper-forward-state {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid #d6ded8;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.75rem;
+}
+
+.paper-forward-state strong {
+  color: #26312b;
+}
+
+.paper-forward-state p {
   margin: 0;
   color: #26312b;
 }

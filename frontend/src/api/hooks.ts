@@ -83,10 +83,16 @@ export function useBacktestRunsQuery(params: { limit?: number } = {}) {
   });
 }
 
-export function useBacktestRunQuery(runId: number) {
+export function useBacktestRunQuery(runId: number | null) {
   return useQuery({
     queryKey: ["backtest-run", runId],
-    queryFn: () => fetchBacktestRun(runId),
+    queryFn: () => {
+      if (runId === null) {
+        throw new Error("backtest run id is required");
+      }
+      return fetchBacktestRun(runId);
+    },
+    enabled: runId !== null,
   });
 }
 
@@ -169,7 +175,13 @@ export function useImportHistoricalCandlesMutation() {
 }
 
 export function useStartBacktestMutation() {
-  return useMutation({ mutationFn: startBacktest });
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: startBacktest,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["backtest-runs"] });
+    },
+  });
 }
 
 export function useUpdateConfigMutation() {

@@ -42,7 +42,6 @@ function assertStudyOutcome() {
   );
   expect(screen.getByLabelText("Study results")).toBeInTheDocument();
   expect(screen.getByText("Study Outcome")).toBeInTheDocument();
-  expect(screen.getByText("Paper candidates")).toBeInTheDocument();
   expect(
     screen.getByRole("row", { name: /1 candidate-1 1 20.00000000 1.50000000/i })
   ).toBeInTheDocument();
@@ -59,6 +58,7 @@ function assertSelectedCandidate() {
   expect(selected.getByText("Source trial")).toBeInTheDocument();
   expect(selected.getByText("#0")).toBeInTheDocument();
   expect(selected.getByText("Forward trades")).toBeInTheDocument();
+  expect(selected.getByText("Forward Evidence Ready")).toBeInTheDocument();
   expect(
     selected.getByRole("button", { name: "Promote practice variant candidate-1" })
   ).toBeEnabled();
@@ -113,6 +113,7 @@ function renderPopulatedLabView(handlers: {
     <LabView
       snapshot={{ ...snapshot, variants: variantOverview }}
       variants={variantOverview}
+      events={[]}
       tuningRun={{ pending: false, errorMessage: null, result: null }}
       onCreatePaperVariant={handlers.onCreatePaperVariant}
       onRetireVariant={handlers.onRetireVariant}
@@ -200,6 +201,7 @@ test("LabView shows completed zero-candidate studies instead of a blank leaderbo
     <LabView
       snapshot={zeroCandidateSnapshot}
       variants={{ variants: [], leaderboard: [], equity_curves: [], data_separation: {} }}
+      events={[]}
       tuningRun={{
         pending: false,
         errorMessage: null,

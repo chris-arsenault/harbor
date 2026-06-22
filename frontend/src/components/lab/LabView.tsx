@@ -2,6 +2,7 @@ import type {
   CandleImportRequest,
   CandleImportResult,
   CandleSourceStatus,
+  EventLogItem,
   LabSnapshot,
   LabVariantOverview,
   OptimizationStartResponse,
@@ -24,6 +25,7 @@ import { VariantLeaderboard } from "./VariantLeaderboard";
 interface LabViewProps {
   readonly snapshot: LabSnapshot;
   readonly variants: LabVariantOverview;
+  readonly events: readonly EventLogItem[];
   readonly tuningRun: TuningRunState;
   readonly onStartOptimization: (payload: OptimizationStartPayload) => void | Promise<void>;
   readonly onCreatePaperVariant: (payload: {
@@ -55,6 +57,7 @@ export interface TuningRunState {
 export function LabView({
   snapshot,
   variants,
+  events,
   tuningRun,
   onStartOptimization,
   onRetireVariant,
@@ -99,6 +102,8 @@ export function LabView({
       <SelectedCandidate
         candidates={snapshot.candidates}
         variants={snapshot.variants}
+        liveStatus={liveStatus}
+        events={events}
         onRetireVariant={onRetireVariant}
         onPromoteVariant={onPromoteVariant}
       />
@@ -119,12 +124,19 @@ export function LabView({
       <TrialDiagnostics candidates={snapshot.candidates} optimizationResult={tuningRun.result} />
       <CandidateParameters snapshot={snapshot} />
       <DataSeparation snapshot={snapshot} variants={variants} />
-      {liveStatus ? (
-        <p className="lab-live-status" aria-live="polite">
-          {liveStatus}
-        </p>
-      ) : null}
+      <LabLiveStatus status={liveStatus} />
     </section>
+  );
+}
+
+function LabLiveStatus({ status }: { readonly status: string | null }) {
+  if (!status) {
+    return null;
+  }
+  return (
+    <p className="lab-live-status" aria-live="polite">
+      {status}
+    </p>
   );
 }
 

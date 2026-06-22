@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from harbor_bot.api import create_app
+from harbor_bot.backtester.models import BacktestRunResult, BacktestStats, BacktestStatus
 from harbor_bot.backtester.service import BacktestService
 from harbor_bot.lab.models import LabSnapshot, LabVariantOverview
 from harbor_bot.optimizer.models import (
@@ -168,6 +169,48 @@ async def test_backtest_service_reads_persisted_candle_ranges_for_ui_requests() 
             datetime(2026, 1, 15, 14, 1, tzinfo=UTC),
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_backtest_service_applies_strategy_params_to_ui_requests() -> None:
+    seen = []
+
+    async def reader(
+        engine,
+        *,
+        instrument: str,
+        start: datetime,
+        end: datetime,
+    ) -> list[dict[str, Any]]:
+        return [_record("2026-01-15T14:00:00+00:00")]
+
+    def runner(backtest_input):
+        seen.append(backtest_input)
+        return BacktestRunResult(
+            status=BacktestStatus.COMPLETED,
+            stats=BacktestStats.empty(initial_nav=backtest_input.backtest_config.initial_nav),
+        )
+
+    service = BacktestService(candle_reader=reader, backtest_runner=runner)
+    response = await service.start_backtest(
+        {
+            "source": "persisted_candles",
+            "instrument": "EUR_USD",
+            "candle_range": {
+                "from": "2026-01-15T14:00:00Z",
+                "to": "2026-01-15T14:01:00Z",
+            },
+            "strategy_params": {"fvg_window": 13, "sweep_buffer_pips": "2.5"},
+            "variant_id": 7,
+            "variant_label": "candidate-1",
+        }
+    )
+
+    assert seen[0].strategy_config.fvg_window == 13
+    assert seen[0].strategy_config.sweep_buffer_pips == Decimal("2.5")
+    assert response["params"]["target"] == "paper_variant"
+    assert response["params"]["strategy_params"] == {"fvg_window": 13, "sweep_buffer_pips": "2.5"}
+    assert response["params"]["variant_id"] == 7
 
 
 @pytest.mark.asyncio
