@@ -181,6 +181,11 @@ async def latest_complete_candle_window(
     instrument: str,
     required_days: int,
 ) -> dict[str, Any] | None:
+    """Select the most recent date range covering *required_days* trading days.
+
+    Forex markets close on weekends, so calendar-day contiguity is not
+    required — only that enough distinct dates with complete candles exist.
+    """
     if required_days <= 0:
         msg = "required_days must be positive"
         raise ValueError(msg)
@@ -190,26 +195,14 @@ async def latest_complete_candle_window(
         .where(candles.c.instrument == instrument, candles.c.complete.is_(True))
         .group_by("candle_date")
         .order_by(desc("candle_date"))
-        .limit(required_days * 8)
+        .limit(required_days)
     )
     dates = [_date_value(row["candle_date"]) for row in result.mappings()]
-    if not dates:
+    if len(dates) < required_days:
         return None
 
-    contiguous = [dates[0]]
-    for candle_date in dates[1:]:
-        if candle_date == contiguous[-1] - timedelta(days=1):
-            contiguous.append(candle_date)
-            if len(contiguous) >= required_days:
-                break
-        elif candle_date < contiguous[-1] - timedelta(days=1):
-            contiguous = [candle_date]
-
-    if len(contiguous) < required_days:
-        return None
-
-    latest = contiguous[0]
-    earliest = contiguous[required_days - 1]
+    latest = dates[0]
+    earliest = dates[-1]
     start = datetime.combine(earliest, time.min, tzinfo=UTC)
     end = datetime.combine(latest + timedelta(days=1), time.min, tzinfo=UTC) - timedelta(
         microseconds=1
