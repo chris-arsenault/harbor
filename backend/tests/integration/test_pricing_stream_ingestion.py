@@ -61,14 +61,14 @@ async def _assert_pricing_stream_ingestion(postgres_url: str) -> None:
             "pricing_stream.reconnect_attempt",
             "pricing_stream.heartbeat_timeout",
         ]
-        assert events[0]["data_json"] == {"instrument": "EUR_USD"}
+        assert events[0]["data_json"] == {"instruments": ["EUR_USD"]}
         assert events[1]["data_json"] == {
-            "instrument": "EUR_USD",
+            "instruments": ["EUR_USD"],
             "attempt": 1,
             "delay_seconds": 1.0,
         }
         assert events[2]["data_json"] == {
-            "instrument": "EUR_USD",
+            "instruments": ["EUR_USD"],
             "last_heartbeat": "2026-01-15T14:30:00+00:00",
         }
     finally:
