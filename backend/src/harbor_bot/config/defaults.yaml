@@ -47,6 +47,12 @@ liquidity_rr_floor:
     max: 2.0
 require_mss:
   value: false
+exit_mode:
+  value: bracket
+time_stop_minutes:
+  value: 120
+atr_trail_mult:
+  value: 1.5
 one_trade_per_level:
   value: true
 max_trades_per_day:

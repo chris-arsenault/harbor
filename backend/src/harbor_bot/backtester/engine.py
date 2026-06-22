@@ -6,7 +6,7 @@ from decimal import Decimal
 from harbor_bot.backtester.fills import (
     OpenBacktestPosition,
     force_close_position,
-    simulate_bracket_exit,
+    simulate_exit,
     simulate_market_entry,
 )
 from harbor_bot.backtester.models import (
@@ -93,11 +93,13 @@ def run_backtest(
             pending_entry = None
 
         if position is not None:
-            trade = simulate_bracket_exit(
+            position, trade = simulate_exit(
                 position,
                 candle=candle,
-                config=backtest_input.backtest_config,
+                strategy_config=backtest_input.strategy_config,
+                backtest_config=backtest_input.backtest_config,
                 instrument_rules=backtest_input.instrument_rules,
+                recent_candles=day_history,
             )
             if trade is not None:
                 trades.append(trade)

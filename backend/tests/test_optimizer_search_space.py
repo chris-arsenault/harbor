@@ -69,6 +69,7 @@ def test_default_search_space_samples_all_configured_parameters() -> None:
             "liquidity_rr_floor": 1.0,
             "target_mode": "rr_or_liquidity",
             "require_mss": False,
+            "exit_mode": "bracket",
             "max_spread_pips": 1.2,
             "max_trades_per_day": 2,
         }

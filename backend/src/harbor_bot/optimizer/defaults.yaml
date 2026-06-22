@@ -79,6 +79,12 @@ search_space:
     choices:
       - false
       - true
+  exit_mode:
+    type: categorical
+    choices:
+      - bracket
+      - atr_trail
+      - time_stop
   max_spread_pips:
     type: decimal
     min: "0.5"

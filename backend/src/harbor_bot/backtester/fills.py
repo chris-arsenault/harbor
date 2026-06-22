@@ -1,10 +1,12 @@
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from harbor_bot.backtester.models import BacktestConfig, BacktestTrade, FillPolicy
 from harbor_bot.feed.candles import ClosedCandle
-from harbor_bot.strategy.models import InstrumentRules, MarketEntrySetup
+from harbor_bot.strategy.models import InstrumentRules, MarketEntrySetup, StrategyConfig
+
+ATR_WINDOW = 14
 
 
 @dataclass(frozen=True)
@@ -12,6 +14,8 @@ class OpenBacktestPosition:
     setup: MarketEntrySetup
     entry_price: Decimal
     entry_ts: datetime
+    trailing_stop: Decimal | None = None
+    extreme: Decimal | None = None
 
     @property
     def side(self) -> str:
@@ -24,6 +28,10 @@ class OpenBacktestPosition:
     @property
     def stop(self) -> Decimal:
         return self.setup.stop
+
+    @property
+    def effective_stop(self) -> Decimal:
+        return self.trailing_stop if self.trailing_stop is not None else self.setup.stop
 
     @property
     def target(self) -> Decimal:
@@ -86,7 +94,7 @@ def simulate_bracket_exit(
     )
     exit_price = _bracket_exit_price(
         side=position.side,
-        level=position.stop if reason == "stop_loss" else position.target,
+        level=position.effective_stop if reason == "stop_loss" else position.target,
         reason=reason,
         config=config,
         instrument_rules=instrument_rules,
@@ -98,6 +106,104 @@ def simulate_bracket_exit(
         exit_reason=reason,
         config=config,
     )
+
+
+def simulate_exit(
+    position: OpenBacktestPosition,
+    *,
+    candle: ClosedCandle,
+    strategy_config: StrategyConfig,
+    backtest_config: BacktestConfig,
+    instrument_rules: InstrumentRules,
+    recent_candles: list[ClosedCandle],
+) -> tuple[OpenBacktestPosition, BacktestTrade | None]:
+    """Resolve the exit for the configured mode, returning the (possibly
+    trail-advanced) position so the engine carries trailing state forward.
+
+    ``bracket`` is the unchanged stop/target path; ``atr_trail`` ratchets a
+    trailing stop before the bracket check; ``time_stop`` force-closes after a
+    fixed duration when no bracket level was hit (ADR 0007).
+    """
+    if strategy_config.exit_mode == "atr_trail":
+        position = _advance_trailing(
+            position,
+            recent_candles=recent_candles,
+            mult=strategy_config.atr_trail_mult,
+            instrument_rules=instrument_rules,
+        )
+    trade = simulate_bracket_exit(
+        position, candle=candle, config=backtest_config, instrument_rules=instrument_rules
+    )
+    if trade is None and strategy_config.exit_mode == "time_stop":
+        trade = _time_exit(
+            position,
+            candle=candle,
+            config=backtest_config,
+            minutes=strategy_config.time_stop_minutes,
+            instrument_rules=instrument_rules,
+        )
+    return position, trade
+
+
+def _advance_trailing(
+    position: OpenBacktestPosition,
+    *,
+    recent_candles: list[ClosedCandle],
+    mult: Decimal,
+    instrument_rules: InstrumentRules,
+) -> OpenBacktestPosition:
+    atr = _average_true_range(recent_candles)
+    if atr <= 0 or mult <= 0:
+        return position
+    distance = atr * mult
+    candle = recent_candles[-1]
+    if position.side == "long":
+        extreme = candle.h if position.extreme is None else max(position.extreme, candle.h)
+        candidate = max(extreme - distance, position.setup.stop)
+        trail = (
+            candidate if position.trailing_stop is None else max(position.trailing_stop, candidate)
+        )
+        return replace(position, extreme=extreme, trailing_stop=trail)
+    extreme = candle.low if position.extreme is None else min(position.extreme, candle.low)
+    candidate = min(extreme + distance, position.setup.stop)
+    trail = candidate if position.trailing_stop is None else min(position.trailing_stop, candidate)
+    return replace(position, extreme=extreme, trailing_stop=trail)
+
+
+def _time_exit(
+    position: OpenBacktestPosition,
+    *,
+    candle: ClosedCandle,
+    config: BacktestConfig,
+    minutes: int,
+    instrument_rules: InstrumentRules,
+) -> BacktestTrade | None:
+    if minutes <= 0 or candle.ts - position.entry_ts < timedelta(minutes=minutes):
+        return None
+    adjustment = instrument_rules.pips_to_price(config.slippage_pips)
+    exit_price = candle.c - adjustment if position.side == "long" else candle.c + adjustment
+    return _closed_trade(
+        position,
+        exit_price=exit_price,
+        exit_ts=candle.ts,
+        exit_reason="time_stop",
+        config=config,
+    )
+
+
+def _average_true_range(candles: list[ClosedCandle]) -> Decimal:
+    window = candles[-ATR_WINDOW:]
+    if len(window) < 2:
+        return Decimal("0")
+    ranges = [
+        max(
+            current.h - current.low,
+            abs(current.h - previous.c),
+            abs(current.low - previous.c),
+        )
+        for previous, current in zip(window, window[1:], strict=False)
+    ]
+    return sum(ranges, Decimal("0")) / Decimal(len(ranges))
 
 
 def force_close_position(
@@ -207,8 +313,8 @@ def _exit_high(candle: ClosedCandle, side: str) -> Decimal:
 
 def _stop_touched(position: OpenBacktestPosition, candle: ClosedCandle) -> bool:
     if position.side == "long":
-        return _exit_low(candle, "long") <= position.stop
-    return _exit_high(candle, "short") >= position.stop
+        return _exit_low(candle, "long") <= position.effective_stop
+    return _exit_high(candle, "short") >= position.effective_stop
 
 
 def _target_touched(position: OpenBacktestPosition, candle: ClosedCandle) -> bool:
