@@ -74,6 +74,10 @@ async def _assert_historical_ingestion(postgres_url: str) -> None:
                 "c": Decimal("1.09050000"),
                 "volume": 128,
                 "complete": True,
+                "bid_h": None,
+                "bid_l": None,
+                "ask_h": None,
+                "ask_l": None,
             },
             {
                 "instrument": "EUR_USD",
@@ -84,6 +88,10 @@ async def _assert_historical_ingestion(postgres_url: str) -> None:
                 "c": Decimal("1.09100000"),
                 "volume": 130,
                 "complete": True,
+                "bid_h": None,
+                "bid_l": None,
+                "ask_h": None,
+                "ask_l": None,
             },
             {
                 "instrument": "EUR_USD",
@@ -94,6 +102,10 @@ async def _assert_historical_ingestion(postgres_url: str) -> None:
                 "c": Decimal("1.09150000"),
                 "volume": 132,
                 "complete": True,
+                "bid_h": None,
+                "bid_l": None,
+                "ask_h": None,
+                "ask_l": None,
             },
         ]
     finally:

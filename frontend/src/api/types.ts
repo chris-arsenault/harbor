@@ -47,6 +47,7 @@ export interface CandleCoverage {
   candle_count: number;
   from: string | null;
   to: string | null;
+  bid_ask_count?: number;
 }
 
 export interface CandleSourceStatus {

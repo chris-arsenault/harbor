@@ -50,6 +50,10 @@ async def _assert_pricing_stream_ingestion(postgres_url: str) -> None:
                 "c": Decimal("1.09060000"),
                 "volume": 2,
                 "complete": True,
+                "bid_h": None,
+                "bid_l": None,
+                "ask_h": None,
+                "ask_l": None,
             }
         ]
         assert [event["type"] for event in events] == [

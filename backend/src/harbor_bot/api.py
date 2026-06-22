@@ -310,6 +310,18 @@ def create_app(
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/api/candles/sync")
+    async def sync_candles(
+        payload: dict[str, Any],
+        service: CandleSourceService = CANDLE_SOURCE_SERVICE_DEPENDENCY,
+    ) -> dict[str, Any]:
+        try:
+            return _jsonable(await service.sync(payload))
+        except OandaApiError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/markers")
     async def read_markers(
         date: Date,

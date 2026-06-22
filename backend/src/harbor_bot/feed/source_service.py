@@ -3,13 +3,17 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.feed.historical import ingest_historical_candles
+from harbor_bot.feed.ingest import SyncReport, sync_universe
 from harbor_bot.instruments import RESEARCH_INSTRUMENTS
 from harbor_bot.oanda.client import OandaClient
-from harbor_bot.persistence.market_repository import get_candle_coverage
+from harbor_bot.persistence.market_repository import (
+    get_bid_ask_candle_count,
+    get_candle_coverage,
+)
 from harbor_bot.settings import Settings
 from harbor_bot.strategy.models import strategy_config_from_defaults
 
@@ -31,19 +35,17 @@ class CandleSourceService:
         resolved_instrument = instrument or _default_instrument()
         research_instruments = _research_instruments(self.settings)
         async with self.engine.connect() as connection:
-            coverage = await get_candle_coverage(connection, instrument=resolved_instrument)
+            coverage = await _coverage_with_quality(connection, resolved_instrument)
             instrument_coverages = [
-                _jsonable_coverage(
-                    await get_candle_coverage(connection, instrument=research_instrument)
-                )
+                await _coverage_with_quality(connection, research_instrument)
                 for research_instrument in research_instruments
             ]
         return {
             "instrument": resolved_instrument,
             "primary_source": "persisted_candles",
             "granularity": "M1",
-            "price_component": "midpoint",
-            "coverage": _jsonable_coverage(coverage),
+            "price_component": "bid_ask_mid",
+            "coverage": coverage,
             "instrument_coverages": instrument_coverages,
             "source_methods": ["oanda_historical_import", "oanda_pricing_stream"],
             "research_instruments": list(research_instruments),
@@ -123,6 +125,43 @@ class CandleSourceService:
             "coverage": results[0]["coverage"],
             "results": results,
         }
+
+    async def sync(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """Gap-aware sourcing: fetch only the candles missing from a trailing
+        window for each instrument (see harbor_bot.feed.ingest)."""
+        days = int(payload.get("days") or 180)
+        if days <= 0:
+            msg = "days must be positive"
+            raise ValueError(msg)
+        instruments = _payload_instruments(payload, self.settings)
+        reports = await sync_universe(
+            settings=self.settings,
+            engine=self.engine,
+            days=days,
+            instruments=instruments,
+            client_factory=self.client_factory,
+        )
+        return {
+            "status": "completed",
+            "days": days,
+            "reports": [_report_jsonable(report) for report in reports],
+        }
+
+
+def _report_jsonable(report: SyncReport) -> dict[str, Any]:
+    return {
+        "instrument": report.instrument,
+        "imported": report.imported,
+        "candle_count": report.candle_count,
+        "from": _iso_or_none(report.coverage_from),
+        "to": _iso_or_none(report.coverage_to),
+    }
+
+
+async def _coverage_with_quality(connection: AsyncConnection, instrument: str) -> dict[str, Any]:
+    coverage = _jsonable_coverage(await get_candle_coverage(connection, instrument=instrument))
+    coverage["bid_ask_count"] = await get_bid_ask_candle_count(connection, instrument=instrument)
+    return coverage
 
 
 def _default_instrument() -> str:

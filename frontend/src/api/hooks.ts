@@ -27,6 +27,7 @@ import {
   startOptimization,
   updateConfig,
 } from "./client";
+import { syncCandles } from "./candles";
 import { fetchEdgeStudy } from "./research";
 import { createLiveConnection, liveWebSocketUrl } from "./live";
 import type { FlattenResult, OptimizationStartPayload, WebSocketEnvelope } from "./types";
@@ -166,6 +167,17 @@ export function useStartOptimizationMutation() {
         await queryClient.invalidateQueries({ queryKey: ["lab-study", result.study_id] });
       }
       await queryClient.invalidateQueries({ queryKey: ["variants"] });
+    },
+  });
+}
+
+export function useCandleSyncMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: syncCandles,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["candle-source"] });
+      await queryClient.invalidateQueries({ queryKey: ["candles"] });
     },
   });
 }

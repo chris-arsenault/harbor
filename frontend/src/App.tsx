@@ -46,6 +46,7 @@ import {
 import { AppShell } from "./shell/AppShell";
 import type { ViewId } from "./shell/nav";
 import { CockpitView, type PipelineState } from "./views/CockpitView";
+import { DataImportView } from "./views/DataView";
 import { JournalView } from "./views/JournalView";
 import { LabView, type LabViewModel } from "./views/LabView";
 import { ValidationView } from "./views/ValidationView";
@@ -140,6 +141,7 @@ interface ViewContext {
 const ROUTES: Record<ViewId, (props: { readonly ctx: ViewContext }) => ReactNode> = {
   cockpit: CockpitRoute,
   journal: JournalRoute,
+  data: DataRoute,
   lab: LabRoute,
   validation: ValidationRoute,
   operations: OperationsRoute,
@@ -164,6 +166,10 @@ function JournalRoute({ ctx }: { readonly ctx: ViewContext }) {
 
 function LabRoute({ ctx }: { readonly ctx: ViewContext }) {
   return <LabView model={labModel(ctx)} />;
+}
+
+function DataRoute() {
+  return <DataImportView />;
 }
 
 function OperationsRoute({ ctx }: { readonly ctx: ViewContext }) {

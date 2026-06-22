@@ -1,6 +1,7 @@
 export type ViewId =
   | "cockpit"
   | "journal"
+  | "data"
   | "lab"
   | "validation"
   | "operations"
@@ -29,6 +30,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Research",
     items: [
+      { id: "data", label: "Data", glyph: "⛁" },
       { id: "lab", label: "Lab", glyph: "⚗" },
       { id: "validation", label: "Validation", glyph: "⎍" },
     ],
@@ -46,6 +48,7 @@ export const NAV_GROUPS: NavGroup[] = [
 export const VIEW_LABELS: Record<ViewId, string> = {
   cockpit: "Cockpit",
   journal: "Journal",
+  data: "Data",
   lab: "Lab",
   validation: "Validation",
   operations: "Operations",

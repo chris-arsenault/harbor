@@ -135,6 +135,21 @@ async def get_candle_coverage(
     }
 
 
+async def get_bid_ask_candle_count(
+    connection: AsyncConnection,
+    *,
+    instrument: str,
+) -> int:
+    result = await connection.execute(
+        select(func.count(candles.c.id)).where(
+            candles.c.instrument == instrument,
+            candles.c.complete.is_(True),
+            candles.c.bid_h.isnot(None),
+        )
+    )
+    return int(result.scalar_one())
+
+
 async def latest_complete_candle_window(
     connection: AsyncConnection,
     *,
