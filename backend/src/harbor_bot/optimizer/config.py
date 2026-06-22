@@ -89,6 +89,10 @@ def apply_params_to_strategy_config(
             params, "require_volume_spike", config.require_volume_spike
         ),
         exit_mode=str(params.get("exit_mode", config.exit_mode)),
+        time_stop_minutes=int(params.get("time_stop_minutes", config.time_stop_minutes)),
+        atr_trail_mult=_decimal_param(params, "atr_trail_mult", config.atr_trail_mult),
+        partial_fraction=_decimal_param(params, "partial_fraction", config.partial_fraction),
+        partial_at_r=_decimal_param(params, "partial_at_r", config.partial_at_r),
     )
 
 

@@ -65,6 +65,10 @@ def test_default_search_space_samples_all_configured_parameters() -> None:
             "require_mss": False,
             "require_volume_spike": False,
             "exit_mode": "bracket",
+            "time_stop_minutes": 120,
+            "atr_trail_mult": 1.5,
+            "partial_fraction": 0.5,
+            "partial_at_r": 1.0,
             "max_spread_pips": 1.2,
             "max_trades_per_day": 2,
         }

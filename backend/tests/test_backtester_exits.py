@@ -110,6 +110,65 @@ def test_bracket_mode_matches_plain_bracket_exit() -> None:
     assert dispatched.exit_reason == direct.exit_reason == "take_profit"
 
 
+def _partial_config():
+    return replace(
+        _strategy(),
+        exit_mode="partial_runner",
+        partial_fraction=Decimal("0.5"),
+        partial_at_r=Decimal("1.0"),
+    )
+
+
+def test_partial_runner_full_loss_when_stopped_before_one_r() -> None:
+    # Entry 1.10000, stop 1.09800 (risk 20 pips), target 1.10400, 1R = 1.10200.
+    position = _long(stop="1.09800", target="1.10400")
+    stopped = [_candle(0, high="1.10100", low="1.09790", close="1.09850")]
+
+    trade = _run_sequence(position, stopped, _partial_config())
+
+    assert trade is not None
+    assert trade.exit_reason == "stop_loss"
+    assert trade.pnl < 0
+    assert trade.pnl < Decimal("-15")  # near the full -1R (~-20)
+
+
+def test_partial_runner_banks_partial_then_runs_to_breakeven() -> None:
+    position = _long(stop="1.09800", target="1.10400")
+    sequence = [
+        _candle(0, high="1.10210", low="1.10050", close="1.10150"),  # touches 1R → scale out
+        _candle(1, high="1.10120", low="1.09990", close="1.10000"),  # runner back to breakeven
+    ]
+
+    trade = _run_sequence(position, sequence, _partial_config())
+
+    assert trade is not None
+    assert trade.exit_reason == "runner_breakeven"
+    assert trade.pnl > 0  # the banked half stays positive even as the runner exits flat
+
+
+def test_partial_runner_banks_partial_then_runner_hits_target() -> None:
+    position = _long(stop="1.09800", target="1.10400")
+    breakeven = _run_sequence(
+        _long(stop="1.09800", target="1.10400"),
+        [
+            _candle(0, high="1.10210", low="1.10050", close="1.10150"),
+            _candle(1, high="1.10120", low="1.09990", close="1.10000"),
+        ],
+        _partial_config(),
+    )
+    sequence = [
+        _candle(0, high="1.10210", low="1.10050", close="1.10150"),  # scale out at 1R
+        _candle(1, high="1.10410", low="1.10180", close="1.10400"),  # runner to target
+    ]
+
+    trade = _run_sequence(position, sequence, _partial_config())
+
+    assert trade is not None
+    assert trade.exit_reason == "runner_target"
+    assert breakeven is not None
+    assert trade.pnl > breakeven.pnl  # letting the runner reach target beats a flat runner
+
+
 def _run_sequence(position: OpenBacktestPosition, candles: list[ClosedCandle], config):
     history: list[ClosedCandle] = []
     for candle in candles:

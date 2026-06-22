@@ -48,12 +48,15 @@ def test_optimizer_defaults_load_bounded_search_space_and_runtime_config() -> No
         "require_mss",
         "require_volume_spike",
         "exit_mode",
+        "time_stop_minutes",
+        "atr_trail_mult",
+        "partial_fraction",
+        "partial_at_r",
         "max_spread_pips",
         "max_trades_per_day",
     }
-    # Net search dimensionality (11) is below the pre-M3 count (14): the six
-    # session-offset micro-timing dimensions were pruned in M5.
-    assert len(names) < 14
+    # The six session-offset micro-timing dimensions stay pruned (M5).
+    assert not any(name.endswith("_offset_minutes") for name in names)
     assert config.search_space.by_name()["sweep_buffer_pips"].minimum == Decimal("0.5")
     assert config.to_jsonable()["search_space"]["rr_floor"]["max"] == "4.0"
 

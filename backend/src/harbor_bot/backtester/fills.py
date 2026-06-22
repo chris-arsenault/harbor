@@ -16,6 +16,8 @@ class OpenBacktestPosition:
     entry_ts: datetime
     trailing_stop: Decimal | None = None
     extreme: Decimal | None = None
+    partial_realized: Decimal | None = None
+    remaining_units: Decimal | None = None
 
     @property
     def side(self) -> str:
@@ -122,8 +124,17 @@ def simulate_exit(
 
     ``bracket`` is the unchanged stop/target path; ``atr_trail`` ratchets a
     trailing stop before the bracket check; ``time_stop`` force-closes after a
-    fixed duration when no bracket level was hit (ADR 0007).
+    fixed duration when no bracket level was hit; ``partial_runner`` scales out
+    at 1R and runs the remainder from breakeven (ADR 0007).
     """
+    if strategy_config.exit_mode == "partial_runner":
+        return _partial_runner_exit(
+            position,
+            candle=candle,
+            strategy_config=strategy_config,
+            config=backtest_config,
+            instrument_rules=instrument_rules,
+        )
     if strategy_config.exit_mode == "atr_trail":
         position = _advance_trailing(
             position,
@@ -143,6 +154,155 @@ def simulate_exit(
             instrument_rules=instrument_rules,
         )
     return position, trade
+
+
+def _partial_runner_exit(
+    position: OpenBacktestPosition,
+    *,
+    candle: ClosedCandle,
+    strategy_config: StrategyConfig,
+    config: BacktestConfig,
+    instrument_rules: InstrumentRules,
+) -> tuple[OpenBacktestPosition, BacktestTrade | None]:
+    """Scale out a fraction at +partial_at_r, run the rest from breakeven.
+
+    One signal stays one trade: the partial leg's realised P&L is banked on the
+    position and combined with the runner's P&L at close, so trade_count and
+    win-rate are not distorted by the scale-out.
+    """
+    setup = position.setup
+    risk = abs(position.entry_price - setup.stop)
+    one_r = _partial_target(
+        position.side, position.entry_price, risk, strategy_config, setup.target
+    )
+
+    if position.partial_realized is None:
+        if _stop_touched(position, candle):
+            return position, _runner_close(
+                position,
+                candle=candle,
+                level=setup.stop,
+                reason="stop_loss",
+                units=setup.units,
+                banked=Decimal("0"),
+                config=config,
+                instrument_rules=instrument_rules,
+            )
+        if not _one_r_touched(position.side, candle, one_r):
+            return position, None
+        position = _bank_partial(
+            position,
+            one_r=one_r,
+            fraction=strategy_config.partial_fraction,
+            config=config,
+            rules=instrument_rules,
+        )
+
+    if _stop_touched(position, candle):
+        return position, _runner_close(
+            position,
+            candle=candle,
+            level=position.entry_price,
+            reason="runner_breakeven",
+            units=_remaining(position),
+            banked=position.partial_realized or Decimal("0"),
+            config=config,
+            instrument_rules=instrument_rules,
+        )
+    if _target_touched(position, candle):
+        return position, _runner_close(
+            position,
+            candle=candle,
+            level=setup.target,
+            reason="runner_target",
+            units=_remaining(position),
+            banked=position.partial_realized or Decimal("0"),
+            config=config,
+            instrument_rules=instrument_rules,
+        )
+    return position, None
+
+
+def _partial_target(
+    side: str, entry: Decimal, risk: Decimal, strategy_config: StrategyConfig, target: Decimal
+) -> Decimal:
+    distance = strategy_config.partial_at_r * risk
+    if side == "long":
+        return min(entry + distance, target)
+    return max(entry - distance, target)
+
+
+def _bank_partial(
+    position: OpenBacktestPosition,
+    *,
+    one_r: Decimal,
+    fraction: Decimal,
+    config: BacktestConfig,
+    rules: InstrumentRules,
+) -> OpenBacktestPosition:
+    partial_units = position.setup.units * fraction
+    exit_price = _slip_adjust(one_r, position.side, config, rules)
+    banked = _leg_pnl(position.side, partial_units, position.entry_price, exit_price)
+    return replace(
+        position,
+        partial_realized=banked,
+        remaining_units=position.setup.units - partial_units,
+        trailing_stop=position.entry_price,
+    )
+
+
+def _runner_close(
+    position: OpenBacktestPosition,
+    *,
+    candle: ClosedCandle,
+    level: Decimal,
+    reason: str,
+    units: Decimal,
+    banked: Decimal,
+    config: BacktestConfig,
+    instrument_rules: InstrumentRules,
+) -> BacktestTrade:
+    exit_price = _slip_adjust(level, position.side, config, instrument_rules)
+    leg = _leg_pnl(position.side, units, position.entry_price, exit_price)
+    commission = position.setup.units * config.commission_per_unit * Decimal("2")
+    total = banked + leg - commission
+    risk_amount = abs(position.entry_price - position.setup.stop) * position.setup.units
+    r_multiple = total / risk_amount if risk_amount else Decimal("0")
+    return BacktestTrade.from_entry_setup(
+        position.setup,
+        entry_price=position.entry_price,
+        entry_ts=position.entry_ts,
+        exit_price=exit_price,
+        exit_ts=candle.ts,
+        pnl=total,
+        r_multiple=r_multiple,
+        exit_reason=reason,
+    )
+
+
+def _remaining(position: OpenBacktestPosition) -> Decimal:
+    return (
+        position.remaining_units if position.remaining_units is not None else position.setup.units
+    )
+
+
+def _one_r_touched(side: str, candle: ClosedCandle, one_r: Decimal) -> bool:
+    if side == "long":
+        return _exit_high(candle, "long") >= one_r
+    return _exit_low(candle, "short") <= one_r
+
+
+def _slip_adjust(
+    level: Decimal, side: str, config: BacktestConfig, instrument_rules: InstrumentRules
+) -> Decimal:
+    adjustment = instrument_rules.pips_to_price(config.slippage_pips)
+    return level - adjustment if side == "long" else level + adjustment
+
+
+def _leg_pnl(side: str, units: Decimal, entry_price: Decimal, exit_price: Decimal) -> Decimal:
+    if side == "long":
+        return (exit_price - entry_price) * units
+    return (entry_price - exit_price) * units
 
 
 def _advance_trailing(

@@ -62,6 +62,27 @@ search_space:
       - bracket
       - atr_trail
       - time_stop
+      - partial_runner
+  time_stop_minutes:
+    type: int
+    min: 30
+    max: 240
+    step: 30
+  atr_trail_mult:
+    type: decimal
+    min: "0.5"
+    max: "3.0"
+    step: "0.5"
+  partial_fraction:
+    type: decimal
+    min: "0.25"
+    max: "0.75"
+    step: "0.25"
+  partial_at_r:
+    type: decimal
+    min: "0.5"
+    max: "2.0"
+    step: "0.5"
   max_spread_pips:
     type: decimal
     min: "0.5"
