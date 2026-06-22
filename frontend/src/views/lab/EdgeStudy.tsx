@@ -8,11 +8,16 @@ function EdgeTiles({ study }: { readonly study: EdgeStudyResult }) {
     <div className="tiles tiles--tight">
       <StatTile label="Sweeps" value={String(study.total_sweeps)} />
       <StatTile label="Forward" value={`${study.horizon}m`} />
-      <StatTile label="Reversal hit-rate" value={fmtPct(study.overall.hit_rate)} tone="beam" />
+      <StatTile label="Reversal hit-rate" value={fmtPct(study.overall.hit_rate)} />
       <StatTile
         label="Mean reversal"
         value={`${fmtNum(study.overall.mean_pips, 1)}p`}
         tone={valueTone(study.overall.mean_pips)}
+      />
+      <StatTile
+        label="Significance (t)"
+        value={fmtNum(study.overall.t_stat, 2)}
+        tone={Number(study.overall.t_stat) >= 2 ? "up" : "warn"}
       />
       <StatTile label="Baseline move" value={`${fmtNum(study.baseline_mean_abs_pips, 1)}p`} />
     </div>

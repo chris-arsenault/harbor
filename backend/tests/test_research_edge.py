@@ -23,14 +23,20 @@ def test_summarize_reports_count_mean_and_hit_rate() -> None:
     assert summary.hit_rate == Decimal("2") / Decimal("3")
 
 
-def test_has_edge_requires_samples_hit_rate_and_positive_mean() -> None:
+def test_has_edge_requires_significant_positive_reversal() -> None:
     strong = summarize([Decimal("2")] * MIN_SAMPLES + [Decimal("1")] * 10)
     thin = summarize([Decimal("2")] * 5)
     coin_flip = summarize(([Decimal("1")] * 20) + ([Decimal("-1")] * 20))
+    # Positive mean but huge variance: many samples, yet not significant vs chance.
+    noisy = summarize(([Decimal("10")] * 16) + ([Decimal("-10")] * 15))
 
     assert has_edge(strong) is True
-    assert has_edge(thin) is False
-    assert has_edge(coin_flip) is False
+    assert has_edge(thin) is False  # too few samples
+    assert has_edge(coin_flip) is False  # zero mean
+    assert noisy.count >= MIN_SAMPLES
+    assert noisy.mean_pips > 0
+    assert noisy.t_stat < Decimal("2")
+    assert has_edge(noisy) is False  # positive but not statistically significant
 
 
 def test_clean_signal_day_records_one_sweep_with_positive_reversal() -> None:

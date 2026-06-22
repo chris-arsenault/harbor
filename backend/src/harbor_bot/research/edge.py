@@ -6,11 +6,13 @@ reversal direction skewed better than chance? Returns forward-return summaries
 conditioned by level type, session, and volatility, against an unconditional
 baseline. No I/O — candles are passed in by the caller.
 
-Edge-verdict thresholds (the [DECISION] this milestone owns): a conditioned
-group is judged to carry an edge when it has at least ``MIN_SAMPLES``
-observations, a reversal hit-rate of at least ``MIN_HIT_RATE``, and a positive
-mean reversal move. These are deliberately conservative so a thin, noisy slice
-cannot register as an edge.
+Edge verdict: a conditioned group carries an edge only when it has at least
+``MIN_SAMPLES`` observations, a positive mean reversal, and a one-sample
+t-statistic against the chance null (mean = 0) past ``T_THRESHOLD`` — a
+significance test, not a bare hit-rate. Hit-rate and the unconditional baseline
+move are reported for context. Caveat: forward windows from sweeps close in time
+can overlap, which inflates the t-statistic; sweeps are limited to one per level
+per day, and a block-bootstrap correction is tracked in the backlog.
 """
 
 from dataclasses import dataclass
@@ -36,7 +38,9 @@ from harbor_bot.strategy.sessions import (
 from harbor_bot.strategy.sweeps import detect_sweep, mark_level_taken
 
 MIN_SAMPLES = 30
-MIN_HIT_RATE = Decimal("0.55")
+# One-sided t against the chance null (mean reversal = 0). ~2.0 ≈ 97.5% for
+# moderate samples; a conditioned slice must beat noise, not merely lean positive.
+T_THRESHOLD = Decimal("2.0")
 DEFAULT_HORIZON = 15
 DEFAULT_ATR_WINDOW = 14
 
@@ -47,6 +51,8 @@ class ForwardSummary:
     mean_pips: Decimal
     median_pips: Decimal
     hit_rate: Decimal
+    stddev_pips: Decimal
+    t_stat: Decimal
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
@@ -54,6 +60,8 @@ class ForwardSummary:
             "mean_pips": str(self.mean_pips),
             "median_pips": str(self.median_pips),
             "hit_rate": str(self.hit_rate),
+            "stddev_pips": str(self.stddev_pips),
+            "t_stat": str(self.t_stat),
         }
 
 
@@ -112,24 +120,42 @@ class _Observation:
 
 def summarize(values: list[Decimal]) -> ForwardSummary:
     if not values:
-        return ForwardSummary(
-            count=0, mean_pips=Decimal("0"), median_pips=Decimal("0"), hit_rate=Decimal("0")
-        )
+        return ForwardSummary(0, *([Decimal("0")] * 5))
     count = len(values)
     mean = sum(values, Decimal("0")) / Decimal(count)
     wins = sum(1 for value in values if value > 0)
+    stddev = _stddev(values, mean)
     return ForwardSummary(
         count=count,
         mean_pips=mean,
         median_pips=_median(values),
         hit_rate=Decimal(wins) / Decimal(count),
+        stddev_pips=stddev,
+        t_stat=_t_stat(mean, stddev, count),
     )
 
 
 def has_edge(summary: ForwardSummary) -> bool:
-    return (
-        summary.count >= MIN_SAMPLES and summary.hit_rate >= MIN_HIT_RATE and summary.mean_pips > 0
+    """An edge requires a statistically significant positive reversal, not just
+    a favourable hit-rate: enough samples, a positive mean, and a t-statistic
+    against the chance null (mean = 0) past ``T_THRESHOLD``."""
+    return summary.count >= MIN_SAMPLES and summary.mean_pips > 0 and summary.t_stat >= T_THRESHOLD
+
+
+def _stddev(values: list[Decimal], mean: Decimal) -> Decimal:
+    if len(values) < 2:
+        return Decimal("0")
+    variance = sum(((value - mean) ** 2 for value in values), Decimal("0")) / Decimal(
+        len(values) - 1
     )
+    return variance.sqrt()
+
+
+def _t_stat(mean: Decimal, stddev: Decimal, count: int) -> Decimal:
+    if count < 2 or stddev <= 0:
+        return Decimal("0")
+    standard_error = stddev / Decimal(count).sqrt()
+    return mean / standard_error
 
 
 def run_edge_study(

@@ -11,6 +11,7 @@ Planned-but-not-built work. Each item is a positive assertion of future-state be
 - Add an OANDA order-book and position-book snapshot recorder that captures the ~20-minute liquidity-cluster snapshots forward, building local history for a future "sweep sits on a visible cluster" entry filter and "next cluster as draw" target.
 - Add live order management for trailing and partial exits so a promoted variant whose exit mode needs active broker management can run live (deferred from the exit-decoupling research work per ADR 0007).
 - Add conditional (define-by-run) search-space sampling so exit-mode-specific parameters (partial_fraction, partial_at_r, atr_trail_mult, time_stop_minutes) are only drawn when their exit_mode is selected, instead of being sampled on every trial as the current flat search space does.
+- Correct the edge-study significance test for overlapping forward windows (e.g. a block bootstrap or Newey-West standard error) so the t-statistic is not inflated by autocorrelated samples.
 - Add a forex-sentiment positioning filter from OANDA Forex Labs long/short ratios as a contrarian gate.
 
 ## Operations

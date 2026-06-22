@@ -5,6 +5,8 @@ export interface ForwardSummary {
   mean_pips: string;
   median_pips: string;
   hit_rate: string;
+  stddev_pips: string;
+  t_stat: string;
 }
 
 export interface ConditionalEdge {
