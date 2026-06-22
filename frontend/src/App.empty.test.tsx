@@ -20,7 +20,7 @@ afterEach(() => {
 test("does not request a fixed lab study when the empty deployment has no studies", async () => {
   renderWithClient(<App chartAdapter={fakeChartAdapter()} />);
 
-  expect(await screen.findByRole("heading", { name: "Strategy Workflow" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Cockpit" })).toBeInTheDocument();
   await waitFor(() =>
     expect(fetch).toHaveBeenCalledWith("/api/optimize?limit=50", expect.anything())
   );
@@ -30,14 +30,13 @@ test("does not request a fixed lab study when the empty deployment has no studie
 
   expect(screen.getByText("No tuning studies yet")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Start research study" })).toBeDisabled();
-  expect(screen.getByText("candles: 0")).toBeInTheDocument();
-  expect(screen.getByText("write policy: upsert")).toBeInTheDocument();
+  expect(screen.getByText("upsert")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Refresh latest 5,000 M1" }));
 
   await waitFor(() =>
     expect(fetch).toHaveBeenCalledWith("/api/candles/import", {
       body: JSON.stringify({
-        instrument: "EUR_USD",
+        instrument: "GBP_USD",
         count: 5000,
       }),
       headers: { Accept: "application/json", "Content-Type": "application/json" },

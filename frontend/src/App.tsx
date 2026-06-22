@@ -25,6 +25,7 @@ import {
 } from "./api/hooks";
 import type { CandleImportRequest, CandleImportResult, VariantEquityCurve } from "./api/types";
 import { aggregateImportResult } from "./app/candleImport";
+import { backtestTargetVariant, useBacktestPageState } from "./app/backtestPageState";
 import {
   emptyMarkers,
   emptyStatus,
@@ -36,37 +37,24 @@ import {
   useLiveState,
   type LiveState,
 } from "./app/liveState";
-import { backtestTargetVariant, useBacktestPageState } from "./app/backtestPageState";
-import { HeartbeatIndicator } from "./components/HeartbeatIndicator";
-import { BacktestsView } from "./components/backtests/BacktestsView";
 import type { LiveChartAdapter } from "./components/chartAdapter";
-import { ConfigView } from "./components/config/ConfigView";
-import { DashboardView } from "./components/dashboard/DashboardView";
-import { EventsView } from "./components/events/EventsView";
-import { LabScreen } from "./components/lab/LabScreen";
 import {
   DEFAULT_RESEARCH_INSTRUMENT,
   DISCOVERY_STUDY_CONFIG,
   tuningPayloadFromConfig,
-  type TuningStudyConfig,
 } from "./components/lab/tuningPayload";
-import { ProductNav, type ProductView } from "./components/navigation/ProductNav";
-import { OperationsView } from "./components/operations/OperationsView";
-import { TradesView } from "./components/trades/TradesView";
-import { AppWorkflowRoute } from "./components/workflow/AppWorkflowRoute";
+import { AppShell } from "./shell/AppShell";
+import type { ViewId } from "./shell/nav";
+import { CockpitView, type PipelineState } from "./views/CockpitView";
+import { JournalView } from "./views/JournalView";
+import { LabView, type LabViewModel } from "./views/LabView";
+import { ValidationView } from "./views/ValidationView";
+import { OperationsView } from "./views/OperationsView";
+import { ConfigView } from "./views/ConfigView";
+import { EventsView } from "./views/EventsView";
 
 const DEFAULT_INSTRUMENT = "EUR_USD";
-const DEFAULT_EVENTS_LIMIT = 25;
-const APP_VIEWS: ProductView[] = [
-  "workflow",
-  "dashboard",
-  "trades",
-  "backtests",
-  "lab",
-  "config",
-  "events",
-  "operations",
-];
+const DASHBOARD_EVENTS = 25;
 
 interface AppProps {
   readonly chartAdapter?: LiveChartAdapter;
@@ -74,78 +62,264 @@ interface AppProps {
 
 export function App({ chartAdapter }: AppProps) {
   const windowParams = useMemo(() => dashboardWindow(new Date()), []);
-  const [activeView, setActiveView] = useState<ProductView>("workflow");
-  const [selectedResearchInstrument, setSelectedResearchInstrument] = useState(
-    DEFAULT_RESEARCH_INSTRUMENT
-  );
+  const [activeView, setActiveView] = useState<ViewId>("cockpit");
+  const [instrument, setInstrument] = useState(DEFAULT_RESEARCH_INSTRUMENT);
+
   const live = useLiveState();
   const dashboard = useDashboardData(windowParams, live);
-  const trades = useTradesQuery({
-    from: windowParams.from,
-    to: windowParams.to,
-    limit: 100,
-  });
+  const trades = useTradesQuery({ from: windowParams.from, to: windowParams.to, limit: 100 });
   const backtests = useBacktestRunsQuery({ limit: 50 });
   const startBacktest = useStartBacktestMutation();
+  const backtestPage = useBacktestPageState(backtests, startBacktest);
   const config = useConfigQuery();
   const updateConfig = useUpdateConfigMutation();
   const eventsPage = useEventsQuery({ limit: 200 });
-  const lab = useLabData(selectedResearchInstrument, live.liveEquityCurves, live.labLiveStatus);
-  const backtestPage = useBacktestPageState(backtests, startBacktest);
+  const lab = useLabData(instrument, live.liveEquityCurves, live.labLiveStatus);
   const controls = usePracticeControls();
   const productEvents = mergeEvents(live.liveEvents, eventsPage.data ?? dashboard.events);
 
-  return (
-    <main className="app-shell">
-      <AppHeader
-        activeView={activeView}
-        lastMessageAt={live.lastWsMessageAt ?? dashboard.status.last_heartbeat}
-        onViewChange={setActiveView}
-      />
-      <ProductPage
-        activeView={activeView}
-        windowParams={windowParams}
-        dashboard={dashboard}
-        trades={trades}
-        backtests={backtests}
-        backtestPage={backtestPage}
-        config={config}
-        updateConfig={updateConfig}
-        eventsPage={eventsPage}
-        productEvents={productEvents}
-        lab={lab}
-        selectedResearchInstrument={selectedResearchInstrument}
-        onResearchInstrumentChange={setSelectedResearchInstrument}
-        controls={controls}
-        chartAdapter={chartAdapter}
-      />
-    </main>
+  const pipeline = computePipeline(
+    dashboard.status,
+    lab.candleSource,
+    lab,
+    backtests.data?.runs.length ?? 0
   );
+  const badges: Partial<Record<ViewId, string>> = {
+    journal: String(trades.data?.trades.length ?? 0),
+    events: String(productEvents.length),
+  };
+
+  return (
+    <AppShell
+      status={dashboard.status}
+      lastMessageAt={live.lastWsMessageAt ?? dashboard.status.last_heartbeat}
+      active={activeView}
+      badges={badges}
+      onSelect={setActiveView}
+      onArmClick={() => setActiveView("operations")}
+    >
+      {renderView(activeView, {
+        windowParams,
+        dashboard,
+        chartAdapter,
+        pipeline,
+        productEvents,
+        trades,
+        backtests,
+        backtestPage,
+        lab,
+        config,
+        updateConfig,
+        eventsPage,
+        controls,
+        instrument,
+        setInstrument,
+      })}
+    </AppShell>
+  );
+}
+
+interface ViewContext {
+  readonly windowParams: ReturnType<typeof dashboardWindow>;
+  readonly dashboard: ReturnType<typeof useDashboardData>;
+  readonly chartAdapter?: LiveChartAdapter;
+  readonly pipeline: PipelineState;
+  readonly productEvents: ReturnType<typeof mergeEvents>;
+  readonly trades: ReturnType<typeof useTradesQuery>;
+  readonly backtests: ReturnType<typeof useBacktestRunsQuery>;
+  readonly backtestPage: ReturnType<typeof useBacktestPageState>;
+  readonly lab: ReturnType<typeof useLabData>;
+  readonly config: ReturnType<typeof useConfigQuery>;
+  readonly updateConfig: ReturnType<typeof useUpdateConfigMutation>;
+  readonly eventsPage: ReturnType<typeof useEventsQuery>;
+  readonly controls: ReturnType<typeof usePracticeControls>;
+  readonly instrument: string;
+  readonly setInstrument: (instrument: string) => void;
+}
+
+const ROUTES: Record<ViewId, (props: { readonly ctx: ViewContext }) => ReactNode> = {
+  cockpit: CockpitRoute,
+  journal: JournalRoute,
+  lab: LabRoute,
+  validation: ValidationRoute,
+  operations: OperationsRoute,
+  config: ConfigRoute,
+  events: EventsRoute,
+};
+
+function renderView(view: ViewId, ctx: ViewContext) {
+  const Route = ROUTES[view];
+  return <Route ctx={ctx} />;
+}
+
+function JournalRoute({ ctx }: { readonly ctx: ViewContext }) {
+  return (
+    <JournalView
+      trades={ctx.trades.data?.trades ?? []}
+      from={ctx.windowParams.from}
+      to={ctx.windowParams.to}
+    />
+  );
+}
+
+function LabRoute({ ctx }: { readonly ctx: ViewContext }) {
+  return <LabView model={labModel(ctx)} />;
+}
+
+function OperationsRoute({ ctx }: { readonly ctx: ViewContext }) {
+  return <OperationsView status={ctx.dashboard.status} controls={ctx.controls} />;
+}
+
+function ConfigRoute({ ctx }: { readonly ctx: ViewContext }) {
+  return (
+    <ConfigView
+      snapshot={ctx.config.data ?? { values: [] }}
+      pending={ctx.updateConfig.isPending}
+      onUpdateConfig={ctx.updateConfig.mutate}
+    />
+  );
+}
+
+function EventsRoute({ ctx }: { readonly ctx: ViewContext }) {
+  return (
+    <EventsView
+      events={ctx.productEvents}
+      loading={ctx.eventsPage.isLoading}
+      errorMessage={ctx.eventsPage.error instanceof Error ? ctx.eventsPage.error.message : null}
+    />
+  );
+}
+
+function CockpitRoute({ ctx }: { readonly ctx: ViewContext }) {
+  return (
+    <CockpitView
+      status={ctx.dashboard.status}
+      levels={ctx.dashboard.levels}
+      candles={ctx.dashboard.candles}
+      markers={ctx.dashboard.markers}
+      events={ctx.productEvents}
+      controls={ctx.controls}
+      chartAdapter={ctx.chartAdapter}
+      pipeline={ctx.pipeline}
+    />
+  );
+}
+
+function ValidationRoute({ ctx }: { readonly ctx: ViewContext }) {
+  return (
+    <ValidationView
+      runs={ctx.backtests.data?.runs ?? []}
+      selectedRunId={ctx.backtestPage.selectedRunId}
+      selectedRun={ctx.backtestPage.selectedRun}
+      selectedRunPending={ctx.backtestPage.selectedRunPending}
+      selectedRunError={ctx.backtestPage.selectedRunError}
+      candleSource={ctx.lab.candleSource}
+      targetVariant={backtestTargetVariant(ctx.lab.variantOverview)}
+      pending={ctx.backtestPage.startPending}
+      errorMessage={ctx.backtestPage.startError}
+      onStartBacktest={ctx.backtestPage.startBacktest}
+      onSelectRun={ctx.backtestPage.selectRun}
+    />
+  );
+}
+
+function labModel(ctx: ViewContext): LabViewModel {
+  const lab = ctx.lab;
+  return {
+    snapshot: lab.snapshot,
+    variants: lab.variantOverview,
+    liveStatus: lab.liveStatus,
+    candleSource: lab.candleSource,
+    candleSourcePending: lab.candleSourcePending,
+    candleSourceError: lab.candleSourceError,
+    importResult: lab.importResult,
+    onImportCandles: lab.importCandles,
+    selectedInstrument: ctx.instrument,
+    onInstrumentChange: ctx.setInstrument,
+    studyPayload: lab.studyPayload,
+    preflight: lab.preflight,
+    preflightPending: lab.preflightPending,
+    preflightError: lab.preflightError,
+    tuningRun: lab.tuningRun,
+    onStartOptimization: lab.startOptimization,
+    onPromoteVariant: lab.promoteVariant,
+    onRetireVariant: lab.retireVariant,
+  };
+}
+
+function computePipeline(
+  status: ReturnType<typeof emptyStatus>,
+  candleSource: ReturnType<typeof useLabData>["candleSource"],
+  lab: ReturnType<typeof useLabData>,
+  backtestRuns: number
+): PipelineState {
+  const overview = lab.variantOverview;
+  return {
+    dataReady: (candleSource?.coverage.candle_count ?? 0) > 0,
+    researchReady: lab.preflight?.status === "ready",
+    hasCandidate: overview.variants.length > 0 || overview.leaderboard.length > 0,
+    hasBacktest: backtestRuns > 0,
+    hasPaper: overview.leaderboard.some((row) => row.stats.trade_count > 0),
+    hasLive: Boolean(status.promoted_variant),
+    promotedLabel: status.promoted_variant?.label ?? null,
+  };
 }
 
 function useDashboardData(windowParams: ReturnType<typeof dashboardWindow>, live: LiveState) {
   const statusQuery = useStatusQuery();
-  const levelsQuery = useLevelsQuery({
-    date: windowParams.date,
-    instrument: DEFAULT_INSTRUMENT,
-  });
+  const levelsQuery = useLevelsQuery({ date: windowParams.date, instrument: DEFAULT_INSTRUMENT });
   const candlesQuery = useCandlesQuery({
     instrument: DEFAULT_INSTRUMENT,
     from: windowParams.from,
     to: windowParams.to,
   });
-  const markersQuery = useMarkersQuery({
-    date: windowParams.date,
-    instrument: DEFAULT_INSTRUMENT,
-  });
-  const eventsQuery = useEventsQuery({ limit: DEFAULT_EVENTS_LIMIT });
+  const markersQuery = useMarkersQuery({ date: windowParams.date, instrument: DEFAULT_INSTRUMENT });
+  const eventsQuery = useEventsQuery({ limit: DASHBOARD_EVENTS });
 
   return {
     status: live.liveStatus ?? statusQuery.data ?? emptyStatus(),
     levels: live.liveLevels ?? levelsQuery.data ?? null,
     candles: mergeCandles(candlesQuery.data ?? [], live.liveCandles),
     markers: mergeMarkers(markersQuery.data ?? emptyMarkers(), live.liveMarkers),
-    events: [...live.liveEvents, ...(eventsQuery.data ?? [])].slice(0, DEFAULT_EVENTS_LIMIT),
+    events: [...live.liveEvents, ...(eventsQuery.data ?? [])].slice(0, DASHBOARD_EVENTS),
+  };
+}
+
+type StudiesData = ReturnType<typeof useOptimizationStudiesQuery>["data"];
+type StartData = ReturnType<typeof useStartOptimizationMutation>["data"];
+type CandleSourceState = ReturnType<typeof useLabCandleSource>;
+
+function pickStudyId(started: StartData, studies: StudiesData): number | null {
+  return started?.study_id ?? studies?.studies[0]?.study_id ?? null;
+}
+
+function hasCandles(state: CandleSourceState): boolean {
+  return (state.status?.coverage?.candle_count ?? 0) > 0;
+}
+
+function candleFields(state: CandleSourceState) {
+  return {
+    candleSource: state.status,
+    candleSourcePending: state.pending,
+    candleSourceError: state.errorMessage,
+    importCandles: state.importCandles,
+    importResult: state.importResult,
+  };
+}
+
+function preflightFields(query: ReturnType<typeof useOptimizationPreflightQuery>) {
+  return {
+    preflight: query.data ?? null,
+    preflightPending: query.isFetching,
+    preflightError: query.error instanceof Error ? query.error.message : null,
+  };
+}
+
+function tuningRunView(mutation: ReturnType<typeof useStartOptimizationMutation>) {
+  return {
+    pending: mutation.isPending,
+    errorMessage: firstErrorMessage(mutation.error),
+    resultStatus: mutation.data?.status ?? null,
   };
 }
 
@@ -154,253 +328,79 @@ function useLabData(
   liveEquityCurves: VariantEquityCurve[],
   liveStatus: string | null
 ) {
-  const [studyConfig, setStudyConfig] = useState<TuningStudyConfig>(DISCOVERY_STUDY_CONFIG);
   const studyPayload = useMemo(
-    () => tuningPayloadFromConfig(studyConfig, selectedInstrument),
-    [studyConfig, selectedInstrument]
+    () => tuningPayloadFromConfig(DISCOVERY_STUDY_CONFIG, selectedInstrument),
+    [selectedInstrument]
   );
   const studiesQuery = useOptimizationStudiesQuery({ limit: 50 });
-  const startOptimizationMutation = useStartOptimizationMutation();
-  const selectedStudyId = latestLabStudyId(studiesQuery.data, startOptimizationMutation.data);
-  const labStudyQuery = useLabStudyQuery(selectedStudyId);
+  const startOptimization = useStartOptimizationMutation();
+  const labStudyQuery = useLabStudyQuery(pickStudyId(startOptimization.data, studiesQuery.data));
   const variantsQuery = useVariantsQuery();
   const candleSource = useLabCandleSource(selectedInstrument);
-  const canPreflight = (candleSource.status?.coverage?.candle_count ?? 0) > 0;
-  const preflightQuery = useOptimizationPreflightQuery(studyPayload, canPreflight);
-  const createVariantMutation = useCreatePaperVariantMutation();
-  const retireVariantMutation = useRetirePaperVariantMutation();
-  const promoteVariantMutation = usePromoteVariantMutation();
+  const preflightQuery = useOptimizationPreflightQuery(studyPayload, hasCandles(candleSource));
+  const createVariant = useCreatePaperVariantMutation();
+  const retireVariant = useRetirePaperVariantMutation();
+  const promoteVariant = usePromoteVariantMutation();
+  const baseVariants = variantsQuery.data ?? labStudyQuery.data?.variants ?? emptyVariantOverview();
 
   return {
     snapshot: labStudyQuery.data ?? null,
-    variantOverview: mergeVariantOverview(
-      variantsQuery.data ?? labStudyQuery.data?.variants ?? emptyVariantOverview(),
-      liveEquityCurves
-    ),
+    variantOverview: mergeVariantOverview(baseVariants, liveEquityCurves),
     liveStatus,
-    candleSource: candleSource.status,
-    candleSourcePending: candleSource.pending,
-    candleSourceError: candleSource.errorMessage,
-    importCandles: candleSource.importCandles,
-    importResult: candleSource.importResult,
-    studyConfig,
-    setStudyConfig,
     studyPayload,
-    preflight: preflightQuery.data ?? null,
-    preflightPending: preflightQuery.isFetching,
-    preflightError: preflightQuery.error instanceof Error ? preflightQuery.error.message : null,
-    startOptimization: startOptimizationMutation.mutate,
-    tuningRun: tuningRunState(startOptimizationMutation),
-    createPaperVariant: createVariantMutation.mutate,
-    retireVariant: retireVariantMutation.mutate,
-    promoteVariant: promoteVariantMutation.mutate,
-  };
-}
-
-function latestLabStudyId(
-  studies: ReturnType<typeof useOptimizationStudiesQuery>["data"],
-  startedStudy: ReturnType<typeof useStartOptimizationMutation>["data"]
-) {
-  return startedStudy?.study_id ?? studies?.studies[0]?.study_id ?? null;
-}
-
-function tuningRunState(mutation: ReturnType<typeof useStartOptimizationMutation>) {
-  return {
-    pending: mutation.isPending,
-    errorMessage: firstErrorMessage(mutation.error),
-    result: mutation.data ?? null,
+    startOptimization: startOptimization.mutate,
+    tuningRun: tuningRunView(startOptimization),
+    createPaperVariant: createVariant.mutate,
+    retireVariant: retireVariant.mutate,
+    promoteVariant: promoteVariant.mutate,
+    ...candleFields(candleSource),
+    ...preflightFields(preflightQuery),
   };
 }
 
 function useLabCandleSource(selectedInstrument: string) {
   const candleSourceQuery = useCandleSourceQuery({ instrument: selectedInstrument });
   const importCandlesMutation = useImportHistoricalCandlesMutation();
-  const [batchImportPending, setBatchImportPending] = useState(false);
-  const [batchImportResult, setBatchImportResult] = useState<CandleImportResult | null>(null);
+  const [batchPending, setBatchPending] = useState(false);
+  const [batchResult, setBatchResult] = useState<CandleImportResult | null>(null);
 
   async function importCandles(payload: CandleImportRequest) {
     if (payload.instrument !== "research_universe" || !payload.instruments?.length) {
-      setBatchImportResult(null);
+      setBatchResult(null);
       await importCandlesMutation.mutateAsync(payload);
       return;
     }
-
-    setBatchImportPending(true);
-    setBatchImportResult(null);
+    setBatchPending(true);
+    setBatchResult(null);
     try {
       const results: CandleImportResult[] = [];
-      for (const instrument of payload.instruments) {
+      for (const symbol of payload.instruments) {
         results.push(
           await importCandlesMutation.mutateAsync({
-            instrument,
+            instrument: symbol,
             count: payload.count,
             from: payload.from,
           })
         );
       }
-      setBatchImportResult(aggregateImportResult(results, payload));
+      setBatchResult(aggregateImportResult(results, payload));
     } finally {
-      setBatchImportPending(false);
+      setBatchPending(false);
     }
   }
 
   return {
     status: candleSourceQuery.data ?? null,
-    pending: candleSourceQuery.isLoading || importCandlesMutation.isPending || batchImportPending,
+    pending: candleSourceQuery.isLoading || importCandlesMutation.isPending || batchPending,
     errorMessage: firstErrorMessage(candleSourceQuery.error, importCandlesMutation.error),
     importCandles,
-    importResult: batchImportResult ?? importCandlesMutation.data ?? null,
+    importResult: batchResult ?? importCandlesMutation.data ?? null,
   };
 }
 
 function firstErrorMessage(...errors: unknown[]) {
   const error = errors.find((item) => item instanceof Error);
   return error instanceof Error ? error.message : null;
-}
-
-export interface ProductPageProps {
-  readonly activeView: ProductView;
-  readonly windowParams: ReturnType<typeof dashboardWindow>;
-  readonly dashboard: ReturnType<typeof useDashboardData>;
-  readonly trades: ReturnType<typeof useTradesQuery>;
-  readonly backtests: ReturnType<typeof useBacktestRunsQuery>;
-  readonly backtestPage: ReturnType<typeof useBacktestPageState>;
-  readonly config: ReturnType<typeof useConfigQuery>;
-  readonly updateConfig: ReturnType<typeof useUpdateConfigMutation>;
-  readonly eventsPage: ReturnType<typeof useEventsQuery>;
-  readonly productEvents: ReturnType<typeof mergeEvents>;
-  readonly lab: ReturnType<typeof useLabData>;
-  readonly selectedResearchInstrument: string;
-  readonly onResearchInstrumentChange: (instrument: string) => void;
-  readonly controls: ReturnType<typeof usePracticeControls>;
-  readonly chartAdapter?: LiveChartAdapter;
-}
-
-const PRODUCT_ROUTES = {
-  workflow: AppWorkflowRoute,
-  dashboard: DashboardRoute,
-  trades: TradesRoute,
-  backtests: BacktestsRoute,
-  lab: LabRoute,
-  config: ConfigRoute,
-  events: EventsRoute,
-  operations: OperationsRoute,
-} satisfies Record<ProductView, (props: ProductPageProps) => ReactNode>;
-
-function ProductPage(props: ProductPageProps) {
-  const ProductRoute = PRODUCT_ROUTES[props.activeView];
-  return ProductRoute(props);
-}
-
-function DashboardRoute({
-  dashboard,
-  chartAdapter,
-  controls,
-}: Pick<ProductPageProps, "dashboard" | "chartAdapter" | "controls">) {
-  return (
-    <DashboardView
-      status={dashboard.status}
-      levels={dashboard.levels}
-      candles={dashboard.candles}
-      markers={dashboard.markers}
-      events={dashboard.events}
-      chartAdapter={chartAdapter}
-      controls={controls}
-    />
-  );
-}
-
-function TradesRoute({ trades, windowParams }: ProductPageProps) {
-  return (
-    <TradesView trades={trades.data?.trades ?? []} from={windowParams.from} to={windowParams.to} />
-  );
-}
-
-function BacktestsRoute({ backtests, backtestPage, lab }: ProductPageProps) {
-  return (
-    <BacktestsView
-      runs={backtests.data?.runs ?? []}
-      selectedRunId={backtestPage.selectedRunId}
-      selectedRun={backtestPage.selectedRun}
-      selectedRunPending={backtestPage.selectedRunPending}
-      selectedRunError={backtestPage.selectedRunError}
-      candleSource={lab.candleSource}
-      targetVariant={backtestTargetVariant(lab.variantOverview)}
-      pending={backtestPage.startPending}
-      errorMessage={backtestPage.startError}
-      onStartBacktest={backtestPage.startBacktest}
-      onSelectRun={backtestPage.selectRun}
-    />
-  );
-}
-
-function ConfigRoute({ config, updateConfig }: ProductPageProps) {
-  return (
-    <ConfigView
-      snapshot={config.data ?? { values: [] }}
-      pending={updateConfig.isPending}
-      onUpdateConfig={updateConfig.mutate}
-    />
-  );
-}
-
-function EventsRoute({ productEvents, eventsPage }: ProductPageProps) {
-  return (
-    <EventsView
-      events={productEvents}
-      loading={eventsPage.isLoading}
-      errorMessage={eventsPage.error instanceof Error ? eventsPage.error.message : null}
-    />
-  );
-}
-
-function LabRoute({ lab, productEvents }: ProductPageProps) {
-  return (
-    <LabScreen
-      snapshot={lab.snapshot}
-      variants={lab.variantOverview}
-      events={productEvents}
-      liveStatus={lab.liveStatus}
-      onStartOptimization={lab.startOptimization}
-      onCreatePaperVariant={lab.createPaperVariant}
-      onRetireVariant={lab.retireVariant}
-      onPromoteVariant={lab.promoteVariant}
-      candleSource={lab.candleSource}
-      candleSourcePending={lab.candleSourcePending}
-      candleSourceError={lab.candleSourceError}
-      candleImportResult={lab.importResult}
-      onImportCandles={lab.importCandles}
-      studyConfig={lab.studyConfig}
-      onStudyConfigChange={lab.setStudyConfig}
-      studyPayload={lab.studyPayload}
-      preflight={lab.preflight}
-      preflightPending={lab.preflightPending}
-      preflightError={lab.preflightError}
-      tuningRun={lab.tuningRun}
-    />
-  );
-}
-
-function OperationsRoute({ dashboard, controls }: ProductPageProps) {
-  return <OperationsView status={dashboard.status} controls={controls} />;
-}
-
-interface AppHeaderProps {
-  readonly activeView: ProductView;
-  readonly lastMessageAt: string | null;
-  readonly onViewChange: (view: ProductView) => void;
-}
-
-function AppHeader({ activeView, lastMessageAt, onViewChange }: AppHeaderProps) {
-  return (
-    <header className="dashboard-header">
-      <div className="app-title">
-        <h1>Harbor</h1>
-        <ProductNav activeView={activeView} views={APP_VIEWS} onViewChange={onViewChange} />
-      </div>
-      <HeartbeatIndicator lastMessageAt={lastMessageAt} />
-    </header>
-  );
 }
 
 function dashboardWindow(now: Date) {

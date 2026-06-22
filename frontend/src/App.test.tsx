@@ -16,18 +16,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("renders the workflow from REST data as the first screen", async () => {
+test("renders the cockpit from REST data as the first screen", async () => {
   renderWithClient(<App chartAdapter={fakeChartAdapter()} />);
 
-  expect(await screen.findByRole("heading", { name: "Strategy Workflow" })).toBeInTheDocument();
-  expect(screen.getByRole("region", { name: "Data stage" })).toHaveTextContent("GBP_USD");
-  await waitFor(() =>
-    expect(screen.getByRole("region", { name: "Research stage" })).toHaveTextContent("ready")
-  );
-  await waitFor(() =>
-    expect(screen.getByRole("region", { name: "Candidate stage" })).toHaveTextContent("candidate-1")
-  );
-  expect(screen.getByLabelText("WebSocket heartbeat")).toHaveTextContent("stale");
+  expect(await screen.findByRole("heading", { name: "Cockpit" })).toBeInTheDocument();
+  expect((await screen.findAllByText("WAIT_SWEEP")).length).toBeGreaterThan(0);
+  expect(screen.getByLabelText("Account vitals")).toHaveTextContent("+60.00");
+  expect(screen.getByLabelText("Feed heartbeat")).toHaveTextContent("stale");
 });
 
 test("applies live websocket status and candle envelopes", async () => {
@@ -38,9 +33,8 @@ test("applies live websocket status and candle envelopes", async () => {
     destroy: vi.fn(),
   };
   renderWithClient(<App chartAdapter={fakeChartAdapter(handle)} />);
-  expect(await screen.findByRole("heading", { name: "Strategy Workflow" })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Dashboard" }));
-  expect(await screen.findByText("WAIT_SWEEP")).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Cockpit" })).toBeInTheDocument();
+  expect((await screen.findAllByText("WAIT_SWEEP")).length).toBeGreaterThan(0);
 
   fakeWebSocketInstances[0]?.emit({
     type: "status",
@@ -62,7 +56,7 @@ test("applies live websocket status and candle envelopes", async () => {
     },
   });
 
-  expect(await screen.findByText("WAIT_FVG")).toBeInTheDocument();
+  expect((await screen.findAllByText("WAIT_FVG")).length).toBeGreaterThan(0);
   await waitFor(() =>
     expect(handle.setCandles).toHaveBeenLastCalledWith(
       expect.arrayContaining([expect.objectContaining({ close: "1.20400000" })])
@@ -72,7 +66,7 @@ test("applies live websocket status and candle envelopes", async () => {
 
 test("renders Lab as a secondary view and applies variant live envelopes", async () => {
   renderWithClient(<App chartAdapter={fakeChartAdapter()} />);
-  expect(await screen.findByRole("heading", { name: "Strategy Workflow" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Cockpit" })).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Lab" }));
 
@@ -83,9 +77,9 @@ test("renders Lab as a secondary view and applies variant live envelopes", async
     "data-points",
     "0:1.25:1.50"
   );
-  expect(
-    screen.getByRole("row", { name: /1 candidate-1 1 20.00000000 1.50000000/i })
-  ).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Variant leaderboard" })).toHaveTextContent(
+    "candidate-1"
+  );
 
   fakeWebSocketInstances[0]?.emit({
     type: "variant_equity",
@@ -120,7 +114,7 @@ test("renders Lab as a secondary view and applies variant live envelopes", async
 test("renders guarded practice controls and posts enable requests", async () => {
   renderWithClient(<App chartAdapter={fakeChartAdapter()} />);
 
-  expect(await screen.findByRole("heading", { name: "Strategy Workflow" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Cockpit" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Operations" }));
   fireEvent.change(screen.getByLabelText("Confirmation"), {
     target: { value: "OANDA_PRACTICE" },

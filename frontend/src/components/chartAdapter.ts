@@ -36,27 +36,27 @@ function mountLightweightChart(container: HTMLElement): LiveChartHandle {
     height: 420,
     width: Math.max(container.clientWidth, 720),
     layout: {
-      background: { type: ColorType.Solid, color: "#ffffff" },
-      textColor: "#26312b",
+      background: { type: ColorType.Solid, color: "#060c0f" },
+      textColor: "#92a6ac",
     },
     grid: {
-      vertLines: { color: "#edf1ee" },
-      horzLines: { color: "#edf1ee" },
+      vertLines: { color: "#13202700" },
+      horzLines: { color: "#162229" },
     },
     rightPriceScale: {
-      borderColor: "#d6ded8",
+      borderColor: "#22343c",
     },
     timeScale: {
-      borderColor: "#d6ded8",
+      borderColor: "#22343c",
       timeVisible: true,
     },
   });
   const candles = chart.addSeries(CandlestickSeries, {
-    upColor: "#1b8a5a",
-    downColor: "#c33f32",
+    upColor: "#34c08b",
+    downColor: "#ea5a4e",
     borderVisible: false,
-    wickUpColor: "#1b8a5a",
-    wickDownColor: "#c33f32",
+    wickUpColor: "#34c08b",
+    wickDownColor: "#ea5a4e",
   });
   const markerPlugin: ISeriesMarkersPluginApi<Time> = createSeriesMarkers(candles, []);
   let levelLines: IPriceLine[] = [];
@@ -73,10 +73,10 @@ function mountLightweightChart(container: HTMLElement): LiveChartHandle {
         return;
       }
       levelLines = [
-        levelLine(candles, Number(levels.asia_high), "Asia high", "#c9781d"),
-        levelLine(candles, Number(levels.asia_low), "Asia low", "#c9781d"),
-        levelLine(candles, Number(levels.london_high), "London high", "#2867b2"),
-        levelLine(candles, Number(levels.london_low), "London low", "#2867b2"),
+        levelLine(candles, Number(levels.asia_high), "Asia high", "#f2ab3c"),
+        levelLine(candles, Number(levels.asia_low), "Asia low", "#f2ab3c"),
+        levelLine(candles, Number(levels.london_high), "London high", "#54a2e2"),
+        levelLine(candles, Number(levels.london_low), "London low", "#54a2e2"),
       ];
     },
     setMarkers: (markers) => {
@@ -84,13 +84,13 @@ function mountLightweightChart(container: HTMLElement): LiveChartHandle {
       markerPlugin.setMarkers(markerData(markers));
       overlayLines = [
         ...markers.fvgs.flatMap((fvg) => [
-          overlayLine(candles, Number(fvg.top), "FVG top", "#7b5f2a"),
-          overlayLine(candles, Number(fvg.bottom), "FVG bottom", "#7b5f2a"),
+          overlayLine(candles, Number(fvg.top), "FVG top", "#8a7440"),
+          overlayLine(candles, Number(fvg.bottom), "FVG bottom", "#8a7440"),
         ]),
         ...markers.signals.flatMap((signal) => [
-          overlayLine(candles, Number(signal.entry), "Entry", "#1b8a5a"),
-          overlayLine(candles, Number(signal.stop), "Stop", "#c33f32"),
-          overlayLine(candles, Number(signal.target), "Target", "#2867b2"),
+          overlayLine(candles, Number(signal.entry), "Entry", "#34c08b"),
+          overlayLine(candles, Number(signal.stop), "Stop", "#ea5a4e"),
+          overlayLine(candles, Number(signal.target), "Target", "#39d6cb"),
         ]),
       ];
     },
@@ -113,14 +113,14 @@ function markerData(markers: MarkersPayload): SeriesMarker<Time>[] {
     time: utcTimestamp(marker.ts),
     position: marker.direction === "bearish" ? "aboveBar" : "belowBar",
     shape: marker.direction === "bearish" ? "arrowDown" : "arrowUp",
-    color: marker.direction === "bearish" ? "#c33f32" : "#1b8a5a",
+    color: marker.direction === "bearish" ? "#ea5a4e" : "#34c08b",
     text: marker.label,
   }));
   const tradeMarkers: SeriesMarker<Time>[] = markers.trades.map((trade) => ({
     time: utcTimestamp(trade.exit_ts ?? trade.entry_ts),
     position: "atPriceMiddle",
     shape: "square",
-    color: trade.side === "short" ? "#c33f32" : "#1b8a5a",
+    color: trade.side === "short" ? "#ea5a4e" : "#34c08b",
     text: trade.exit_reason ?? "trade",
     price: Number(trade.exit_price ?? trade.entry_price),
   }));
