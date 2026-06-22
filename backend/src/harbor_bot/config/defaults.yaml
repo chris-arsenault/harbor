@@ -49,6 +49,8 @@ require_mss:
   value: false
 require_volume_spike:
   value: false
+swing_pivot_width:
+  value: 2
 exit_mode:
   value: bracket
 time_stop_minutes:

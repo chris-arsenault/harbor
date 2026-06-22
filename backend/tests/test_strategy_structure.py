@@ -21,47 +21,29 @@ from harbor_bot.strategy.structure import mss_confirmed, volume_spike
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "backtester"
 TS = datetime(2026, 1, 15, 14, 0, tzinfo=UTC)
 
-# Index 1 holds the pre-sweep swing high (1.1020); index 2 is the bullish low sweep.
-_BULLISH_HISTORY = [
-    ClosedCandle(
-        "EUR_USD", TS, Decimal("1.1010"), Decimal("1.1010"), Decimal("1.0990"), Decimal("1.1000"), 1
-    ),
-    ClosedCandle(
-        "EUR_USD",
-        TS + timedelta(minutes=1),
-        Decimal("1.1005"),
-        Decimal("1.1020"),
-        Decimal("1.0995"),
-        Decimal("1.1005"),
-        1,
-    ),
-    ClosedCandle(
-        "EUR_USD",
-        TS + timedelta(minutes=2),
-        Decimal("1.1000"),
-        Decimal("1.1000"),
-        Decimal("1.0980"),
-        Decimal("1.0990"),
-        1,
-    ),
-    ClosedCandle(
-        "EUR_USD",
-        TS + timedelta(minutes=3),
-        Decimal("1.1010"),
-        Decimal("1.1015"),
-        Decimal("1.0985"),
-        Decimal("1.1010"),
-        1,
-    ),
-    ClosedCandle(
-        "EUR_USD",
-        TS + timedelta(minutes=4),
-        Decimal("1.1025"),
-        Decimal("1.1030"),
-        Decimal("1.1005"),
-        Decimal("1.1025"),
-        1,
-    ),
+
+def _bar(index: int, *, high: str, low: str, close: str) -> ClosedCandle:
+    return ClosedCandle(
+        instrument="EUR_USD",
+        ts=TS + timedelta(minutes=index),
+        o=Decimal(close),
+        h=Decimal(high),
+        low=Decimal(low),
+        c=Decimal(close),
+        volume=1,
+    )
+
+
+# Index 2 is a fractal swing high (1.1020, width 2); index 5 is the bullish low sweep.
+_BULLISH_PIVOT = [
+    _bar(0, high="1.1005", low="1.0995", close="1.1000"),
+    _bar(1, high="1.1010", low="1.1000", close="1.1005"),
+    _bar(2, high="1.1020", low="1.1010", close="1.1015"),
+    _bar(3, high="1.1012", low="1.1002", close="1.1008"),
+    _bar(4, high="1.1008", low="1.0998", close="1.1003"),
+    _bar(5, high="1.1000", low="1.0980", close="1.0990"),
+    _bar(6, high="1.1015", low="1.1005", close="1.1010"),
+    _bar(7, high="1.1025", low="1.1015", close="1.1022"),
 ]
 
 
@@ -76,59 +58,48 @@ def test_apply_params_toggles_require_mss() -> None:
     assert apply_params_to_strategy_config(base, {"require_mss": "false"}).require_mss is False
 
 
-def test_bullish_mss_unconfirmed_until_swing_high_breaks() -> None:
-    sweep = _sweep(Bias.BULLISH, index=2)
+def test_bullish_mss_requires_break_of_a_real_swing_high() -> None:
+    sweep = _sweep(Bias.BULLISH, index=5)
 
-    # Through index 3 the close (1.1010) has not broken the swing high (1.1020).
+    # Through index 6 the close (1.1010) has not broken the swing-high pivot (1.1020).
     assert (
-        mss_confirmed(_BULLISH_HISTORY[:4], sweep=sweep, current_index=3, config=_config()) is False
+        mss_confirmed(_BULLISH_PIVOT[:7], sweep=sweep, current_index=6, config=_config()) is False
     )
-    # Index 4 closes at 1.1025, breaking structure.
-    assert mss_confirmed(_BULLISH_HISTORY, sweep=sweep, current_index=4, config=_config()) is True
+    # Index 7 closes at 1.1022, breaking the pivot.
+    assert mss_confirmed(_BULLISH_PIVOT, sweep=sweep, current_index=7, config=_config()) is True
 
 
-def test_bearish_mss_confirms_on_swing_low_break() -> None:
+def test_bearish_mss_requires_break_of_a_real_swing_low() -> None:
     history = [
-        ClosedCandle(
-            "EUR_USD",
-            TS,
-            Decimal("1.1000"),
-            Decimal("1.1010"),
-            Decimal("1.0990"),
-            Decimal("1.1000"),
-            1,
-        ),
-        ClosedCandle(
-            "EUR_USD",
-            TS + timedelta(minutes=1),
-            Decimal("1.1005"),
-            Decimal("1.1015"),
-            Decimal("1.0980"),
-            Decimal("1.1000"),
-            1,
-        ),
-        ClosedCandle(
-            "EUR_USD",
-            TS + timedelta(minutes=2),
-            Decimal("1.1010"),
-            Decimal("1.1030"),
-            Decimal("1.1000"),
-            Decimal("1.1010"),
-            1,
-        ),
-        ClosedCandle(
-            "EUR_USD",
-            TS + timedelta(minutes=3),
-            Decimal("1.0990"),
-            Decimal("1.1005"),
-            Decimal("1.0975"),
-            Decimal("1.0975"),
-            1,
-        ),
+        _bar(0, high="1.1010", low="1.1000", close="1.1005"),
+        _bar(1, high="1.1008", low="1.0998", close="1.1003"),
+        _bar(2, high="1.1005", low="1.0985", close="1.0990"),  # swing-low pivot (1.0985)
+        _bar(3, high="1.1007", low="1.0995", close="1.1000"),
+        _bar(4, high="1.1009", low="1.0998", close="1.1004"),
+        _bar(5, high="1.1030", low="1.1010", close="1.1015"),  # bearish high sweep
+        _bar(6, high="1.1020", low="1.0990", close="1.0992"),  # not yet below 1.0985
+        _bar(7, high="1.1000", low="1.0980", close="1.0982"),  # closes below the pivot
     ]
-    sweep = _sweep(Bias.BEARISH, index=2)
+    sweep = _sweep(Bias.BEARISH, index=5)
 
-    assert mss_confirmed(history, sweep=sweep, current_index=3, config=_config()) is True
+    assert mss_confirmed(history[:7], sweep=sweep, current_index=6, config=_config()) is False
+    assert mss_confirmed(history, sweep=sweep, current_index=7, config=_config()) is True
+
+
+def test_mss_unconfirmed_without_a_swing_pivot() -> None:
+    # Monotonic rise before the sweep: no fractal swing high exists to break.
+    rising = [
+        _bar(0, high="1.1000", low="1.0990", close="1.0995"),
+        _bar(1, high="1.1010", low="1.1000", close="1.1005"),
+        _bar(2, high="1.1020", low="1.1010", close="1.1015"),
+        _bar(3, high="1.1030", low="1.1020", close="1.1025"),
+        _bar(4, high="1.1040", low="1.1030", close="1.1035"),
+        _bar(5, high="1.1005", low="1.0980", close="1.0990"),  # low sweep
+        _bar(6, high="1.1060", low="1.1030", close="1.1055"),  # high close, but no prior pivot
+    ]
+    sweep = _sweep(Bias.BULLISH, index=5)
+
+    assert mss_confirmed(rising, sweep=sweep, current_index=6, config=_config()) is False
 
 
 def test_default_config_does_not_require_volume_spike() -> None:
