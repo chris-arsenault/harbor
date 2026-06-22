@@ -27,6 +27,7 @@ import {
   startOptimization,
   updateConfig,
 } from "./client";
+import { fetchEdgeStudy } from "./research";
 import { createLiveConnection, liveWebSocketUrl } from "./live";
 import type { FlattenResult, OptimizationStartPayload, WebSocketEnvelope } from "./types";
 
@@ -124,6 +125,13 @@ export function useLabStudyQuery(studyId: number | null) {
     },
     enabled: studyId !== null,
     refetchInterval: 5_000,
+  });
+}
+
+export function useEdgeStudyQuery(instrument: string, horizon?: number) {
+  return useQuery({
+    queryKey: ["edge-study", instrument, horizon],
+    queryFn: () => fetchEdgeStudy({ instrument, horizon }),
   });
 }
 

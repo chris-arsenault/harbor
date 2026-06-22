@@ -42,6 +42,8 @@ from harbor_bot.persistence import (
     variant_repository,
 )
 from harbor_bot.persistence.database import create_engine
+from harbor_bot.research.edge import DEFAULT_HORIZON
+from harbor_bot.research.service import ResearchService
 from harbor_bot.settings import Settings, redact_secret_text
 from harbor_bot.strategy.models import InstrumentRules, strategy_config_from_defaults
 
@@ -84,6 +86,10 @@ def get_config_service(connection: HTTPConnection) -> ConfigService:
     return connection.app.state.config_service
 
 
+def get_research_service(connection: HTTPConnection) -> ResearchService:
+    return connection.app.state.research_service
+
+
 def get_control_service(connection: HTTPConnection) -> Any:
     service = connection.app.state.control_service
     if service is None:
@@ -107,6 +113,7 @@ PAPER_FORWARD_SERVICE_DEPENDENCY = Depends(get_paper_forward_service)
 PRODUCT_QUERY_SERVICE_DEPENDENCY = Depends(get_product_query_service)
 CANDLE_SOURCE_SERVICE_DEPENDENCY = Depends(get_candle_source_service)
 CONFIG_SERVICE_DEPENDENCY = Depends(get_config_service)
+RESEARCH_SERVICE_DEPENDENCY = Depends(get_research_service)
 CONTROL_SERVICE_DEPENDENCY = Depends(get_control_service)
 WEBSOCKET_HUB_DEPENDENCY = Depends(get_websocket_hub)
 READINESS_CHECKER_DEPENDENCY = Depends(get_readiness_checker)
@@ -125,6 +132,7 @@ def create_app(
     product_query_service: Any | None = None,
     candle_source_service: CandleSourceService | None = None,
     config_service: ConfigService | None = None,
+    research_service: ResearchService | None = None,
     control_service: Any | None = None,
     websocket_hub: WebSocketHub | None = None,
     readiness_checker: Any | None = None,
@@ -149,6 +157,7 @@ def create_app(
         or product_query_service is None
         or candle_source_service is None
         or config_service is None
+        or research_service is None
         or readiness_checker is None
     ):
         persistence_engine = create_engine(app.state.settings)
@@ -189,6 +198,9 @@ def create_app(
             defaults=load_default_config(),
         )
     app.state.config_service = config_service
+    if research_service is None:
+        research_service = ResearchService(persistence_engine=persistence_engine)
+    app.state.research_service = research_service
     if paper_forward_service is None:
         strategy_config = strategy_config_from_defaults(load_default_config())
         paper_forward_service = PaperForwardService(
@@ -327,6 +339,14 @@ def create_app(
                 }
             )
         return _jsonable(await service.get_events(**request))
+
+    @app.get("/api/research/edge")
+    async def read_edge_study(
+        instrument: str,
+        horizon: int = DEFAULT_HORIZON,
+        service: ResearchService = RESEARCH_SERVICE_DEPENDENCY,
+    ) -> dict[str, Any]:
+        return await service.edge_study(instrument=instrument, horizon=horizon)
 
     @app.get("/api/trades")
     async def read_trade_journal(
