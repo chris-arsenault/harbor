@@ -135,6 +135,31 @@ async def get_candle_coverage(
     }
 
 
+async def get_prior_day_range(
+    connection: AsyncConnection,
+    *,
+    instrument: str,
+    day: date,
+) -> dict[str, Decimal] | None:
+    """High/low of the prior UTC calendar day's complete candles, for a
+    previous-day-high/low reference line on the chart."""
+    prior = day - timedelta(days=1)
+    result = await connection.execute(
+        select(
+            func.max(candles.c.h).label("high"),
+            func.min(candles.c.l).label("low"),
+        ).where(
+            candles.c.instrument == instrument,
+            func.date(candles.c.ts) == prior,
+            candles.c.complete.is_(True),
+        )
+    )
+    row = result.mappings().one()
+    if row["high"] is None or row["low"] is None:
+        return None
+    return {"high": row["high"], "low": row["low"]}
+
+
 async def get_bid_ask_candle_count(
     connection: AsyncConnection,
     *,

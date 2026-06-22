@@ -27,6 +27,8 @@ export interface SessionLevelSnapshot {
   asia_low: string;
   london_high: string;
   london_low: string;
+  prev_day_high?: string | null;
+  prev_day_low?: string | null;
   swept_levels: string[];
   taken_levels: string[];
 }

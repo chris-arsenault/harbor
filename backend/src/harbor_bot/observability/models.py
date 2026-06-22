@@ -41,6 +41,8 @@ class SessionLevelSnapshot(ObservabilityModel):
     asia_low: Decimal
     london_high: Decimal
     london_low: Decimal
+    prev_day_high: Decimal | None = None
+    prev_day_low: Decimal | None = None
     swept_levels: tuple[str, ...] = Field(default_factory=tuple)
     taken_levels: tuple[str, ...] = Field(default_factory=tuple)
 

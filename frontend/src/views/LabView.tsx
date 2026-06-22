@@ -10,6 +10,7 @@ import type { OptimizationPreflightResponse } from "../api/optimizerTypes";
 import { EmptyState, Notice, Panel, ViewHead } from "../ui/primitives";
 import { CandleSource } from "./lab/CandleSource";
 import { EdgeStudy } from "./lab/EdgeStudy";
+import { SearchSpacePanel } from "./lab/SearchSpace";
 import { StudyResults } from "./lab/StudyResults";
 import { Workbench, type TuningRunView } from "./lab/Workbench";
 
@@ -62,6 +63,7 @@ export function LabView({ model }: { readonly model: LabViewModel }) {
         canStart={coverageCount > 0}
         onStartOptimization={model.onStartOptimization}
       />
+      <SearchSpacePanel preflight={model.preflight} />
       {model.snapshot ? (
         <StudyResults
           snapshot={model.snapshot}

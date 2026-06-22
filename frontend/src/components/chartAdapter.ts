@@ -72,12 +72,19 @@ function mountLightweightChart(container: HTMLElement): LiveChartHandle {
       if (levels === null) {
         return;
       }
-      levelLines = [
+      const lines = [
         levelLine(candles, Number(levels.asia_high), "Asia high", "#f2ab3c"),
         levelLine(candles, Number(levels.asia_low), "Asia low", "#f2ab3c"),
         levelLine(candles, Number(levels.london_high), "London high", "#54a2e2"),
         levelLine(candles, Number(levels.london_low), "London low", "#54a2e2"),
       ];
+      if (levels.prev_day_high != null) {
+        lines.push(levelLine(candles, Number(levels.prev_day_high), "PDH", "#b07cd6"));
+      }
+      if (levels.prev_day_low != null) {
+        lines.push(levelLine(candles, Number(levels.prev_day_low), "PDL", "#b07cd6"));
+      }
+      levelLines = lines;
     },
     setMarkers: (markers) => {
       overlayLines = removePriceLines(candles, overlayLines);

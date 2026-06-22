@@ -84,12 +84,27 @@ def run(awaitable: Any) -> Any:
     return asyncio.run(awaitable)
 
 
+class _FakeMappings:
+    @staticmethod
+    def one() -> dict[str, None]:
+        return {"high": None, "low": None}
+
+
+class _FakeResult:
+    @staticmethod
+    def mappings() -> _FakeMappings:
+        return _FakeMappings()
+
+
 class FakeConnection:
     async def __aenter__(self) -> "FakeConnection":
         return self
 
     async def __aexit__(self, *_args: object) -> None:
         return None
+
+    async def execute(self, *_args: object, **_kwargs: object) -> _FakeResult:
+        return _FakeResult()
 
 
 class FakeEngine:

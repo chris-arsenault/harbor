@@ -18,6 +18,7 @@ from harbor_bot.observability.models import (
     TradeMarker,
 )
 from harbor_bot.persistence import event_repository, observability_repository
+from harbor_bot.persistence.market_repository import get_prior_day_range
 from harbor_bot.settings import Settings
 from harbor_bot.strategy.models import StrategyConfig, strategy_config_from_defaults
 from harbor_bot.strategy.sessions import session_windows_for_date
@@ -107,13 +108,14 @@ class ObservabilityService:
                 date=date,
                 instrument=instrument,
             )
+            if row is None:
+                return None
             sweeps = await self._repository.list_sweeps_for_date(
                 connection,
                 date=date,
                 instrument=instrument,
             )
-        if row is None:
-            return None
+            prior_day = await get_prior_day_range(connection, instrument=instrument, day=date)
 
         return SessionLevelSnapshot(
             date=row["date"],
@@ -122,6 +124,8 @@ class ObservabilityService:
             asia_low=row["asia_low"],
             london_high=row["london_high"],
             london_low=row["london_low"],
+            prev_day_high=prior_day["high"] if prior_day else None,
+            prev_day_low=prior_day["low"] if prior_day else None,
             swept_levels=_ordered_level_names(sweeps),
             taken_levels=(),
         )
