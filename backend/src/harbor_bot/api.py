@@ -360,6 +360,25 @@ def create_app(
     ) -> dict[str, Any]:
         return await service.edge_study(instrument=instrument, horizon=horizon)
 
+    @app.post("/api/research/edge/scan")
+    async def scan_edge(
+        payload: dict[str, Any],
+        service: ResearchService = RESEARCH_SERVICE_DEPENDENCY,
+    ) -> dict[str, Any]:
+        raw_instruments = payload.get("instruments")
+        instruments = (
+            tuple(str(i).strip().upper() for i in raw_instruments)
+            if isinstance(raw_instruments, list)
+            else None
+        )
+        raw_horizons = payload.get("horizons")
+        horizons = (
+            tuple(int(h) for h in raw_horizons)
+            if isinstance(raw_horizons, list)
+            else (15, 30, 60, 120)
+        )
+        return await service.edge_scan(instruments=instruments, horizons=horizons)
+
     @app.get("/api/trades")
     async def read_trade_journal(
         start: OptionalFromQuery = None,

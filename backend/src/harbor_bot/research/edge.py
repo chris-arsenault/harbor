@@ -158,6 +158,28 @@ def _t_stat(mean: Decimal, stddev: Decimal, count: int) -> Decimal:
     return mean / standard_error
 
 
+@dataclass(frozen=True)
+class EdgeScanRow:
+    instrument: str
+    horizon: int
+    total_sweeps: int
+    overall: ForwardSummary
+    has_edge: bool
+    best_conditional: ConditionalEdge | None
+
+    def to_jsonable(self) -> dict[str, Any]:
+        return {
+            "instrument": self.instrument,
+            "horizon": self.horizon,
+            "total_sweeps": self.total_sweeps,
+            "overall": self.overall.to_jsonable(),
+            "has_edge": self.has_edge,
+            "best_conditional": (
+                self.best_conditional.to_jsonable() if self.best_conditional else None
+            ),
+        }
+
+
 def run_edge_study(
     candles: list[ClosedCandle],
     *,
@@ -195,6 +217,46 @@ def run_edge_study(
         by_session=_conditional("session", observations, lambda obs: _session_for(obs.level_name)),
         by_volatility=_conditional("volatility", observations, _volatility_bucket(observations)),
     )
+
+
+def run_edge_scan(
+    candles: list[ClosedCandle],
+    *,
+    instrument: str,
+    config: StrategyConfig,
+    instrument_rules: InstrumentRules,
+    horizons: tuple[int, ...] = (15, 30, 60),
+    atr_window: int = DEFAULT_ATR_WINDOW,
+) -> list[EdgeScanRow]:
+    """Run the edge study at multiple horizons, reusing sweep detection."""
+    ordered = tuple(
+        sorted((require_closed_candle(candle) for candle in candles), key=lambda c: c.ts)
+    )
+    sweeps = _collect_sweeps(
+        ordered, instrument=instrument, config=config, instrument_rules=instrument_rules
+    )
+    rows: list[EdgeScanRow] = []
+    for horizon in horizons:
+        observations = _observations_with_forward(
+            sweeps,
+            candles=ordered,
+            horizon=horizon,
+            atr_window=atr_window,
+            instrument_rules=instrument_rules,
+        )
+        overall = summarize([obs.reversal_pips for obs in observations])
+        conditionals = _all_conditionals(observations)
+        rows.append(
+            EdgeScanRow(
+                instrument=instrument,
+                horizon=horizon,
+                total_sweeps=len(sweeps),
+                overall=overall,
+                has_edge=has_edge(overall),
+                best_conditional=_best_conditional(conditionals),
+            )
+        )
+    return rows
 
 
 def _collect_sweeps(
@@ -286,6 +348,23 @@ def _conditional(
             )
         )
     return tuple(edges)
+
+
+def _all_conditionals(observations: list[_Observation]) -> list[ConditionalEdge]:
+    edges: list[ConditionalEdge] = []
+    edges.extend(_conditional("level", observations, lambda obs: obs.level_name.value))
+    edges.extend(_conditional("session", observations, lambda obs: _session_for(obs.level_name)))
+    edges.extend(_conditional("volatility", observations, _volatility_bucket(observations)))
+    return edges
+
+
+def _best_conditional(edges: list[ConditionalEdge]) -> ConditionalEdge | None:
+    candidates = [e for e in edges if e.has_edge]
+    if not candidates:
+        candidates = [e for e in edges if e.summary.count >= MIN_SAMPLES]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda e: e.summary.t_stat)
 
 
 def _volatility_bucket(observations: list[_Observation]) -> Any:

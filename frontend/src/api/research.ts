@@ -1,4 +1,4 @@
-import { apiGet } from "./client";
+import { apiGet, apiPost } from "./client";
 
 export interface ForwardSummary {
   count: number;
@@ -38,4 +38,26 @@ export function fetchEdgeStudy(params: {
     search.set("horizon", String(params.horizon));
   }
   return apiGet<EdgeStudyResult>(`/api/research/edge?${search.toString()}`);
+}
+
+export interface EdgeScanRow {
+  instrument: string;
+  horizon: number;
+  total_sweeps: number;
+  overall: ForwardSummary;
+  has_edge: boolean;
+  best_conditional: ConditionalEdge | null;
+}
+
+export interface EdgeScanResult {
+  instruments: string[];
+  horizons: number[];
+  results: EdgeScanRow[];
+}
+
+export function fetchEdgeScan(payload: {
+  instruments?: string[];
+  horizons?: number[];
+}): Promise<EdgeScanResult> {
+  return apiPost<EdgeScanResult>("/api/research/edge/scan", payload);
 }

@@ -16,8 +16,8 @@ from harbor_bot.backtester.service import (
     select_latest_complete_candle_window,
 )
 from harbor_bot.config.defaults import load_default_config
-from harbor_bot.instruments import default_instrument_rules
-from harbor_bot.research.edge import DEFAULT_HORIZON, run_edge_study
+from harbor_bot.instruments import RESEARCH_INSTRUMENTS, default_instrument_rules
+from harbor_bot.research.edge import DEFAULT_HORIZON, run_edge_scan, run_edge_study
 from harbor_bot.strategy.models import strategy_config_from_defaults
 
 DEFAULT_RESEARCH_WINDOW_DAYS = 90
@@ -64,3 +64,53 @@ class ResearchService:
             horizon=horizon,
         )
         return result.to_jsonable()
+
+    async def edge_scan(
+        self,
+        *,
+        instruments: tuple[str, ...] | None = None,
+        horizons: tuple[int, ...] = (15, 30, 60, 120),
+        window_days: int = DEFAULT_RESEARCH_WINDOW_DAYS,
+    ) -> dict[str, Any]:
+        resolved = instruments or RESEARCH_INSTRUMENTS
+        selector = self.window_selector or select_latest_complete_candle_window
+        reader = self.candle_reader or read_persisted_candle_records
+        all_rows: list[dict[str, Any]] = []
+
+        for instrument in resolved:
+            config = replace(
+                strategy_config_from_defaults(load_default_config()),
+                instrument=instrument,
+            )
+            rules = default_instrument_rules(instrument)
+            window = await selector(
+                self.persistence_engine,
+                instrument=instrument,
+                required_days=window_days,
+            )
+            if window is None:
+                continue
+            records = await reader(
+                self.persistence_engine,
+                instrument=instrument,
+                start=window["from"],
+                end=window["to"],
+            )
+            candles = candles_from_records(records, default_instrument=instrument)
+            if not candles:
+                continue
+            rows = run_edge_scan(
+                candles,
+                instrument=instrument,
+                config=config,
+                instrument_rules=rules,
+                horizons=horizons,
+            )
+            all_rows.extend(row.to_jsonable() for row in rows)
+
+        all_rows.sort(key=lambda r: float(r["overall"]["t_stat"]), reverse=True)
+        return {
+            "instruments": list(resolved),
+            "horizons": list(horizons),
+            "results": all_rows,
+        }
