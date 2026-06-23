@@ -754,9 +754,18 @@ async def _select_persisted_candle_range(
     optimizer_config = research_optimizer_config(
         _optimizer_config_from_payload(payload.get("optimizer_config", {}))
     )
-    required_days = (
+    walk_forward_days = (
         optimizer_config.walk_forward.train_window_days
         + optimizer_config.walk_forward.oos_window_days
+    )
+    # The research protocol needs min_evaluable_days (default 120) which is
+    # stricter than the walk-forward split alone (80).  Request at least that
+    # many trading dates so the candle window is large enough.
+    from harbor_bot.optimizer.research_protocol import DEFAULT_RESEARCH_PROTOCOL_CONFIG
+
+    required_days = max(
+        walk_forward_days,
+        DEFAULT_RESEARCH_PROTOCOL_CONFIG.min_evaluable_days,
     )
     raw_range = payload.get("candle_range")
     if isinstance(raw_range, Mapping):

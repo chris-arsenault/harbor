@@ -234,38 +234,48 @@ async def latest_complete_candle_window(
     instrument: str,
     required_days: int,
 ) -> dict[str, Any] | None:
-    """Return the full persisted date range when at least *required_days* trading
-    days exist.  Forex markets close on weekends, so only distinct dates with
-    complete candles are counted — calendar-day contiguity is not required.
+    """Select the most recent trading dates that cover *required_days* with a
+    surplus for non-evaluable days.
 
-    The full range (not just the most recent N days) is returned so the
-    walk-forward builder receives all available data and can maximise the
-    number of evaluable session days.
+    Forex markets close on weekends, so calendar-day contiguity is not
+    required — only distinct dates with complete candles are counted.  A 50%
+    surplus is fetched so the walk-forward builder has room for days that fail
+    strict evaluability, without loading the entire history.
     """
     if required_days <= 0:
         msg = "required_days must be positive"
         raise ValueError(msg)
 
-    coverage = await get_candle_coverage(connection, instrument=instrument)
-    if coverage["candle_count"] <= 0 or coverage["from"] is None:
-        return None
-
+    fetch_limit = int(required_days * 1.5)
     result = await connection.execute(
-        select(func.count(func.distinct(func.date(candles.c.ts)))).where(
-            candles.c.instrument == instrument, candles.c.complete.is_(True)
-        )
+        select(func.date(candles.c.ts).label("candle_date"))
+        .where(candles.c.instrument == instrument, candles.c.complete.is_(True))
+        .group_by(func.date(candles.c.ts))
+        .order_by(func.date(candles.c.ts).desc())
+        .limit(fetch_limit)
     )
-    trading_days = result.scalar_one()
-    if trading_days < required_days:
+    dates = [row["candle_date"] for row in result.mappings()]
+    if len(dates) < required_days:
         return None
 
+    midnight = datetime.min.time()
+    day_after_latest = _to_date(dates[0]) + timedelta(days=1)
+    latest_ts = datetime.combine(day_after_latest, midnight, tzinfo=UTC) - timedelta(microseconds=1)
+    earliest_ts = datetime.combine(_to_date(dates[-1]), midnight, tzinfo=UTC)
+    coverage = await get_candle_coverage(connection, instrument=instrument)
     return {
         "instrument": instrument,
-        "from": coverage["from"],
-        "to": coverage["to"],
+        "from": earliest_ts,
+        "to": latest_ts,
         "required_days": required_days,
         "coverage": coverage,
     }
+
+
+def _to_date(value: Any) -> date:
+    if isinstance(value, date):
+        return value
+    return datetime.fromisoformat(str(value)).date()
 
 
 async def upsert_session_levels(

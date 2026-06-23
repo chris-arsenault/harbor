@@ -110,7 +110,7 @@ async def test_optimizer_service_queues_persisted_source_with_background_tasks()
     async def selector(engine, *, instrument: str, required_days: int) -> dict[str, Any]:
         assert engine == "engine"
         assert instrument == "GBP_USD"
-        assert required_days == 80
+        assert required_days == 120
         return {
             "instrument": instrument,
             "from": datetime(2026, 1, 15, tzinfo=UTC),
@@ -204,7 +204,7 @@ async def test_optimizer_service_rejects_persisted_source_below_research_data_fl
     async def selector(engine, *, instrument: str, required_days: int) -> dict[str, Any]:
         assert engine == "engine"
         assert instrument == "EUR_USD"
-        assert required_days == 80
+        assert required_days == 120
         return {
             "instrument": instrument,
             "from": datetime(2026, 1, 15, tzinfo=UTC),
@@ -256,7 +256,7 @@ async def test_optimizer_service_preflights_persisted_study_shape_and_baseline()
         ]
 
     async def selector(engine, *, instrument: str, required_days: int) -> dict[str, Any]:
-        assert required_days == 80
+        assert required_days == 120
         return {
             "instrument": instrument,
             "from": datetime(2026, 1, 15, tzinfo=UTC),
