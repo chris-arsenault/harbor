@@ -294,6 +294,7 @@ class LabStudySnapshot:
     study_id: int
     status: str
     trial_count: int
+    total_trial_count: int
     candidate_count: int
     paper_variant_count: int
     created_ts: datetime

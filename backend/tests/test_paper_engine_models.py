@@ -138,6 +138,7 @@ def test_variant_trade_equity_stats_leaderboard_and_snapshot_are_jsonable() -> N
         study_id=1,
         status="completed",
         trial_count=4,
+        total_trial_count=96,
         candidate_count=1,
         paper_variant_count=1,
         created_ts=datetime(2026, 1, 15, 13, 0, tzinfo=UTC),

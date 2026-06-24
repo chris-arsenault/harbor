@@ -74,19 +74,33 @@ async def complete_optimization_run(
             walkforward_json=walkforward_json,
             status=OptimizationStatus.COMPLETED,
         )
+        existing = await _existing_trial_nos(connection, study_id)
         trial_ids: dict[int, int] = {}
         for trial in trials:
-            trial_ids[trial.trial_no] = await append_optimization_trial(
-                connection,
-                study_id=study_id,
-                trial=trial,
-            )
+            if trial.trial_no in existing:
+                trial_ids[trial.trial_no] = existing[trial.trial_no]
+            else:
+                trial_ids[trial.trial_no] = await append_optimization_trial(
+                    connection,
+                    study_id=study_id,
+                    trial=trial,
+                )
         for candidate in candidates:
             await append_candidate_variant(
                 connection,
                 candidate=candidate,
                 source_trial_id=trial_ids[candidate.source_trial_no],
             )
+
+
+async def persist_trial_progress(
+    engine: AsyncEngine,
+    *,
+    study_id: int,
+    trial: TrialRecord,
+) -> None:
+    async with transaction(engine) as connection:
+        await append_optimization_trial(connection, study_id=study_id, trial=trial)
 
 
 async def fail_optimization_run(
@@ -241,6 +255,13 @@ async def get_optimization_study(
     data["trials"] = [dict(row) for row in trial_result.mappings()]
     data["variants"] = [dict(row) for row in variant_result.mappings()]
     return data
+
+
+async def _existing_trial_nos(connection: AsyncConnection, study_id: int) -> dict[int, int]:
+    result = await connection.execute(
+        select(opt_trials.c.trial_no, opt_trials.c.id).where(opt_trials.c.study_id == study_id)
+    )
+    return {int(row["trial_no"]): int(row["id"]) for row in result.mappings()}
 
 
 def decimal_score(value: str) -> Decimal:

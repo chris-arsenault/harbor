@@ -58,6 +58,7 @@ class LabService:
                 study_id=int(study["id"]),
                 status=study["status"],
                 trial_count=int(study["trial_count"]),
+                total_trial_count=_total_trial_count(study),
                 candidate_count=int(study["candidate_count"]),
                 paper_variant_count=int(study["paper_variant_count"]),
                 created_ts=study["created_ts"],
@@ -182,6 +183,20 @@ def _candidate(row: dict[str, Any], *, instrument: str | None) -> CandidateScatt
         status=str(row.get("status") or ("pruned" if row["pruned"] else "completed")),
         failure_reason=row.get("failure_reason"),
     )
+
+
+def _total_trial_count(study: dict[str, Any]) -> int:
+    walkforward = study.get("walkforward_json")
+    if isinstance(walkforward, Mapping):
+        config = walkforward.get("research_protocol", {})
+        if isinstance(config, Mapping):
+            optimizer = config.get("optimizer_config", {})
+            if isinstance(optimizer, Mapping) and "trial_count" in optimizer:
+                return int(optimizer["trial_count"])
+    search = study.get("search_space_json")
+    if isinstance(search, Mapping) and "trial_count" in search:
+        return int(search["trial_count"])
+    return 96
 
 
 def _instrument_from_walkforward(walkforward: Any) -> str | None:

@@ -15,7 +15,7 @@ from harbor_bot.optimizer.models import (
     WalkForwardConfig,
 )
 from harbor_bot.optimizer.objective import candidate_gate_score, objective_score
-from harbor_bot.optimizer.runner import OptimizationRunResult, run_optimization
+from harbor_bot.optimizer.runner import OptimizationRunResult, TrialCallback, run_optimization
 from harbor_bot.optimizer.walkforward import StrategyDayStatus
 from harbor_bot.strategy.models import InstrumentRules, StrategyConfig
 from harbor_bot.strategy.sessions import (
@@ -80,6 +80,7 @@ def run_research_protocol(
     backtest_config: BacktestConfig,
     optimizer_config: OptimizationConfig,
     protocol_config: ResearchProtocolConfig = DEFAULT_RESEARCH_PROTOCOL_CONFIG,
+    on_trial: TrialCallback | None = None,
 ) -> ResearchProtocolResult:
     optimizer_config = research_optimizer_config(
         optimizer_config,
@@ -111,6 +112,7 @@ def run_research_protocol(
         backtest_config=backtest_config,
         optimizer_config=optimizer_config,
         backtest_runner=run_backtest,
+        on_trial=on_trial,
     )
     discovery_shortlist = _rank_discovery_candidates(
         discovery_result.trials,

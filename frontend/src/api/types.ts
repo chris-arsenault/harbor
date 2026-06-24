@@ -192,6 +192,7 @@ export interface LabStudyProgress {
   study_id: number;
   status: string;
   trial_count: number;
+  total_trial_count: number;
   candidate_count: number;
   paper_variant_count: number;
   created_ts: string;

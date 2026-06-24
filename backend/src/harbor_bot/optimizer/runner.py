@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -23,6 +24,8 @@ from harbor_bot.optimizer.robustness import calculate_robustness_score
 from harbor_bot.optimizer.search_space import sample_search_space
 from harbor_bot.strategy.models import InstrumentRules, StrategyConfig
 
+TrialCallback = Callable[[TrialRecord, int], None]
+
 
 @dataclass(frozen=True)
 class OptimizationRunResult:
@@ -41,11 +44,18 @@ def run_optimization(
     backtest_config: BacktestConfig,
     optimizer_config: OptimizationConfig,
     backtest_runner: BacktestRunner,
+    on_trial: TrialCallback | None = None,
 ) -> OptimizationRunResult:
     sampler = optuna.samplers.TPESampler(seed=optimizer_config.tpe_seed)
     pruner = optuna.pruners.MedianPruner()
     study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
     records: dict[int, TrialRecord] = {}
+    total = optimizer_config.trial_count
+
+    def _emit(record: TrialRecord) -> None:
+        records[record.trial_no] = record
+        if on_trial is not None:
+            on_trial(record, total)
 
     def objective(trial: optuna.trial.Trial) -> float:
         params = sample_search_space(trial, optimizer_config.search_space)
@@ -62,11 +72,13 @@ def run_optimization(
             optimization_score = candidate_gate_score(evaluation.score)
             trial.report(float(optimization_score), step=0)
             if trial.should_prune():
-                records[trial.number] = _record(
-                    trial.number,
-                    params,
-                    status=OptimizationStatus.PRUNED,
-                    pruned=True,
+                _emit(
+                    _record(
+                        trial.number,
+                        params,
+                        status=OptimizationStatus.PRUNED,
+                        pruned=True,
+                    )
                 )
                 raise optuna.TrialPruned()
 
@@ -91,29 +103,34 @@ def run_optimization(
                 out_of_sample_score=evaluation.score.out_of_sample_score,
                 robustness_score=robustness,
             )
-            records[trial.number] = TrialRecord(
+            record = TrialRecord(
                 trial_no=trial.number,
                 params=params,
                 score=score,
                 status=OptimizationStatus.COMPLETED,
             )
+            _emit(record)
             return float(candidate_gate_score(score))
         except InsufficientTradeCountError as exc:
-            records[trial.number] = _record(
-                trial.number,
-                params,
-                status=OptimizationStatus.PRUNED,
-                pruned=True,
-                failure_reason=str(exc),
+            _emit(
+                _record(
+                    trial.number,
+                    params,
+                    status=OptimizationStatus.PRUNED,
+                    pruned=True,
+                    failure_reason=str(exc),
+                )
             )
             raise optuna.TrialPruned() from None
         except Exception as exc:
-            records[trial.number] = _record(
-                trial.number,
-                params,
-                status=OptimizationStatus.FAILED,
-                pruned=False,
-                failure_reason=str(exc) or exc.__class__.__name__,
+            _emit(
+                _record(
+                    trial.number,
+                    params,
+                    status=OptimizationStatus.FAILED,
+                    pruned=False,
+                    failure_reason=str(exc) or exc.__class__.__name__,
+                )
             )
             raise
 

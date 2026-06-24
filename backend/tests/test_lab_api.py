@@ -147,6 +147,7 @@ class FakeLabService:
                 study_id=1,
                 status="completed",
                 trial_count=1,
+                total_trial_count=96,
                 candidate_count=1,
                 paper_variant_count=1,
                 created_ts=datetime(2026, 1, 15, 13, 0, tzinfo=UTC),

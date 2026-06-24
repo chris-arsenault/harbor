@@ -21,7 +21,7 @@ from harbor_bot.optimizer.research_protocol import (
     research_readiness,
     run_research_protocol,
 )
-from harbor_bot.optimizer.runner import OptimizationRunResult, run_optimization
+from harbor_bot.optimizer.runner import OptimizationRunResult, TrialCallback, run_optimization
 from harbor_bot.optimizer.walkforward import (
     WalkForwardWindow,
     build_walk_forward_windows,
@@ -37,6 +37,7 @@ from harbor_bot.persistence.optimization_repository import (
     append_optimization_run,
     complete_optimization_run,
     fail_optimization_run,
+    persist_trial_progress,
     start_optimization_run,
 )
 from harbor_bot.strategy.models import InstrumentRules, strategy_config_from_defaults
@@ -267,13 +268,23 @@ class OptimizerService:
         fallback_config = research_optimizer_config(
             _optimizer_config_from_payload(payload.get("optimizer_config", {}))
         )
+
+        loop = asyncio.get_event_loop()
+        engine = self.persistence_engine
+
+        def on_trial(record, _total):
+            asyncio.run_coroutine_threadsafe(
+                persist_trial_progress(engine, study_id=study_id, trial=record),
+                loop,
+            ).result()
+
         try:
             (
                 result,
                 optimizer_config,
                 protocol_report,
                 materialized_payload,
-            ) = await self._run_optimization(payload, offload=True)
+            ) = await self._run_optimization(payload, offload=True, on_trial=on_trial)
             await self.study_completer(
                 self.persistence_engine,
                 study_id=study_id,
@@ -305,6 +316,7 @@ class OptimizerService:
         payload: Mapping[str, Any],
         *,
         offload: bool = False,
+        on_trial: TrialCallback | None = None,
     ) -> tuple[OptimizationRunResult, OptimizationConfig, dict[str, Any] | None, dict[str, Any]]:
         payload = await _payload_with_persisted_candles(
             payload,
@@ -319,7 +331,9 @@ class OptimizerService:
         optimizer_config = request["optimizer_config"]
         if _is_persisted_candle_payload(payload):
             runner_kwargs = request["runner_kwargs"]
-            run_protocol = _research_protocol_runner(runner_kwargs, optimizer_config)
+            run_protocol = _research_protocol_runner(
+                runner_kwargs, optimizer_config, on_trial=on_trial
+            )
             protocol = await asyncio.to_thread(run_protocol) if offload else run_protocol()
             result = protocol.run_result
             protocol_report = protocol.report
@@ -428,6 +442,8 @@ def _requests_persisted_candles(payload: Mapping[str, Any]) -> bool:
 def _research_protocol_runner(
     runner_kwargs: Mapping[str, Any],
     optimizer_config: OptimizationConfig,
+    *,
+    on_trial: TrialCallback | None = None,
 ):
     def run() -> Any:
         return run_research_protocol(
@@ -436,6 +452,7 @@ def _research_protocol_runner(
             instrument_rules=runner_kwargs["instrument_rules"],
             backtest_config=runner_kwargs["backtest_config"],
             optimizer_config=optimizer_config,
+            on_trial=on_trial,
         )
 
     return run

@@ -26,9 +26,13 @@ export interface StudyTile {
 }
 
 export function studyTiles(study: LabStudyProgress): StudyTile[] {
+  const trialLabel =
+    study.total_trial_count > 0
+      ? `${study.trial_count}/${study.total_trial_count}`
+      : String(study.trial_count);
   return [
     { label: "Status", value: study.status },
-    { label: "Trials", value: String(study.trial_count) },
+    { label: "Trials", value: trialLabel },
     { label: "Candidates", value: String(study.candidate_count) },
     { label: "Paper variants", value: String(study.paper_variant_count) },
   ];
