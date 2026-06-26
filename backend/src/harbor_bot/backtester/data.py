@@ -67,8 +67,10 @@ def _candle_from_record(
         complete=True,
         bid_h=_optional_price(record.get("bid"), "h"),
         bid_low=_optional_price(record.get("bid"), "low", "l"),
+        bid_c=_optional_price(record.get("bid"), "c"),
         ask_h=_optional_price(record.get("ask"), "h"),
         ask_low=_optional_price(record.get("ask"), "low", "l"),
+        ask_c=_optional_price(record.get("ask"), "c"),
     )
 
 

@@ -37,7 +37,7 @@ def detect_sweep(
     buffer = instrument_rules.pips_to_price(config.sweep_buffer_pips)
 
     for level_name in _HIGH_LEVELS:
-        if config.one_trade_per_level and level_name in day_state.taken_levels:
+        if config.one_trade_per_level and _level_already_actionable(day_state, level_name):
             continue
         level_price = levels.price_for(level_name)
         if level_price is None:
@@ -54,7 +54,7 @@ def detect_sweep(
             )
 
     for level_name in _LOW_LEVELS:
-        if config.one_trade_per_level and level_name in day_state.taken_levels:
+        if config.one_trade_per_level and _level_already_actionable(day_state, level_name):
             continue
         level_price = levels.price_for(level_name)
         if level_price is None:
@@ -80,5 +80,17 @@ def mark_level_taken(day_state: DayState, level_name: LevelName) -> DayState:
     return replace(
         day_state,
         taken_levels=day_state.taken_levels | frozenset({level_name}),
+        swept_levels=day_state.swept_levels | frozenset({level_name}),
         active_sweep=None,
     )
+
+
+def mark_level_swept(day_state: DayState, level_name: LevelName) -> DayState:
+    return replace(
+        day_state,
+        swept_levels=day_state.swept_levels | frozenset({level_name}),
+    )
+
+
+def _level_already_actionable(day_state: DayState, level_name: LevelName) -> bool:
+    return level_name in day_state.taken_levels or level_name in day_state.swept_levels

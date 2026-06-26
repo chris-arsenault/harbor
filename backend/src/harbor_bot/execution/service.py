@@ -1,5 +1,6 @@
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
+from datetime import UTC, date
 from decimal import Decimal
 from typing import Any
 
@@ -19,6 +20,11 @@ from harbor_bot.strategy.models import (
     SessionLevels,
     StrategyConfig,
     require_closed_candle,
+)
+from harbor_bot.strategy.sessions import (
+    compute_session_levels,
+    session_windows_for_date,
+    trading_date_for_candle,
 )
 
 StrategyEvaluator = Callable[..., StrategyResult]
@@ -58,6 +64,8 @@ class PracticeExecutionService:
         self._base_strategy_config = base_strategy_config
         self._instrument_rules = instrument_rules
         self._strategy_evaluator = strategy_evaluator or self._default_strategy_evaluator
+        self._runtime: _PracticeStrategyRuntime | None = None
+        self._runtime_signature: tuple[object, ...] | None = None
 
     async def process_closed_candle(
         self,
@@ -80,29 +88,48 @@ class PracticeExecutionService:
                 connection,
                 confirmation_token=self._execution_config.confirmation_token,
             )
-            if not controls.trading_enabled:
-                return PracticeExecutionResult(skipped_reason="trading_disabled")
-            if controls.kill_switch_state.value != "clear":
-                return PracticeExecutionResult(skipped_reason="kill_switch")
-
             open_trades = await self._execution_repository.list_open_bot_trades(connection)
-            if len(open_trades) >= self._execution_config.max_open_positions:
-                return PracticeExecutionResult(skipped_reason="open_position")
-
+            if not controls.trading_enabled and not open_trades:
+                return PracticeExecutionResult(skipped_reason="trading_disabled")
+            if controls.kill_switch_state.value != "clear" and not open_trades:
+                return PracticeExecutionResult(skipped_reason="kill_switch")
             config = apply_params_to_strategy_config(
                 self._base_strategy_config,
                 dict(promoted["params"]),
             )
-            result = self._strategy_evaluator(
-                day_state=day_state or DayState(trading_date=candle.ts.date()),
-                candle=candle,
-                candle_history=candle_history or [candle],
-                candle_index=candle_index,
-                session_levels=session_levels,
+            runtime = self._runtime_for(
+                variant_id=int(promoted["id"]),
+                params=dict(promoted["params"]),
                 config=config,
-                instrument_rules=self._instrument_rules,
-                risk_context=risk_context or _default_risk_context(candle),
             )
+            resolved_risk_context = risk_context or await self._risk_context_for(
+                candle,
+                runtime=runtime,
+                config=config,
+            )
+            if resolved_risk_context is None:
+                return PracticeExecutionResult(skipped_reason="missing_risk_context")
+
+            if day_state is None or candle_history is None or session_levels is None:
+                result = runtime.evaluate(
+                    candle,
+                    has_open_position=bool(open_trades),
+                    config=config,
+                    instrument_rules=self._instrument_rules,
+                    risk_context=resolved_risk_context,
+                    strategy_evaluator=self._strategy_evaluator,
+                )
+            else:
+                result = self._strategy_evaluator(
+                    day_state=replace(day_state, has_open_position=bool(open_trades)),
+                    candle=candle,
+                    candle_history=candle_history,
+                    candle_index=candle_index,
+                    session_levels=session_levels,
+                    config=config,
+                    instrument_rules=self._instrument_rules,
+                    risk_context=resolved_risk_context,
+                )
 
             for decision in result.decisions:
                 if decision.kind == "flatten":
@@ -113,6 +140,13 @@ class PracticeExecutionService:
                     return PracticeExecutionResult(flatten_requested=True)
                 if decision.kind != "market_entry":
                     continue
+
+                if not controls.trading_enabled:
+                    return PracticeExecutionResult(skipped_reason="trading_disabled")
+                if controls.kill_switch_state.value != "clear":
+                    return PracticeExecutionResult(skipped_reason="kill_switch")
+                if len(open_trades) >= self._execution_config.max_open_positions:
+                    return PracticeExecutionResult(skipped_reason="open_position")
 
                 setup = decision.payload.get("setup")
                 if not isinstance(setup, MarketEntrySetup):
@@ -161,6 +195,41 @@ class PracticeExecutionService:
 
     def _default_strategy_evaluator(self, **kwargs: Any) -> StrategyResult:
         return evaluate_closed_candle(**kwargs)
+
+    def _runtime_for(
+        self,
+        *,
+        variant_id: int,
+        params: dict[str, Any],
+        config: StrategyConfig,
+    ) -> "_PracticeStrategyRuntime":
+        signature = (variant_id, tuple(sorted((str(k), str(v)) for k, v in params.items())))
+        if self._runtime is None or self._runtime_signature != signature:
+            self._runtime = _PracticeStrategyRuntime(config=config)
+            self._runtime_signature = signature
+        return self._runtime
+
+    async def _risk_context_for(
+        self,
+        candle: ClosedCandle,
+        *,
+        runtime: "_PracticeStrategyRuntime",
+        config: StrategyConfig,
+    ) -> RiskContext | None:
+        account = await self._oanda.get_account_summary()
+        trading_date = trading_date_for_candle(candle, config)
+        runtime.ensure_day(trading_date=trading_date, nav=account.nav)
+        spread_pips = _spread_pips(candle, self._instrument_rules)
+        if spread_pips is None:
+            # Without a real spread, fail entries closed via the spread guard
+            # rather than silently treating spread as zero.
+            spread_pips = config.max_spread_pips + Decimal("1")
+        return RiskContext(
+            nav=account.nav,
+            day_start_nav=runtime.day_start_nav,
+            spread_pips=spread_pips,
+            entry_price=candle.c,
+        )
 
     async def _place_order(
         self,
@@ -242,10 +311,84 @@ def _signed_units(setup: MarketEntrySetup) -> int:
     return magnitude if setup.side == "long" else -magnitude
 
 
-def _default_risk_context(candle: ClosedCandle) -> RiskContext:
-    return RiskContext(
-        nav=Decimal("10000"),
-        day_start_nav=Decimal("10000"),
-        spread_pips=Decimal("0"),
-        entry_price=candle.c,
-    )
+@dataclass
+class _PracticeStrategyRuntime:
+    config: StrategyConfig
+    trading_date: date | None = None
+    candle_index: int = -1
+    day_state: DayState | None = None
+    session_levels: SessionLevels | None = None
+    day_history: list[ClosedCandle] = field(default_factory=list)
+    day_start_nav: Decimal = Decimal("0")
+
+    def ensure_day(self, *, trading_date: date, nav: Decimal) -> None:
+        if self.trading_date == trading_date:
+            return
+        self.trading_date = trading_date
+        self.candle_index = -1
+        self.day_state = DayState(trading_date=trading_date)
+        self.session_levels = None
+        self.day_history = []
+        self.day_start_nav = nav
+
+    def evaluate(
+        self,
+        candle: ClosedCandle,
+        *,
+        has_open_position: bool,
+        config: StrategyConfig,
+        instrument_rules: InstrumentRules,
+        risk_context: RiskContext,
+        strategy_evaluator: StrategyEvaluator,
+    ) -> StrategyResult:
+        trading_date = trading_date_for_candle(candle, config)
+        self.ensure_day(trading_date=trading_date, nav=risk_context.nav)
+        self.candle_index += 1
+        self.day_history.append(candle)
+
+        if self.session_levels is None and _is_at_or_after_ny_window(
+            candle,
+            trading_date,
+            config,
+        ):
+            try:
+                self.session_levels = compute_session_levels(
+                    self.day_history,
+                    trading_date=trading_date,
+                    instrument=config.instrument,
+                    config=config,
+                )
+            except ValueError:
+                self.session_levels = None
+
+        state = replace(
+            self.day_state or DayState(trading_date=trading_date),
+            has_open_position=has_open_position,
+        )
+        result = strategy_evaluator(
+            day_state=state,
+            candle=candle,
+            candle_history=list(self.day_history),
+            candle_index=self.candle_index,
+            session_levels=self.session_levels,
+            config=config,
+            instrument_rules=instrument_rules,
+            risk_context=risk_context,
+        )
+        self.day_state = result.state
+        return result
+
+
+def _is_at_or_after_ny_window(
+    candle: ClosedCandle,
+    trading_date: date,
+    config: StrategyConfig,
+) -> bool:
+    ny_start = session_windows_for_date(trading_date, config).ny_trade.start
+    return candle.ts.astimezone(UTC) >= ny_start
+
+
+def _spread_pips(candle: ClosedCandle, instrument_rules: InstrumentRules) -> Decimal | None:
+    if candle.ask_c is None or candle.bid_c is None:
+        return None
+    return (candle.ask_c - candle.bid_c) / instrument_rules.pip_size

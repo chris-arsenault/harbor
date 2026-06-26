@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable, Iterable
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -37,6 +38,7 @@ class PaperForwardService:
         self._websocket_hub = websocket_hub
         self._strategy_evaluator = strategy_evaluator
         self._clock = clock or (lambda: datetime.now(tz=UTC))
+        self._runtime_engines: dict[str, tuple[tuple[object, ...], ShadowPaperEngine]] = {}
 
     async def run_closed_candles(
         self,
@@ -49,6 +51,7 @@ class PaperForwardService:
         async with self._engine.connect() as connection:
             variants = await self._repository.list_active_paper_variants(connection)
         if not variants:
+            self._runtime_engines.clear()
             return ()
 
         emitted = tuple(
@@ -140,7 +143,12 @@ class PaperForwardService:
         }
         if self._strategy_evaluator is not None:
             engine_kwargs["strategy_evaluator"] = self._strategy_evaluator
-        return ShadowPaperEngine(**engine_kwargs).run(candles)
+        signature = _variant_signature(instrument, variants)
+        cached = self._runtime_engines.get(instrument)
+        if cached is None or cached[0] != signature:
+            cached = (signature, ShadowPaperEngine(**engine_kwargs))
+            self._runtime_engines[instrument] = cached
+        return cached[1].run(candles)
 
 
 def _trade_with_id(trade: VariantTrade, trade_id: int) -> VariantTrade:
@@ -165,6 +173,22 @@ def _ordered_variant_ids(trades: Iterable[VariantTrade]) -> tuple[int, ...]:
         if trade.variant_id not in variant_ids:
             variant_ids.append(trade.variant_id)
     return tuple(variant_ids)
+
+
+def _variant_signature(instrument: str, variants: tuple[Any, ...]) -> tuple[object, ...]:
+    return (
+        instrument,
+        tuple(
+            (
+                int(variant.id),
+                str(variant.status),
+                str(getattr(variant, "label", "")),
+                int(getattr(variant, "source_trial_id", 0)),
+                json.dumps(dict(variant.params), sort_keys=True, default=str),
+            )
+            for variant in variants
+        ),
+    )
 
 
 def _variants_by_instrument(

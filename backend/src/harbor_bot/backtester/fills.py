@@ -408,8 +408,6 @@ def _bracket_exit_price(
     instrument_rules: InstrumentRules,
 ) -> Decimal:
     adjustment = instrument_rules.pips_to_price(config.slippage_pips)
-    if reason == "take_profit":
-        return level - adjustment if side == "long" else level + adjustment
     return level - adjustment if side == "long" else level + adjustment
 
 

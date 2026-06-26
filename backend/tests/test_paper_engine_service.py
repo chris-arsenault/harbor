@@ -58,6 +58,29 @@ def test_paper_forward_service_persists_events_and_broadcasts_from_injected_batc
     assert hub.broadcasts[-1]["payload"]["points"][-1]["variant_id"] == 2
 
 
+def test_paper_forward_service_keeps_runtime_state_across_single_candle_calls() -> None:
+    repository = FakeVariantRepository(
+        (PaperVariant(id=1, label="trial-1", params={"fvg_window": 7}, source_trial_id=1),)
+    )
+    service = PaperForwardService(
+        engine=FakeEngine(),
+        base_strategy_config=strategy_config_from_defaults(load_default_config()),
+        instrument_rules=_rules(),
+        paper_config=PaperEngineConfig(),
+        repository=repository,
+        event_repository=FakeEventRepository(),
+        strategy_evaluator=_entry_evaluator,
+    )
+    first, second = _trade_candles()
+
+    assert run(service.run_closed_candles((first,))) == ()
+    trades = run(service.run_closed_candles((second,)))
+
+    assert len(trades) == 1
+    assert trades[0].variant_id == 1
+    assert trades[0].exit_reason == "take_profit"
+
+
 def test_paper_forward_service_evaluates_only_matching_variant_instruments() -> None:
     repository = FakeVariantRepository(
         (

@@ -115,6 +115,7 @@ class SweepState:
 class DayState:
     trading_date: date
     taken_levels: frozenset[LevelName] = frozenset()
+    swept_levels: frozenset[LevelName] = frozenset()
     trades_taken: int = 0
     has_open_position: bool = False
     trading_disabled: bool = False

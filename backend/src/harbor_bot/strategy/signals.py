@@ -5,6 +5,7 @@ from harbor_bot.strategy.fvgs import FairValueGap
 from harbor_bot.strategy.models import (
     Bias,
     InstrumentRules,
+    LevelName,
     MarketEntrySetup,
     SessionLevels,
     StrategyConfig,
@@ -21,6 +22,7 @@ def build_market_entry_setup(
     recent_candles: list[ClosedCandle],
     config: StrategyConfig,
     instrument_rules: InstrumentRules,
+    tapped_levels: frozenset[LevelName] = frozenset(),
 ) -> MarketEntrySetup | None:
     stop = calculate_stop(
         fvg=fvg,
@@ -38,6 +40,7 @@ def build_market_entry_setup(
         risk=risk,
         levels=levels,
         config=config,
+        tapped_levels=tapped_levels,
     )
     if target is None:
         return None
@@ -48,6 +51,8 @@ def build_market_entry_setup(
         config=config,
         instrument_rules=instrument_rules,
     )
+    if units is None:
+        return None
     return MarketEntrySetup(
         ts=fvg.ts,
         instrument=fvg.instrument,
@@ -91,6 +96,7 @@ def choose_target(
     risk: Decimal,
     levels: SessionLevels,
     config: StrategyConfig,
+    tapped_levels: frozenset[LevelName] = frozenset(),
 ) -> Decimal | None:
     rr_target = (
         entry_price + (risk * config.rr_floor)
@@ -104,6 +110,7 @@ def choose_target(
         bias=fvg.fvg_type,
         entry_price=entry_price,
         levels=levels,
+        tapped_levels=tapped_levels,
     )
     if config.target_mode == "opposite_session":
         return _nearest_qualified_liquidity_target(
@@ -139,12 +146,13 @@ def calculate_position_units(
     risk: Decimal,
     config: StrategyConfig,
     instrument_rules: InstrumentRules,
-) -> Decimal:
+) -> Decimal | None:
     risk_amount = nav * (config.risk_per_trade_pct / Decimal("100"))
     raw_units = risk_amount / (risk * instrument_rules.quote_home_conversion)
     stepped = _floor_to_step(raw_units, instrument_rules.unit_step)
-    above_minimum = max(stepped, instrument_rules.minimum_trade_size)
-    return min(above_minimum, config.max_units)
+    if stepped < instrument_rules.minimum_trade_size:
+        return None
+    return min(stepped, config.max_units)
 
 
 def _opposite_liquidity_targets(
@@ -152,8 +160,13 @@ def _opposite_liquidity_targets(
     bias: Bias,
     entry_price: Decimal,
     levels: SessionLevels,
+    tapped_levels: frozenset[LevelName],
 ) -> list[Decimal]:
-    values = list(levels.opposite_levels(bias).values())
+    values = [
+        value
+        for level_name, value in levels.opposite_levels(bias).items()
+        if level_name not in tapped_levels
+    ]
     if bias == Bias.BULLISH:
         return [value for value in values if value > entry_price]
     return [value for value in values if value < entry_price]

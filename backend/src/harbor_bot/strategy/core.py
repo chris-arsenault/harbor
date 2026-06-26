@@ -20,9 +20,15 @@ from harbor_bot.strategy.risk import (
     daily_loss_flatten_decision,
     ny_close_flatten_decision,
 )
+from harbor_bot.strategy.sessions import is_in_ny_trade_window
 from harbor_bot.strategy.signals import build_market_entry_setup
 from harbor_bot.strategy.structure import mss_confirmed, volume_spike
-from harbor_bot.strategy.sweeps import detect_sweep, mark_level_taken, with_active_sweep
+from harbor_bot.strategy.sweeps import (
+    detect_sweep,
+    mark_level_swept,
+    mark_level_taken,
+    with_active_sweep,
+)
 
 
 @dataclass(frozen=True)
@@ -97,6 +103,12 @@ def evaluate_closed_candle(
         return StrategyResult(state=day_state, decisions=[])
 
     if day_state.active_sweep is None:
+        if not is_in_ny_trade_window(
+            candle,
+            trading_date=day_state.trading_date,
+            config=config,
+        ):
+            return StrategyResult(state=day_state, decisions=[])
         sweep = detect_sweep(
             candle,
             levels=session_levels,
@@ -110,9 +122,21 @@ def evaluate_closed_candle(
         if config.require_volume_spike and not volume_spike(
             candle_history, current_index=candle_index, config=config
         ):
-            return StrategyResult(state=day_state, decisions=[])
+            return StrategyResult(
+                state=mark_level_swept(day_state, sweep.level_name),
+                decisions=[
+                    StrategyDecision(
+                        kind="sweep_veto",
+                        ts=sweep.swept_ts,
+                        payload={
+                            "level_name": sweep.level_name.value,
+                            "reason": "volume_spike",
+                        },
+                    )
+                ],
+            )
         return StrategyResult(
-            state=with_active_sweep(day_state, sweep),
+            state=with_active_sweep(mark_level_swept(day_state, sweep.level_name), sweep),
             decisions=[
                 StrategyDecision(
                     kind="sweep",
@@ -164,6 +188,7 @@ def evaluate_closed_candle(
         recent_candles=candle_history,
         config=config,
         instrument_rules=instrument_rules,
+        tapped_levels=day_state.swept_levels | day_state.taken_levels,
     )
     if setup is None:
         return StrategyResult(

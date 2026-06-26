@@ -134,6 +134,7 @@ def create_app(
     config_service: ConfigService | None = None,
     research_service: ResearchService | None = None,
     control_service: Any | None = None,
+    practice_execution_service: Any | None = None,
     websocket_hub: WebSocketHub | None = None,
     readiness_checker: Any | None = None,
     settings: Settings | None = None,
@@ -146,6 +147,7 @@ def create_app(
     app.state.settings.validate_startup()
     app.state.websocket_hub = websocket_hub or WebSocketHub()
     app.state.control_service = control_service
+    app.state.practice_execution_service = practice_execution_service
     app.state.live_pricing_stream_state = {"state": "disabled", "running": False}
     app.state.live_pricing_stream_task = None
     persistence_engine = None
@@ -618,7 +620,7 @@ async def _run_live_pricing_stream(app: FastAPI) -> None:
     instruments = settings.research_instruments
 
     async def on_closed_candle(candle: Any) -> None:
-        await app.state.paper_forward_service.run_closed_candles((candle,))
+        await _handle_live_closed_candle(app, candle)
 
     async with OandaClient.from_settings(settings) as client:
         frames = reconnecting_frames(
@@ -634,6 +636,13 @@ async def _run_live_pricing_stream(app: FastAPI) -> None:
             heartbeat_timeout_seconds=settings.oanda_stream_heartbeat_timeout_seconds,
             on_closed_candle=on_closed_candle,
         )
+
+
+async def _handle_live_closed_candle(app: FastAPI, candle: Any) -> None:
+    await app.state.paper_forward_service.run_closed_candles((candle,))
+    practice_service = getattr(app.state, "practice_execution_service", None)
+    if practice_service is not None:
+        await practice_service.process_closed_candle(candle)
 
 
 def _live_pricing_stream_status(app: FastAPI) -> dict[str, Any]:

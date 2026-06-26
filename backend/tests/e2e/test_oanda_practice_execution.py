@@ -11,6 +11,7 @@ from harbor_bot.execution.reconciliation import ExecutionReconciler
 from harbor_bot.execution.service import PracticeExecutionService
 from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.oanda.types import (
+    AccountSummary,
     OpenPosition,
     OpenTrade,
     OrderCreateResult,
@@ -235,6 +236,18 @@ class FakeOandaPracticeClient:
         self.created_orders = []
         self.trade_open = False
 
+    async def get_account_summary(self) -> AccountSummary:
+        return AccountSummary(
+            account_id="101",
+            currency="USD",
+            balance=Decimal("10000"),
+            nav=Decimal("10000"),
+            unrealized_pl=Decimal("0"),
+            open_trade_count=1 if self.trade_open else 0,
+            open_position_count=1 if self.trade_open else 0,
+            last_transaction_id="9000",
+        )
+
     async def create_market_order_with_bracket(self, request):
         self.created_orders.append(request)
         self.trade_open = True
@@ -338,6 +351,8 @@ def _closed_candle() -> ClosedCandle:
         low=Decimal("1.08950"),
         c=Decimal("1.09050"),
         volume=128,
+        bid_c=Decimal("1.09045"),
+        ask_c=Decimal("1.09055"),
     )
 
 

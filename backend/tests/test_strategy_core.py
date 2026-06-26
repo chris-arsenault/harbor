@@ -74,6 +74,22 @@ def test_core_rejects_sweep_without_rejection_close() -> None:
     assert result.state.active_sweep is None
 
 
+def test_core_ignores_sweeps_outside_ny_trade_window() -> None:
+    result = evaluate_closed_candle(
+        DayState(trading_date=date(2026, 1, 15)),
+        _candle("2026-01-15T17:00:00+00:00", low="1.07980", close="1.08020"),
+        candle_history=[],
+        candle_index=10,
+        session_levels=_levels(),
+        config=_config(),
+        instrument_rules=_rules(),
+        risk_context=_risk(),
+    )
+
+    assert result.decisions == []
+    assert result.state.active_sweep is None
+
+
 def test_core_keeps_waiting_on_wrong_direction_fvg() -> None:
     state = DayState(
         trading_date=date(2026, 1, 15),

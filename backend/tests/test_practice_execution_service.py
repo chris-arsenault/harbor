@@ -2,11 +2,13 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
+from fastapi import FastAPI
 
+from harbor_bot.api import _handle_live_closed_candle
 from harbor_bot.execution.config import load_practice_execution_config
 from harbor_bot.execution.service import PracticeExecutionService
 from harbor_bot.feed.candles import ClosedCandle
-from harbor_bot.oanda.types import OrderCreateResult
+from harbor_bot.oanda.types import AccountSummary, OrderCreateResult
 from harbor_bot.strategy.core import StrategyResult
 from harbor_bot.strategy.models import (
     DayState,
@@ -102,9 +104,25 @@ async def test_practice_execution_delegates_flatten_decisions_to_control_service
     assert controls.flatten_reasons == ["ny_close"]
 
 
+@pytest.mark.asyncio
+async def test_live_closed_candle_callback_drives_paper_and_practice_execution() -> None:
+    app = FastAPI()
+    app.state.paper_forward_service = FakePaperForwardService()
+    app.state.practice_execution_service = FakePracticeExecutionService()
+    candle = _candle()
+
+    await _handle_live_closed_candle(app, candle)
+
+    assert app.state.paper_forward_service.candles == [candle]
+    assert app.state.practice_execution_service.candles == [candle]
+
+
 def entry_evaluator(**kwargs) -> StrategyResult:
     config = kwargs["config"]
+    risk_context = kwargs["risk_context"]
     assert config.fvg_window == 9
+    assert risk_context.nav == Decimal("12345")
+    assert risk_context.spread_pips == Decimal("1.0")
     setup = MarketEntrySetup(
         ts=datetime(2026, 1, 15, 14, 30, tzinfo=UTC),
         instrument="EUR_USD",
@@ -212,6 +230,18 @@ class FakeOandaClient:
     def __init__(self) -> None:
         self.requests = []
 
+    async def get_account_summary(self) -> AccountSummary:
+        return AccountSummary(
+            account_id="101",
+            currency="USD",
+            balance=Decimal("12345"),
+            nav=Decimal("12345"),
+            unrealized_pl=Decimal("0"),
+            open_trade_count=0,
+            open_position_count=0,
+            last_transaction_id="1",
+        )
+
     async def create_market_order_with_bracket(self, request):
         self.requests.append(request)
         return OrderCreateResult(
@@ -252,6 +282,24 @@ class FakeControlService:
 
     async def flatten_now(self, *, reason: str):
         self.flatten_reasons.append(reason)
+
+
+class FakePaperForwardService:
+    def __init__(self) -> None:
+        self.candles: list[ClosedCandle] = []
+
+    async def run_closed_candles(self, candles):
+        self.candles.extend(candles)
+        return ()
+
+
+class FakePracticeExecutionService:
+    def __init__(self) -> None:
+        self.candles: list[ClosedCandle] = []
+
+    async def process_closed_candle(self, candle):
+        self.candles.append(candle)
+        return None
 
 
 class FakeConnection:
@@ -302,6 +350,8 @@ def _candle(*, complete: bool = True) -> ClosedCandle:
         c=Decimal("1.09050"),
         volume=128,
         complete=complete,
+        bid_c=Decimal("1.09045"),
+        ask_c=Decimal("1.09055"),
     )
 
 

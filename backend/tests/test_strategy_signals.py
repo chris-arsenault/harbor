@@ -118,6 +118,23 @@ def test_rr_or_liquidity_mode_takes_nearer_liquidity_after_floor() -> None:
     assert setup.target == Decimal("1.0930")
 
 
+def test_rr_or_liquidity_mode_skips_tapped_liquidity_target() -> None:
+    levels = replace(_levels(), asia_high=Decimal("1.0930"), london_high=Decimal("1.1150"))
+    setup = build_market_entry_setup(
+        fvg=_fvg(Bias.BULLISH),
+        entry_price=Decimal("1.0900"),
+        nav=Decimal("10000"),
+        levels=levels,
+        recent_candles=[],
+        config=_config(),
+        instrument_rules=_rules(),
+        tapped_levels=frozenset({LevelName.ASIA_HIGH}),
+    )
+
+    assert setup is not None
+    assert setup.target == Decimal("1.09430")
+
+
 def test_opposite_session_mode_requires_qualified_liquidity_target() -> None:
     levels = replace(_levels(), asia_high=Decimal("1.0920"), london_high=Decimal("1.0930"))
     setup = build_market_entry_setup(
@@ -147,6 +164,20 @@ def test_units_are_clamped_to_configured_max_units() -> None:
 
     assert setup is not None
     assert setup.units == Decimal("100000")
+
+
+def test_setup_is_vetoed_when_minimum_trade_size_would_exceed_risk_budget() -> None:
+    setup = build_market_entry_setup(
+        fvg=_fvg(Bias.BULLISH),
+        entry_price=Decimal("1.0900"),
+        nav=Decimal("100"),
+        levels=_levels(),
+        recent_candles=[],
+        config=_config(),
+        instrument_rules=replace(_rules(), minimum_trade_size=Decimal("10000")),
+    )
+
+    assert setup is None
 
 
 def _config():

@@ -38,8 +38,10 @@ class HistoricalCandle:
     complete: bool
     bid_h: Decimal | None = None
     bid_low: Decimal | None = None
+    bid_c: Decimal | None = None
     ask_h: Decimal | None = None
     ask_low: Decimal | None = None
+    ask_c: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -204,8 +206,10 @@ def parse_historical_candles(payload: dict[str, Any]) -> list[HistoricalCandle]:
                 complete=bool(candle["complete"]),
                 bid_h=_optional_ohlc(bid, "h"),
                 bid_low=_optional_ohlc(bid, "l"),
+                bid_c=_optional_ohlc(bid, "c"),
                 ask_h=_optional_ohlc(ask, "h"),
                 ask_low=_optional_ohlc(ask, "l"),
+                ask_c=_optional_ohlc(ask, "c"),
             )
         )
     return parsed

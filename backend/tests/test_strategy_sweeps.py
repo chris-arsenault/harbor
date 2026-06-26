@@ -11,7 +11,12 @@ from harbor_bot.strategy.models import (
     SessionLevels,
     strategy_config_from_defaults,
 )
-from harbor_bot.strategy.sweeps import detect_sweep, mark_level_taken, with_active_sweep
+from harbor_bot.strategy.sweeps import (
+    detect_sweep,
+    mark_level_swept,
+    mark_level_taken,
+    with_active_sweep,
+)
 
 
 def test_high_sweep_produces_bearish_bias_and_deadline() -> None:
@@ -81,6 +86,25 @@ def test_one_trade_per_level_skips_taken_levels() -> None:
     )
 
 
+def test_one_trade_per_level_skips_already_swept_levels() -> None:
+    day_state = DayState(
+        trading_date=date(2026, 1, 15),
+        swept_levels=frozenset({LevelName.ASIA_HIGH}),
+    )
+
+    assert (
+        detect_sweep(
+            _candle(high="1.10020", close="1.09980"),
+            levels=_levels(),
+            config=_config(),
+            instrument_rules=_rules(),
+            day_state=day_state,
+            candle_index=10,
+        )
+        is None
+    )
+
+
 def test_day_state_helpers_return_new_instances() -> None:
     day_state = DayState(trading_date=date(2026, 1, 15))
     sweep = detect_sweep(
@@ -94,12 +118,16 @@ def test_day_state_helpers_return_new_instances() -> None:
 
     with_sweep = with_active_sweep(day_state, sweep)
     marked = mark_level_taken(with_sweep, LevelName.ASIA_LOW)
+    swept = mark_level_swept(day_state, LevelName.ASIA_HIGH)
 
     assert day_state.active_sweep is None
     assert day_state.taken_levels == frozenset()
+    assert day_state.swept_levels == frozenset()
     assert with_sweep.active_sweep == sweep
     assert marked.active_sweep is None
     assert marked.taken_levels == frozenset({LevelName.ASIA_LOW})
+    assert marked.swept_levels == frozenset({LevelName.ASIA_LOW})
+    assert swept.swept_levels == frozenset({LevelName.ASIA_HIGH})
 
 
 def _config():
