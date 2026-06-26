@@ -7,6 +7,12 @@ export interface ForwardSummary {
   hit_rate: string;
   stddev_pips: string;
   t_stat: string;
+  naive_t_stat: string;
+  standard_error_pips: string;
+  effective_sample_size: number;
+  p_value: string;
+  bonferroni_p_value: string;
+  correction: string;
 }
 
 export interface ConditionalEdge {
@@ -14,6 +20,22 @@ export interface ConditionalEdge {
   value: string;
   summary: ForwardSummary;
   has_edge: boolean;
+  family_test_count: number;
+}
+
+export interface EdgeStatisticalNotes {
+  mean_null_hypothesis?: string;
+  tail?: string;
+  alpha?: string;
+  minimum_observations?: number;
+  minimum_effective_samples?: number;
+  t_threshold?: string;
+  standard_error_correction?: string;
+  effective_sample_unit?: string;
+  conditional_test_count?: number;
+  conditional_multiple_test_method?: string;
+  overall_test_count?: number;
+  overall_multiple_test_method?: string;
 }
 
 export interface EdgeStudyResult {
@@ -27,6 +49,7 @@ export interface EdgeStudyResult {
   by_level: ConditionalEdge[];
   by_session: ConditionalEdge[];
   by_volatility: ConditionalEdge[];
+  statistical_notes: EdgeStatisticalNotes;
 }
 
 export function fetchEdgeStudy(params: {
@@ -47,12 +70,14 @@ export interface EdgeScanRow {
   overall: ForwardSummary;
   has_edge: boolean;
   best_conditional: ConditionalEdge | null;
+  statistical_notes: EdgeStatisticalNotes;
 }
 
 export interface EdgeScanResult {
   instruments: string[];
   horizons: number[];
   results: EdgeScanRow[];
+  statistical_notes?: EdgeStatisticalNotes;
 }
 
 export function fetchEdgeScan(payload: {

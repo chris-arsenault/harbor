@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -6,11 +7,18 @@ from harbor_bot.config.defaults import load_default_config
 from harbor_bot.research.edge import (
     MIN_SAMPLES,
     EdgeStudyResult,
+    _Observation,
     has_edge,
     run_edge_study,
     summarize,
+    summarize_observations,
 )
-from harbor_bot.strategy.models import InstrumentRules, strategy_config_from_defaults
+from harbor_bot.strategy.models import (
+    Bias,
+    InstrumentRules,
+    LevelName,
+    strategy_config_from_defaults,
+)
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "backtester"
 
@@ -39,6 +47,32 @@ def test_has_edge_requires_significant_positive_reversal() -> None:
     assert has_edge(noisy) is False  # positive but not statistically significant
 
 
+def test_cluster_correction_blocks_single_day_overlap_from_passing_edge_gate() -> None:
+    observations = [
+        _obs(index=index, trading_date="2026-01-15", value=Decimal("2"))
+        for index in range(MIN_SAMPLES)
+    ]
+
+    summary = summarize_observations(observations)
+
+    assert summary.count == MIN_SAMPLES
+    assert summary.mean_pips > 0
+    assert summary.naive_t_stat >= Decimal("0")
+    assert summary.effective_sample_size == 1
+    assert summary.correction == "cluster_by_trading_day"
+    assert has_edge(summary) is False
+
+
+def test_summary_reports_bonferroni_observability_fields() -> None:
+    summary = summarize([Decimal("2"), Decimal("-1"), Decimal("3")])
+    data = summary.to_jsonable()
+
+    assert data["naive_t_stat"] == data["t_stat"]
+    assert data["effective_sample_size"] == 3
+    assert data["p_value"] == data["bonferroni_p_value"]
+    assert data["correction"] == "iid"
+
+
 def test_clean_signal_day_records_one_sweep_with_positive_reversal() -> None:
     result = _run("clean_signal_day.json", horizon=3)
 
@@ -48,6 +82,8 @@ def test_clean_signal_day_records_one_sweep_with_positive_reversal() -> None:
     assert result.overall.mean_pips > 0
     assert result.overall.hit_rate == Decimal("1")
     assert result.has_edge is False  # one observation is far under MIN_SAMPLES
+    assert result.overall.correction == "cluster_by_trading_day"
+    assert result.statistical_notes["conditional_multiple_test_method"] == "bonferroni"
     assert any(edge.value == "asia_low" for edge in result.by_level)
 
 
@@ -66,6 +102,17 @@ def _run(name: str, *, horizon: int) -> EdgeStudyResult:
         config=strategy_config_from_defaults(load_default_config()),
         instrument_rules=_rules(),
         horizon=horizon,
+    )
+
+
+def _obs(*, index: int, trading_date: str, value: Decimal) -> _Observation:
+    return _Observation(
+        index=index,
+        trading_date=date.fromisoformat(trading_date),
+        level_name=LevelName.ASIA_LOW,
+        bias=Bias.BULLISH,
+        reversal_pips=value,
+        atr_pips=Decimal("1"),
     )
 
 

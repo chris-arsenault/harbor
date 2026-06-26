@@ -17,10 +17,13 @@ function EdgeTiles({ study }: { readonly study: EdgeStudyResult }) {
         tone={valueTone(study.overall.mean_pips)}
       />
       <StatTile
-        label="Significance (t)"
+        label="Corrected t"
         value={fmtNum(study.overall.t_stat, 2)}
         tone={Number(study.overall.t_stat) >= 2 ? "up" : "warn"}
       />
+      <StatTile label="Naive t" value={fmtNum(study.overall.naive_t_stat, 2)} />
+      <StatTile label="Effective N" value={String(study.overall.effective_sample_size)} />
+      <StatTile label="Bonferroni p" value={fmtNum(study.overall.bonferroni_p_value, 4)} />
       <StatTile label="Baseline move" value={`${fmtNum(study.baseline_mean_abs_pips, 1)}p`} />
     </div>
   );
@@ -37,6 +40,9 @@ function ConditionTable({ edges }: { readonly edges: ConditionalEdge[] }) {
             <th className="num">N</th>
             <th className="num">Hit</th>
             <th className="num">Mean p</th>
+            <th className="num">Eff N</th>
+            <th className="num">t</th>
+            <th className="num">p adj</th>
             <th>Verdict</th>
           </tr>
         </thead>
@@ -50,6 +56,9 @@ function ConditionTable({ edges }: { readonly edges: ConditionalEdge[] }) {
               <td className={`num ${valueTone(edge.summary.mean_pips) === "down" ? "neg" : ""}`}>
                 {fmtNum(edge.summary.mean_pips, 1)}
               </td>
+              <td className="num">{edge.summary.effective_sample_size}</td>
+              <td className="num">{fmtNum(edge.summary.t_stat, 2)}</td>
+              <td className="num">{fmtNum(edge.summary.bonferroni_p_value, 4)}</td>
               <td>
                 <Tag tone={edge.has_edge ? "up" : "muted"}>{edge.has_edge ? "edge" : "—"}</Tag>
               </td>
@@ -81,6 +90,12 @@ function EdgeBody({ query }: { readonly query: ReturnType<typeof useEdgeStudyQue
   return (
     <>
       <EdgeTiles study={study} />
+      <p className="mute">
+        t-stat uses {study.statistical_notes.standard_error_correction}; effective N is{" "}
+        {study.statistical_notes.effective_sample_unit}; conditional p-values use{" "}
+        {study.statistical_notes.conditional_multiple_test_method} across{" "}
+        {study.statistical_notes.conditional_test_count} slices.
+      </p>
       <ConditionTable edges={[...study.by_level, ...study.by_session, ...study.by_volatility]} />
     </>
   );

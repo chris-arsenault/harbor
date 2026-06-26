@@ -40,6 +40,9 @@ def test_edge_study_runs_over_loaded_candles() -> None:
     assert result["total_sweeps"] == 2
     assert result["overall"]["count"] == 1
     assert result["has_edge"] is False
+    assert result["statistical_notes"]["standard_error_correction"] == (
+        "max(iid, cluster_by_trading_day)"
+    )
 
 
 def test_edge_study_with_no_window_returns_empty() -> None:
@@ -49,6 +52,20 @@ def test_edge_study_with_no_window_returns_empty() -> None:
 
     assert result["total_candles"] == 0
     assert result["total_sweeps"] == 0
+
+
+def test_edge_scan_reports_multiple_testing_notes() -> None:
+    service = ResearchService(candle_reader=_fixture_records, window_selector=_fixed_window)
+
+    result = asyncio.run(
+        service.edge_scan(instruments=("EUR_USD",), horizons=(3, 5), window_days=1)
+    )
+
+    assert result["statistical_notes"]["overall_test_count"] == 2
+    assert result["statistical_notes"]["overall_multiple_test_method"] == "bonferroni"
+    assert result["results"][0]["statistical_notes"]["standard_error_correction"] == (
+        "max(iid, cluster_by_trading_day)"
+    )
 
 
 async def _fixture_records(

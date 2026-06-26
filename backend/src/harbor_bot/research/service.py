@@ -17,7 +17,12 @@ from harbor_bot.backtester.service import (
 )
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.instruments import RESEARCH_INSTRUMENTS, default_instrument_rules
-from harbor_bot.research.edge import DEFAULT_HORIZON, run_edge_scan, run_edge_study
+from harbor_bot.research.edge import (
+    DEFAULT_HORIZON,
+    adjust_edge_scan_rows_for_universe,
+    run_edge_scan,
+    run_edge_study,
+)
 from harbor_bot.strategy.models import strategy_config_from_defaults
 
 DEFAULT_RESEARCH_WINDOW_DAYS = 90
@@ -75,7 +80,7 @@ class ResearchService:
         resolved = instruments or RESEARCH_INSTRUMENTS
         selector = self.window_selector or select_latest_complete_candle_window
         reader = self.candle_reader or read_persisted_candle_records
-        all_rows: list[dict[str, Any]] = []
+        all_rows: list[Any] = []
 
         for instrument in resolved:
             config = replace(
@@ -106,11 +111,17 @@ class ResearchService:
                 instrument_rules=rules,
                 horizons=horizons,
             )
-            all_rows.extend(row.to_jsonable() for row in rows)
+            all_rows.extend(rows)
 
-        all_rows.sort(key=lambda r: float(r["overall"]["t_stat"]), reverse=True)
+        adjusted_rows = adjust_edge_scan_rows_for_universe(all_rows)
+        adjusted_rows.sort(key=lambda r: float(r.overall.t_stat), reverse=True)
         return {
             "instruments": list(resolved),
             "horizons": list(horizons),
-            "results": all_rows,
+            "results": [row.to_jsonable() for row in adjusted_rows],
+            "statistical_notes": {
+                "overall_test_count": len(adjusted_rows),
+                "overall_multiple_test_method": "bonferroni",
+                "conditional_multiple_test_method": "bonferroni_per_row",
+            },
         }

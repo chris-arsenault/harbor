@@ -26,6 +26,9 @@ function ScanRow({ row, rank }: { readonly row: EdgeScanRow; readonly rank: numb
       <td className="num">
         <Tag tone={tStatTone(row.overall.t_stat)}>{fmtNum(row.overall.t_stat, 2)}</Tag>
       </td>
+      <td className="num">{fmtNum(row.overall.naive_t_stat, 2)}</td>
+      <td className="num">{row.overall.effective_sample_size}</td>
+      <td className="num">{fmtNum(row.overall.bonferroni_p_value, 4)}</td>
       <td>
         <Tag tone={row.has_edge ? "up" : "muted"}>{row.has_edge ? "edge" : "—"}</Tag>
       </td>
@@ -55,7 +58,10 @@ function ScanTable({ result }: { readonly result: EdgeScanResult }) {
             <th className="num">Sweeps</th>
             <th className="num">Hit</th>
             <th className="num">Mean</th>
-            <th className="num">t-stat</th>
+            <th className="num">Corrected t</th>
+            <th className="num">Naive t</th>
+            <th className="num">Eff N</th>
+            <th className="num">p adj</th>
             <th>Edge</th>
             <th>Best slice</th>
           </tr>
@@ -77,7 +83,9 @@ function ScanSummary({ result }: { readonly result: EdgeScanResult }) {
     <p className="mute">
       {result.instruments.length} instruments × {result.horizons.length} horizons = {total} combos
       scanned.{" "}
-      {withEdge.length > 0 ? `${withEdge.length} show a statistical edge.` : "No edges found."}
+      {withEdge.length > 0 ? `${withEdge.length} show a statistical edge.` : "No edges found."}{" "}
+      Corrected t uses clustered trading-day standard errors; adjusted p uses Bonferroni across{" "}
+      {result.statistical_notes?.overall_test_count ?? total} overall tests.
     </p>
   );
 }
@@ -109,7 +117,8 @@ export function EdgeScan() {
         </>
       ) : (
         <p className="mute">
-          Scans all research instruments at 15m, 30m, 60m, and 120m horizons. Ranked by t-statistic.
+          Scans all research instruments at 15m, 30m, 60m, and 120m horizons. Ranked by corrected
+          t-statistic with trading-day clustering and multiple-test-adjusted p-values.
         </p>
       )}
     </Panel>
