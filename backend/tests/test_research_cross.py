@@ -1,0 +1,94 @@
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
+from harbor_bot.feed.candles import ClosedCandle
+from harbor_bot.research.cross_instrument import daily_closes, run_cross_scan
+
+
+def test_daily_closes_uses_last_candle_per_utc_day() -> None:
+    candles = [
+        _candle("EUR_USD", 0, "1.1000", hour=1),
+        _candle("EUR_USD", 0, "1.1200", hour=23),
+        _candle("EUR_USD", 1, "1.1300", hour=1),
+    ]
+
+    closes = daily_closes(candles)
+
+    assert [close.close for close in closes] == [1.12, 1.13]
+
+
+def test_cross_scan_runs_factor_and_residual_algorithms() -> None:
+    candles = _cross_fixture()
+
+    rows = run_cross_scan(
+        candles,
+        algorithm_ids=(
+            "cs_momentum_20d_5d",
+            "cs_value_60d_5d",
+            "tri_eur_gbp_residual_5d",
+            "usd_dispersion_reversion_5d",
+        ),
+    )
+
+    assert {row.algorithm_id for row in rows} == {
+        "cs_momentum_20d_5d",
+        "cs_value_60d_5d",
+        "tri_eur_gbp_residual_5d",
+        "usd_dispersion_reversion_5d",
+    }
+    assert all(row.observation_count >= 0 for row in rows)
+    triangle = next(row for row in rows if row.algorithm_id == "tri_eur_gbp_residual_5d")
+    assert triangle.stats.count > 0
+
+
+def test_cross_momentum_detects_persistent_relative_strength() -> None:
+    rows = run_cross_scan(
+        _cross_fixture(),
+        algorithm_ids=("cs_momentum_20d_5d",),
+    )
+
+    row = rows[0]
+    assert row.stats.count > 0
+    assert row.stats.mean_return_bps > 0
+
+
+def _cross_fixture() -> dict[str, list[ClosedCandle]]:
+    days = 100
+    data = {
+        "EUR_USD": [],
+        "GBP_USD": [],
+        "AUD_USD": [],
+        "USD_JPY": [],
+        "EUR_GBP": [],
+    }
+    for day in range(days):
+        data["EUR_USD"].append(_candle("EUR_USD", day, _price(1.10, 0.0008, day)))
+        data["GBP_USD"].append(_candle("GBP_USD", day, _price(1.30, 0.0004, day)))
+        data["AUD_USD"].append(_candle("AUD_USD", day, _price(0.70, -0.0002, day)))
+        data["USD_JPY"].append(_candle("USD_JPY", day, _price(140.0, -0.02, day)))
+        implied = float(data["EUR_USD"][-1].c) / float(data["GBP_USD"][-1].c)
+        residual = 0.0
+        if day == 70:
+            residual = 0.02
+        if 71 <= day <= 75:
+            residual = 0.02 * (75 - day) / 5
+        data["EUR_GBP"].append(_candle("EUR_GBP", day, f"{implied + residual:.5f}"))
+    return data
+
+
+def _price(start: float, step: float, day: int) -> str:
+    return f"{start + step * day:.5f}"
+
+
+def _candle(instrument: str, day: int, close: str, *, hour: int = 23) -> ClosedCandle:
+    ts = datetime(2026, 1, 1, hour, tzinfo=UTC) + timedelta(days=day)
+    price = Decimal(close)
+    return ClosedCandle(
+        instrument=instrument,
+        ts=ts,
+        o=price,
+        h=price,
+        low=price,
+        c=price,
+        volume=1,
+    )

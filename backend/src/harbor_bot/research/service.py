@@ -18,6 +18,11 @@ from harbor_bot.config.defaults import load_default_config
 from harbor_bot.instruments import RESEARCH_INSTRUMENTS, default_instrument_rules
 from harbor_bot.persistence.market_repository import get_candle_coverage
 from harbor_bot.research.capture import run_capture_scan
+from harbor_bot.research.cross_instrument import (
+    available_cross_algorithms,
+    default_cross_algorithm_ids,
+    run_cross_scan,
+)
 from harbor_bot.research.edge import (
     DEFAULT_HORIZON,
     adjust_edge_scan_rows_for_universe,
@@ -244,6 +249,71 @@ class ResearchService:
             "window": _window_jsonable(window),
             "warnings": warnings,
             "results": [row.to_jsonable() for row in rows],
+        }
+
+    async def cross_scan(
+        self,
+        *,
+        instruments: tuple[str, ...] | None = None,
+        algorithm_ids: tuple[str, ...] | None = None,
+        window_days: int = DEFAULT_RESEARCH_WINDOW_DAYS,
+    ) -> dict[str, Any]:
+        resolved = instruments or RESEARCH_INSTRUMENTS
+        resolved_algorithms = algorithm_ids or default_cross_algorithm_ids()
+        selector = self.window_selector or select_latest_research_candle_window
+        reader = self.candle_reader or read_persisted_candle_records
+        candles_by_instrument: dict[str, list[Any]] = {}
+        windows: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
+
+        for instrument in resolved:
+            window = await selector(
+                self.persistence_engine,
+                instrument=instrument,
+                required_days=window_days,
+            )
+            warnings.extend(
+                _window_warnings(window, instrument=instrument, requested_days=window_days)
+            )
+            if window is None:
+                continue
+            windows.append(_window_jsonable(window))
+            records = await reader(
+                self.persistence_engine,
+                instrument=instrument,
+                start=window["from"],
+                end=window["to"],
+            )
+            candles = candles_from_records(records, default_instrument=instrument)
+            if candles:
+                candles_by_instrument[instrument] = list(candles)
+            else:
+                warnings.append(
+                    {
+                        "instrument": instrument,
+                        "type": "empty_window",
+                        "message": "selected research window returned no candle rows",
+                        "requested_days": window_days,
+                    }
+                )
+
+        rows = run_cross_scan(candles_by_instrument, algorithm_ids=resolved_algorithms)
+        return {
+            "instruments": list(resolved),
+            "requested_window_days": window_days,
+            "windows": windows,
+            "warnings": warnings,
+            "algorithms": [
+                algorithm.to_jsonable()
+                for algorithm in available_cross_algorithms()
+                if algorithm.algorithm_id in resolved_algorithms
+            ],
+            "results": [row.to_jsonable() for row in rows],
+        }
+
+    def cross_algorithms(self) -> dict[str, Any]:
+        return {
+            "algorithms": [algorithm.to_jsonable() for algorithm in available_cross_algorithms()]
         }
 
     def edge_algorithms(self) -> dict[str, Any]:

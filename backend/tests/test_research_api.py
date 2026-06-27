@@ -35,6 +35,12 @@ class FakeResearchService:
     async def capture_scan(self, **kwargs: Any) -> dict[str, Any]:
         return {"received": kwargs, "results": []}
 
+    async def cross_scan(self, **kwargs: Any) -> dict[str, Any]:
+        return {"received": kwargs, "results": []}
+
+    def cross_algorithms(self) -> dict[str, Any]:
+        return {"algorithms": []}
+
 
 def test_get_edge_study_routes_through_injected_service() -> None:
     service = FakeResearchService()
@@ -72,6 +78,27 @@ def test_capture_scan_routes_payload_to_research_service() -> None:
         "window_days": 730,
         "spread_pips": "0.7",
         "slippage_pips": "0.2",
+    }
+
+
+def test_cross_scan_routes_payload_to_research_service() -> None:
+    service = FakeResearchService()
+    client = TestClient(create_app(research_service=service))
+
+    response = client.post(
+        "/api/research/cross/scan",
+        json={
+            "instruments": ["EUR_USD", "GBP_USD", "EUR_GBP"],
+            "algorithms": ["tri_eur_gbp_residual_5d"],
+            "window_days": 730,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["received"] == {
+        "instruments": ["EUR_USD", "GBP_USD", "EUR_GBP"],
+        "algorithm_ids": ["tri_eur_gbp_residual_5d"],
+        "window_days": 730,
     }
 
 

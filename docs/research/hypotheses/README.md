@@ -14,6 +14,15 @@ an economic claim first, then an edge-search algorithm. Status values are
 | [H006](H006-early-ny-sweep-reversal.md) | proposed | `early_ny_sweep_reversal` | NY opening-auction sweeps behave differently from late-window sweeps. |
 | [H007](H007-eurusd-sweep-continuation.md) | active / cost-capture testing | `generic_sweep_continuation`, `mss_confirmed_sweep_continuation`, `early_ny_sweep_continuation` | EUR_USD sweeps show continuation signal; next gate is net capture after costs. |
 
+| [H100](H100-cross-sectional-fx-factors.md) | active / research engine implemented | `cs_momentum_20d_5d`, `cs_value_60d_5d` | Cross-sectional FX momentum and value/reversion baskets. |
+| [H101](H101-triangular-residual-convergence.md) | active / research engine implemented | `tri_eur_gbp_residual_5d` | EUR/GBP triangular residual convergence. |
+| [H102](H102-usd-dispersion-reversion.md) | active / research engine implemented | `usd_dispersion_reversion_5d` | USD-factor dispersion reversion. |
+| [H103](H103-oanda-positioning-orderbook.md) | proposed / data recorder needed | future OANDA positioning/order-book algorithms | Retail positioning and visible liquidity clusters. |
+| [H104](H104-rates-yield-conditioning.md) | proposed / external data layer needed | future rates conditioning | FX edge conditioned on yield differentials. |
+| [H105](H105-risk-commodity-conditioning.md) | proposed / external data layer needed | future risk/commodity conditioning | JPY/AUD pairs conditioned on risk and commodity state. |
+| [H106](H106-month-end-fix-flow.md) | proposed / calendar input needed | future month-end/fix algorithms | Forced hedge-rebalancing flow around month-end / London fix. |
+| [H107](H107-scheduled-event-surprise.md) | proposed / calendar + surprise data needed | future macro surprise algorithms | Scheduled event drift conditioned on surprise. |
+
 ## Research gate
 
 Do not promote a strategy variant from a hypothesis unless its edge algorithm

@@ -28,7 +28,7 @@ import {
   updateConfig,
 } from "./client";
 import { fetchCandleBackfill, startCandleBackfill, syncCandles } from "./candles";
-import { fetchCaptureScan, fetchEdgeScan, fetchEdgeStudy } from "./research";
+import { fetchCaptureScan, fetchCrossScan, fetchEdgeScan, fetchEdgeStudy } from "./research";
 import { createLiveConnection, liveWebSocketUrl } from "./live";
 import type { FlattenResult, OptimizationStartPayload, WebSocketEnvelope } from "./types";
 
@@ -146,6 +146,12 @@ export function useEdgeScanMutation() {
 export function useCaptureScanMutation() {
   return useMutation({
     mutationFn: fetchCaptureScan,
+  });
+}
+
+export function useCrossScanMutation() {
+  return useMutation({
+    mutationFn: fetchCrossScan,
   });
 }
 

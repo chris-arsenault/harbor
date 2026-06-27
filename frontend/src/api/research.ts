@@ -189,3 +189,40 @@ export interface CapturePayload {
 export function fetchCaptureScan(payload: CapturePayload): Promise<CaptureResult> {
   return apiPost<CaptureResult>("/api/research/capture", payload);
 }
+
+export interface CrossStats {
+  count: number;
+  hit_rate: string;
+  mean_return_bps: string;
+  median_return_bps: string;
+  total_return_bps: string;
+  t_stat: string;
+}
+
+export interface CrossScanRow {
+  algorithm_id: string;
+  hypothesis_id: string;
+  algorithm_label: string;
+  instruments: string[];
+  observation_count: number;
+  stats: CrossStats;
+}
+
+export interface CrossScanResult {
+  instruments: string[];
+  requested_window_days: number;
+  windows: EdgeDataWindow[];
+  warnings: EdgeDataWarning[];
+  algorithms: EdgeAlgorithm[];
+  results: CrossScanRow[];
+}
+
+export interface CrossScanPayload {
+  instruments: string[] | null;
+  algorithms: string[] | null;
+  window_days: number;
+}
+
+export function fetchCrossScan(payload: CrossScanPayload): Promise<CrossScanResult> {
+  return apiPost<CrossScanResult>("/api/research/cross/scan", payload);
+}
