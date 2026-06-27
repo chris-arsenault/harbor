@@ -26,7 +26,7 @@ test("applies edge scan presets, submits structured payloads, and renders result
   expect(screen.getByLabelText("Horizons")).toHaveValue("15, 30, 60");
   expect(screen.getByLabelText("Window (days)")).toHaveValue(730);
 
-  fireEvent.click(screen.getByRole("button", { name: "Scan universe" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run edge scan" }));
 
   await waitFor(() =>
     expect(fetchMock.mock.calls[0]).toEqual([
@@ -61,6 +61,36 @@ test("applies edge scan presets, submits structured payloads, and renders result
     "generic_sweep_continuation, mss_confirmed_sweep_continuation, early_ny_sweep_continuation"
   );
   expect(screen.getByLabelText("Horizons")).toHaveValue("15, 30, 60, 120");
+});
+
+test("submits blank scan controls as backend defaults", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+    const url = requestUrl(input);
+    if (url.startsWith("/api/research/edge/scan")) {
+      return Promise.resolve(new Response(JSON.stringify(edgeScanResult), { status: 200 }));
+    }
+    return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+  });
+
+  renderWithClient(<EdgeScan />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Run edge scan" }));
+
+  await waitFor(() =>
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/research/edge/scan",
+      {
+        body: JSON.stringify({
+          window_days: 730,
+          instruments: null,
+          algorithms: null,
+          horizons: null,
+        }),
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        method: "POST",
+      },
+    ])
+  );
 });
 
 function renderWithClient(ui: React.ReactElement) {

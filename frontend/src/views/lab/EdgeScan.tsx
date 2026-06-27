@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { useEdgeScanMutation } from "../../api/hooks";
-import type { EdgeScanResult, EdgeScanRow } from "../../api/research";
+import type { EdgeScanPayload, EdgeScanResult, EdgeScanRow } from "../../api/research";
 import { fmtNum, fmtPct, valueTone } from "../../ui/format";
 import { EmptyState, Field, Notice, Panel, Tag } from "../../ui/primitives";
 
@@ -17,13 +17,6 @@ interface EdgeScanDraft {
   readonly algorithms: string;
   readonly horizons: string;
   readonly windowDays: number;
-}
-
-interface EdgeScanPayload {
-  readonly instruments: string[];
-  readonly algorithms: string[];
-  readonly horizons: number[];
-  readonly window_days: number;
 }
 
 const EDGE_SCAN_PRESETS = {
@@ -59,16 +52,21 @@ function parseStringList(raw: string): string[] {
 function parseNumberList(raw: string): number[] {
   return raw
     .split(/[\n,]/)
-    .map((item) => Number(item.trim()))
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .map((item) => Number(item))
     .filter((item) => Number.isFinite(item));
 }
 
 function buildPayload(draft: EdgeScanDraft): EdgeScanPayload {
+  const instruments = parseStringList(draft.instruments);
+  const algorithms = parseStringList(draft.algorithms);
+  const horizons = parseNumberList(draft.horizons);
   return {
     window_days: draft.windowDays,
-    instruments: parseStringList(draft.instruments),
-    algorithms: parseStringList(draft.algorithms),
-    horizons: parseNumberList(draft.horizons),
+    instruments: instruments.length ? instruments : null,
+    algorithms: algorithms.length ? algorithms : null,
+    horizons: horizons.length ? horizons : null,
   };
 }
 
@@ -195,6 +193,25 @@ function ScanSummary({ result }: { readonly result: EdgeScanResult }) {
   );
 }
 
+function ScanWarnings({ result }: { readonly result: EdgeScanResult }) {
+  const warnings = result.warnings ?? [];
+  if (!warnings.length) {
+    return null;
+  }
+  return (
+    <Notice>
+      <div className="stack stack--tight">
+        <strong>Data window warnings</strong>
+        {warnings.map((warning) => (
+          <span key={`${warning.instrument}-${warning.type}-${warning.message}`}>
+            {warning.instrument}: {warning.message}
+          </span>
+        ))}
+      </div>
+    </Notice>
+  );
+}
+
 function ScanActions({
   pending,
   onPreset,
@@ -223,7 +240,7 @@ function ScanActions({
         H007 EUR_USD continuation
       </button>
       <button type="button" className="btn btn--primary" disabled={pending} onClick={onSubmit}>
-        {pending ? "Scanning…" : "Scan universe"}
+        {pending ? "Scanning…" : "Run edge scan"}
       </button>
     </div>
   );
@@ -292,6 +309,7 @@ function ScanResultView({
       {error ? <Notice tone="error">{error.message}</Notice> : null}
       {result ? (
         <>
+          <ScanWarnings result={result} />
           <ScanSummary result={result} />
           <ScanTable result={result} />
         </>

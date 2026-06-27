@@ -57,6 +57,8 @@ export interface EdgeStudyResult {
   by_session: ConditionalEdge[];
   by_volatility: ConditionalEdge[];
   statistical_notes: EdgeStatisticalNotes;
+  warnings?: EdgeDataWarning[];
+  window?: EdgeDataWindow | null;
 }
 
 export function fetchEdgeStudy(params: {
@@ -94,9 +96,30 @@ export interface EdgeScanRow {
 export interface EdgeScanResult {
   instruments: string[];
   horizons: number[];
+  requested_window_days?: number;
+  windows?: EdgeDataWindow[];
+  warnings?: EdgeDataWarning[];
   algorithms: EdgeAlgorithm[];
   results: EdgeScanRow[];
   statistical_notes?: EdgeStatisticalNotes;
+}
+
+export interface EdgeDataWindow {
+  instrument: string | null;
+  from: string;
+  to: string;
+  requested_days: number | null;
+  available_days: number | null;
+  used_days: number | null;
+}
+
+export interface EdgeDataWarning {
+  instrument: string;
+  type: string;
+  message: string;
+  requested_days?: number;
+  available_days?: number;
+  used_days?: number;
 }
 
 export interface EdgeAlgorithm {
@@ -106,11 +129,13 @@ export interface EdgeAlgorithm {
   description: string;
 }
 
-export function fetchEdgeScan(payload: {
-  instruments?: string[];
-  horizons?: number[];
-  algorithms?: string[];
-  window_days?: number;
-}): Promise<EdgeScanResult> {
+export interface EdgeScanPayload {
+  instruments: string[] | null;
+  horizons: number[] | null;
+  algorithms: string[] | null;
+  window_days: number;
+}
+
+export function fetchEdgeScan(payload: EdgeScanPayload): Promise<EdgeScanResult> {
   return apiPost<EdgeScanResult>("/api/research/edge/scan", payload);
 }

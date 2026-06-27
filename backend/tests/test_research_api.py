@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from harbor_bot.api import create_app
 from harbor_bot.backtester.data import load_candle_fixture
-from harbor_bot.research.service import ResearchService
+from harbor_bot.research.service import ResearchService, research_window_from_coverage
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "backtester"
 
@@ -65,6 +65,7 @@ def test_edge_study_with_no_window_returns_empty() -> None:
 
     assert result["total_candles"] == 0
     assert result["total_sweeps"] == 0
+    assert result["warnings"][0]["type"] == "no_data"
 
 
 def test_edge_scan_reports_multiple_testing_notes() -> None:
@@ -134,6 +135,61 @@ def test_edge_scan_can_use_730_day_confirmatory_window() -> None:
     )
 
     assert calls == [730]
+
+
+def test_research_window_uses_available_data_when_request_exceeds_coverage() -> None:
+    window = research_window_from_coverage(
+        {
+            "instrument": "GBP_JPY",
+            "candle_count": 100,
+            "from": datetime(2026, 1, 1, tzinfo=UTC),
+            "to": datetime(2026, 3, 1, tzinfo=UTC),
+        },
+        instrument="GBP_JPY",
+        requested_days=730,
+    )
+
+    assert window is not None
+    assert window["used_days"] == 60
+    assert window["warnings"][0]["type"] == "partial_window"
+    assert "requested 730 calendar days" in window["warnings"][0]["message"]
+
+
+def test_edge_scan_runs_with_partial_available_window_and_reports_warning() -> None:
+    async def selector(engine: Any, *, instrument: str, required_days: int) -> dict[str, Any]:
+        return {
+            "instrument": instrument,
+            "from": datetime(2026, 1, 15, tzinfo=UTC),
+            "to": datetime(2026, 1, 16, tzinfo=UTC),
+            "requested_days": required_days,
+            "available_days": 2,
+            "used_days": 2,
+            "warnings": [
+                {
+                    "instrument": instrument,
+                    "type": "partial_window",
+                    "message": "requested 730 calendar days but only 2 are available",
+                    "requested_days": required_days,
+                    "available_days": 2,
+                    "used_days": 2,
+                }
+            ],
+        }
+
+    service = ResearchService(candle_reader=_fixture_records, window_selector=selector)
+
+    result = asyncio.run(
+        service.edge_scan(
+            instruments=("GBP_JPY",),
+            horizons=(3,),
+            algorithm_ids=("clean_level_sweep_reversal",),
+            window_days=730,
+        )
+    )
+
+    assert result["results"]
+    assert result["warnings"][0]["type"] == "partial_window"
+    assert result["windows"][0]["available_days"] == 2
 
 
 async def _fixture_records(
