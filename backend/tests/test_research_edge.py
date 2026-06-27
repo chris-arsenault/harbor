@@ -191,6 +191,19 @@ def test_mss_confirmed_algorithm_uses_confirmed_structure_break_event() -> None:
     assert _sweeps(rows, "mss_confirmed_sweep_reversal") == 1
 
 
+def test_generic_continuation_algorithm_inverts_reversal_direction() -> None:
+    rows = _scan_algorithm_fixture(
+        _algorithm_fixture_candles([_sweep_spec(day=0, continuation_down=True)]),
+        algorithms=("generic_sweep_reversal", "generic_sweep_continuation"),
+    )
+
+    reversal = next(row for row in rows if row.algorithm_id == "generic_sweep_reversal")
+    continuation = next(row for row in rows if row.algorithm_id == "generic_sweep_continuation")
+
+    assert reversal.overall.mean_pips < 0
+    assert continuation.overall.mean_pips > 0
+
+
 def _run(name: str, *, horizon: int) -> EdgeStudyResult:
     return run_edge_study(
         load_candle_fixture(FIXTURE_DIR / name),
@@ -225,6 +238,7 @@ def _sweep_spec(
     asia_high: str = "1.1000",
     london_high: str = "1.1050",
     mss_break: bool = False,
+    continuation_down: bool = False,
 ) -> dict[str, object]:
     return {
         "day": day,
@@ -234,6 +248,7 @@ def _sweep_spec(
         "asia_high": asia_high,
         "london_high": london_high,
         "mss_break": mss_break,
+        "continuation_down": continuation_down,
     }
 
 
@@ -253,6 +268,7 @@ def _day_candles(
     asia_high: str,
     london_high: str,
     mss_break: bool,
+    continuation_down: bool,
 ) -> list:
     base = date(2026, 1, 15) + timedelta(days=day)
     # london_low sits far below asia_low so the only sweepable level is asia_low.
@@ -286,11 +302,13 @@ def _day_candles(
         candles.append(
             _candle(sweep_dt + timedelta(minutes=1), high="1.0970", low="1.0830", close="1.0960"),
         )
+    follow_close = "1.0760" if continuation_down else "1.0900"
+    follow_low = "1.0750" if continuation_down else "1.0830"
     candles.append(
-        _candle(sweep_dt + timedelta(minutes=2), high="1.0905", low="1.0830", close="1.0900"),
+        _candle(sweep_dt + timedelta(minutes=2), high="1.0905", low=follow_low, close=follow_close),
     )
     candles.append(
-        _candle(sweep_dt + timedelta(minutes=3), high="1.0905", low="1.0830", close="1.0900"),
+        _candle(sweep_dt + timedelta(minutes=3), high="1.0905", low=follow_low, close=follow_close),
     )
     return sorted(candles, key=lambda candle: candle.ts)
 

@@ -63,6 +63,7 @@ export function fetchEdgeStudy(params: {
   instrument: string;
   horizon?: number;
   algorithm_id?: string;
+  window_days?: number;
 }): Promise<EdgeStudyResult> {
   const search = new URLSearchParams({ instrument: params.instrument });
   if (params.horizon !== undefined) {
@@ -70,6 +71,9 @@ export function fetchEdgeStudy(params: {
   }
   if (params.algorithm_id !== undefined) {
     search.set("algorithm_id", params.algorithm_id);
+  }
+  if (params.window_days !== undefined) {
+    search.set("window_days", String(params.window_days));
   }
   return apiGet<EdgeStudyResult>(`/api/research/edge?${search.toString()}`);
 }
@@ -106,6 +110,7 @@ export function fetchEdgeScan(payload: {
   instruments?: string[];
   horizons?: number[];
   algorithms?: string[];
+  window_days?: number;
 }): Promise<EdgeScanResult> {
   return apiPost<EdgeScanResult>("/api/research/edge/scan", payload);
 }

@@ -533,6 +533,30 @@ def available_edge_algorithms() -> tuple[EdgeAlgorithm, ...]:
             ),
             event_builder=_early_ny_events,
         ),
+        EdgeAlgorithm(
+            algorithm_id="generic_sweep_continuation",
+            hypothesis_id="H007",
+            label="Generic session sweep continuation",
+            description=(
+                "Any first Asia/London session-level sweep, scored in the continuation "
+                "direction instead of the reversal direction."
+            ),
+            event_builder=_generic_sweep_continuation_events,
+        ),
+        EdgeAlgorithm(
+            algorithm_id="mss_confirmed_sweep_continuation",
+            hypothesis_id="H007",
+            label="MSS-confirmed sweep continuation",
+            description=("MSS-confirmed sweep events scored as continuation rather than reversal."),
+            event_builder=_mss_confirmed_continuation_events,
+        ),
+        EdgeAlgorithm(
+            algorithm_id="early_ny_sweep_continuation",
+            hypothesis_id="H007",
+            label="Early-NY sweep continuation",
+            description=("Early-NY sweep events scored as continuation rather than reversal."),
+            event_builder=_early_ny_continuation_events,
+        ),
     )
 
 
@@ -780,6 +804,81 @@ def _early_ny_events(
     return _events_from_candidates(
         candidates, candles=candles, atr_window=atr_window, instrument_rules=instrument_rules
     )
+
+
+def _generic_sweep_continuation_events(
+    candles: tuple[ClosedCandle, ...],
+    *,
+    instrument: str,
+    config: StrategyConfig,
+    instrument_rules: InstrumentRules,
+    atr_window: int,
+) -> list[EdgeEvent]:
+    return _continuation_events(
+        _generic_sweep_events(
+            candles,
+            instrument=instrument,
+            config=config,
+            instrument_rules=instrument_rules,
+            atr_window=atr_window,
+        )
+    )
+
+
+def _mss_confirmed_continuation_events(
+    candles: tuple[ClosedCandle, ...],
+    *,
+    instrument: str,
+    config: StrategyConfig,
+    instrument_rules: InstrumentRules,
+    atr_window: int,
+) -> list[EdgeEvent]:
+    return _continuation_events(
+        _mss_confirmed_events(
+            candles,
+            instrument=instrument,
+            config=config,
+            instrument_rules=instrument_rules,
+            atr_window=atr_window,
+        )
+    )
+
+
+def _early_ny_continuation_events(
+    candles: tuple[ClosedCandle, ...],
+    *,
+    instrument: str,
+    config: StrategyConfig,
+    instrument_rules: InstrumentRules,
+    atr_window: int,
+) -> list[EdgeEvent]:
+    return _continuation_events(
+        _early_ny_events(
+            candles,
+            instrument=instrument,
+            config=config,
+            instrument_rules=instrument_rules,
+            atr_window=atr_window,
+        )
+    )
+
+
+def _continuation_events(events: list[EdgeEvent]) -> list[EdgeEvent]:
+    return [
+        EdgeEvent(
+            index=event.index,
+            trading_date=event.trading_date,
+            level_name=event.level_name,
+            bias=_opposite_bias(event.bias),
+            atr_pips=event.atr_pips,
+            pip_size=event.pip_size,
+        )
+        for event in events
+    ]
+
+
+def _opposite_bias(bias: Bias) -> Bias:
+    return Bias.BEARISH if bias == Bias.BULLISH else Bias.BULLISH
 
 
 def _events_from_candidates(

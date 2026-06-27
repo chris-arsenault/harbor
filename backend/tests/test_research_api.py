@@ -17,13 +17,14 @@ class FakeResearchService:
         self.calls: list[tuple[str, int, str]] = []
 
     async def edge_study(
-        self, *, instrument: str, horizon: int, algorithm_id: str
+        self, *, instrument: str, horizon: int, algorithm_id: str, window_days: int
     ) -> dict[str, Any]:
         self.calls.append((instrument, horizon, algorithm_id))
         return {
             "algorithm_id": algorithm_id,
             "instrument": instrument,
             "horizon": horizon,
+            "window_days": window_days,
             "total_sweeps": 0,
             "has_edge": False,
         }
@@ -41,6 +42,7 @@ def test_get_edge_study_routes_through_injected_service() -> None:
     assert response.status_code == 200
     assert response.json()["instrument"] == "GBP_USD"
     assert service.calls == [("GBP_USD", 5, "generic_sweep_reversal")]
+    assert response.json()["window_days"] == 90
 
 
 def test_edge_study_runs_over_loaded_candles() -> None:
@@ -73,12 +75,12 @@ def test_edge_scan_reports_multiple_testing_notes() -> None:
     )
 
     assert result["statistical_notes"]["instrument_count"] == 1
-    assert result["statistical_notes"]["algorithm_count"] == 6
+    assert result["statistical_notes"]["algorithm_count"] == 9
     assert result["statistical_notes"]["horizon_count"] == 2
-    assert result["statistical_notes"]["planned_overall_test_count"] == 12
-    assert result["statistical_notes"]["overall_test_count"] == 12
+    assert result["statistical_notes"]["planned_overall_test_count"] == 18
+    assert result["statistical_notes"]["overall_test_count"] == 18
     assert result["statistical_notes"]["overall_multiple_test_method"] == "bonferroni"
-    assert len(result["algorithms"]) == 6
+    assert len(result["algorithms"]) == 9
     assert {row["algorithm_id"] for row in result["results"]} >= {
         "generic_sweep_reversal",
         "mss_confirmed_sweep_reversal",
@@ -108,6 +110,30 @@ def test_edge_scan_can_limit_algorithms() -> None:
         "generic_sweep_reversal",
         "clean_level_sweep_reversal",
     }
+
+
+def test_edge_scan_can_use_730_day_confirmatory_window() -> None:
+    calls = []
+
+    async def selector(engine: Any, *, instrument: str, required_days: int) -> dict[str, Any]:
+        calls.append(required_days)
+        return {
+            "from": datetime(2024, 1, 1, tzinfo=UTC),
+            "to": datetime(2026, 1, 1, tzinfo=UTC),
+        }
+
+    service = ResearchService(candle_reader=_fixture_records, window_selector=selector)
+
+    asyncio.run(
+        service.edge_scan(
+            instruments=("GBP_JPY",),
+            horizons=(15, 30),
+            algorithm_ids=("clean_level_sweep_reversal",),
+            window_days=730,
+        )
+    )
+
+    assert calls == [730]
 
 
 async def _fixture_records(

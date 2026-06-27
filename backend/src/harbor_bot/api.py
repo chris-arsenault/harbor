@@ -44,7 +44,7 @@ from harbor_bot.persistence import (
 )
 from harbor_bot.persistence.database import create_engine
 from harbor_bot.research.edge import DEFAULT_HORIZON
-from harbor_bot.research.service import ResearchService
+from harbor_bot.research.service import DEFAULT_RESEARCH_WINDOW_DAYS, ResearchService
 from harbor_bot.settings import Settings, redact_secret_text
 from harbor_bot.strategy.models import InstrumentRules, strategy_config_from_defaults
 from harbor_bot.version import VersionInfo, build_version_info
@@ -390,10 +390,14 @@ def create_app(
         instrument: str,
         horizon: int = DEFAULT_HORIZON,
         algorithm_id: str = "generic_sweep_reversal",
+        window_days: int = DEFAULT_RESEARCH_WINDOW_DAYS,
         service: ResearchService = RESEARCH_SERVICE_DEPENDENCY,
     ) -> dict[str, Any]:
         return await service.edge_study(
-            instrument=instrument, horizon=horizon, algorithm_id=algorithm_id
+            instrument=instrument,
+            horizon=horizon,
+            algorithm_id=algorithm_id,
+            window_days=window_days,
         )
 
     @app.get("/api/research/edge/algorithms")
@@ -425,8 +429,12 @@ def create_app(
             if isinstance(raw_algorithms, list)
             else None
         )
+        window_days = int(payload.get("window_days") or DEFAULT_RESEARCH_WINDOW_DAYS)
         return await service.edge_scan(
-            instruments=instruments, horizons=horizons, algorithm_ids=algorithms
+            instruments=instruments,
+            horizons=horizons,
+            algorithm_ids=algorithms,
+            window_days=window_days,
         )
 
     @app.get("/api/trades")

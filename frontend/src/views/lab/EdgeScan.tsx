@@ -1,7 +1,76 @@
+import { useState } from "react";
+
 import { useEdgeScanMutation } from "../../api/hooks";
 import type { EdgeScanResult, EdgeScanRow } from "../../api/research";
 import { fmtNum, fmtPct, valueTone } from "../../ui/format";
-import { EmptyState, Notice, Panel, Tag } from "../../ui/primitives";
+import { EmptyState, Field, Notice, Panel, Tag } from "../../ui/primitives";
+
+interface EdgeScanPreset {
+  readonly instruments: string[];
+  readonly algorithms: string[];
+  readonly horizons: number[];
+  readonly window_days: number;
+}
+
+interface EdgeScanDraft {
+  readonly instruments: string;
+  readonly algorithms: string;
+  readonly horizons: string;
+  readonly windowDays: number;
+}
+
+interface EdgeScanPayload {
+  readonly instruments: string[];
+  readonly algorithms: string[];
+  readonly horizons: number[];
+  readonly window_days: number;
+}
+
+const EDGE_SCAN_PRESETS = {
+  h005: {
+    instruments: ["GBP_JPY"],
+    algorithms: ["clean_level_sweep_reversal"],
+    horizons: [15, 30, 60],
+    window_days: 730,
+  },
+  h007: {
+    instruments: ["EUR_USD"],
+    algorithms: [
+      "generic_sweep_continuation",
+      "mss_confirmed_sweep_continuation",
+      "early_ny_sweep_continuation",
+    ],
+    horizons: [15, 30, 60, 120],
+    window_days: 730,
+  },
+} as const satisfies Record<string, EdgeScanPreset>;
+
+function listText(values: readonly (string | number)[]): string {
+  return values.join(", ");
+}
+
+function parseStringList(raw: string): string[] {
+  return raw
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function parseNumberList(raw: string): number[] {
+  return raw
+    .split(/[\n,]/)
+    .map((item) => Number(item.trim()))
+    .filter((item) => Number.isFinite(item));
+}
+
+function buildPayload(draft: EdgeScanDraft): EdgeScanPayload {
+  return {
+    window_days: draft.windowDays,
+    instruments: parseStringList(draft.instruments),
+    algorithms: parseStringList(draft.algorithms),
+    horizons: parseNumberList(draft.horizons),
+  };
+}
 
 function tStatTone(raw: string): "up" | "warn" | "muted" {
   const value = Number(raw);
@@ -72,7 +141,11 @@ function ScanTable({ result }: { readonly result: EdgeScanResult }) {
         </thead>
         <tbody>
           {result.results.map((row, index) => (
-            <ScanRow key={`${row.instrument}-${row.horizon}`} row={row} rank={index + 1} />
+            <ScanRow
+              key={`${row.hypothesis_id}-${row.algorithm_id}-${row.instrument}-${row.horizon}`}
+              row={row}
+              rank={index + 1}
+            />
           ))}
         </tbody>
       </table>
@@ -122,26 +195,101 @@ function ScanSummary({ result }: { readonly result: EdgeScanResult }) {
   );
 }
 
-export function EdgeScan() {
-  const scan = useEdgeScanMutation();
-  const result = scan.data;
+function ScanActions({
+  pending,
+  onPreset,
+  onSubmit,
+}: {
+  readonly pending: boolean;
+  readonly onPreset: (preset: EdgeScanPreset) => void;
+  readonly onSubmit: () => void;
+}) {
   return (
-    <Panel
-      title="Edge scan"
-      note="universe × horizons"
-      label="Edge scan"
-      actions={
-        <button
-          type="button"
-          className="btn btn--primary"
-          disabled={scan.isPending}
-          onClick={() => scan.mutate({})}
-        >
-          {scan.isPending ? "Scanning…" : "Scan universe"}
-        </button>
-      }
-    >
-      {scan.error ? <Notice tone="error">{scan.error.message}</Notice> : null}
+    <div className="row">
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        disabled={pending}
+        onClick={() => onPreset(EDGE_SCAN_PRESETS.h005)}
+      >
+        H005 GBP_JPY confirmatory
+      </button>
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        disabled={pending}
+        onClick={() => onPreset(EDGE_SCAN_PRESETS.h007)}
+      >
+        H007 EUR_USD continuation
+      </button>
+      <button type="button" className="btn btn--primary" disabled={pending} onClick={onSubmit}>
+        {pending ? "Scanning…" : "Scan universe"}
+      </button>
+    </div>
+  );
+}
+
+function ScanFields({
+  draft,
+  onChange,
+}: {
+  readonly draft: EdgeScanDraft;
+  readonly onChange: (draft: EdgeScanDraft) => void;
+}) {
+  return (
+    <div className="fieldset">
+      <Field label="Instruments">
+        <input
+          className="input"
+          value={draft.instruments}
+          onChange={(event) => onChange({ ...draft, instruments: event.target.value })}
+          placeholder="GBP_JPY, EUR_USD"
+        />
+      </Field>
+      <Field label="Algorithms">
+        <input
+          className="input"
+          value={draft.algorithms}
+          onChange={(event) => onChange({ ...draft, algorithms: event.target.value })}
+          placeholder="generic_sweep_continuation"
+        />
+      </Field>
+      <Field label="Horizons">
+        <input
+          className="input"
+          value={draft.horizons}
+          onChange={(event) => onChange({ ...draft, horizons: event.target.value })}
+          placeholder="15, 30, 60"
+        />
+      </Field>
+      <Field label="Window (days)">
+        <input
+          className="input"
+          type="number"
+          min={1}
+          value={draft.windowDays}
+          onChange={(event) =>
+            onChange({
+              ...draft,
+              windowDays: Math.max(1, Number(event.target.value) || 1),
+            })
+          }
+        />
+      </Field>
+    </div>
+  );
+}
+
+function ScanResultView({
+  result,
+  error,
+}: {
+  readonly result: EdgeScanResult | null;
+  readonly error: Error | null;
+}) {
+  return (
+    <>
+      {error ? <Notice tone="error">{error.message}</Notice> : null}
       {result ? (
         <>
           <ScanSummary result={result} />
@@ -149,11 +297,45 @@ export function EdgeScan() {
         </>
       ) : (
         <p className="mute">
-          Scans all research instruments, all active hypothesis algorithms, and 15m/30m/60m/120m
-          horizons. Ranked by corrected t-statistic with trading-day clustering and
+          Scan results are ranked by corrected t-statistic with trading-day clustering and
           multiple-test-adjusted p-values.
         </p>
       )}
+    </>
+  );
+}
+
+export function EdgeScan() {
+  const scan = useEdgeScanMutation();
+  const [draft, setDraft] = useState<EdgeScanDraft>({
+    instruments: "",
+    algorithms: "",
+    horizons: "",
+    windowDays: 730,
+  });
+
+  function applyPreset(preset: EdgeScanPreset) {
+    setDraft({
+      instruments: listText(preset.instruments),
+      algorithms: listText(preset.algorithms),
+      horizons: listText(preset.horizons),
+      windowDays: preset.window_days,
+    });
+  }
+
+  function submit() {
+    scan.mutate(buildPayload(draft));
+  }
+
+  return (
+    <Panel
+      title="Edge scan"
+      note="universe × horizons"
+      label="Edge scan"
+      actions={<ScanActions pending={scan.isPending} onPreset={applyPreset} onSubmit={submit} />}
+    >
+      <ScanFields draft={draft} onChange={setDraft} />
+      <ScanResultView result={scan.data ?? null} error={scan.error ?? null} />
     </Panel>
   );
 }
