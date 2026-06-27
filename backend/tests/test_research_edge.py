@@ -1,14 +1,17 @@
-from datetime import date
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from harbor_bot.backtester.data import load_candle_fixture
 from harbor_bot.config.defaults import load_default_config
+from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.research.edge import (
     MIN_SAMPLES,
     EdgeStudyResult,
     _Observation,
     has_edge,
+    run_edge_scan,
     run_edge_study,
     summarize,
     summarize_observations,
@@ -95,6 +98,99 @@ def test_no_trade_day_records_no_sweeps() -> None:
     assert result.has_edge is False
 
 
+def test_edge_scan_runs_multiple_hypothesis_algorithms() -> None:
+    rows = run_edge_scan(
+        list(load_candle_fixture(FIXTURE_DIR / "clean_signal_day.json")),
+        instrument="EUR_USD",
+        config=strategy_config_from_defaults(load_default_config()),
+        instrument_rules=_rules(),
+        horizons=(3,),
+        algorithm_ids=("generic_sweep_reversal", "clean_level_sweep_reversal"),
+    )
+
+    assert {row.algorithm_id for row in rows} == {
+        "generic_sweep_reversal",
+        "clean_level_sweep_reversal",
+    }
+    assert {row.hypothesis_id for row in rows} == {"H001", "H005"}
+    assert all(row.horizon == 3 for row in rows)
+
+
+def test_non_news_proxy_algorithm_excludes_1000_et_sweep() -> None:
+    rows = _scan_algorithm_fixture(
+        _algorithm_fixture_candles(
+            [
+                _sweep_spec(day=0, local_hour=9, local_minute=59),
+                _sweep_spec(day=1, local_hour=10, local_minute=20),
+            ]
+        ),
+        algorithms=("generic_sweep_reversal", "non_news_proxy_sweep_reversal"),
+    )
+
+    assert _sweeps(rows, "generic_sweep_reversal") == 2
+    assert _sweeps(rows, "non_news_proxy_sweep_reversal") == 1
+
+
+def test_early_ny_algorithm_keeps_opening_window_sweep_only() -> None:
+    rows = _scan_algorithm_fixture(
+        _algorithm_fixture_candles(
+            [
+                _sweep_spec(day=0, local_hour=9, local_minute=45),
+                _sweep_spec(day=1, local_hour=10, local_minute=45),
+            ]
+        ),
+        algorithms=("generic_sweep_reversal", "early_ny_sweep_reversal"),
+    )
+
+    assert _sweeps(rows, "generic_sweep_reversal") == 2
+    assert _sweeps(rows, "early_ny_sweep_reversal") == 1
+
+
+def test_clean_level_algorithm_excludes_pre_tapped_level() -> None:
+    rows = _scan_algorithm_fixture(
+        _algorithm_fixture_candles(
+            [
+                _sweep_spec(day=0, pre_tap=True),
+                _sweep_spec(day=1, pre_tap=False),
+            ]
+        ),
+        algorithms=("generic_sweep_reversal", "clean_level_sweep_reversal"),
+    )
+
+    assert _sweeps(rows, "generic_sweep_reversal") == 2
+    assert _sweeps(rows, "clean_level_sweep_reversal") == 1
+
+
+def test_compressed_range_algorithm_keeps_below_median_session_ranges() -> None:
+    rows = _scan_algorithm_fixture(
+        _algorithm_fixture_candles(
+            [
+                _sweep_spec(day=0, asia_high="1.1000", london_high="1.1050"),
+                _sweep_spec(day=1, asia_high="1.1300", london_high="1.1350"),
+            ]
+        ),
+        algorithms=("generic_sweep_reversal", "compressed_range_sweep_reversal"),
+    )
+
+    assert _sweeps(rows, "generic_sweep_reversal") == 2
+    assert _sweeps(rows, "compressed_range_sweep_reversal") == 1
+
+
+def test_mss_confirmed_algorithm_uses_confirmed_structure_break_event() -> None:
+    rows = _scan_algorithm_fixture(
+        _algorithm_fixture_candles(
+            [
+                _sweep_spec(day=0, mss_break=True),
+                _sweep_spec(day=1, mss_break=False),
+            ]
+        ),
+        algorithms=("generic_sweep_reversal", "mss_confirmed_sweep_reversal"),
+    )
+
+    assert _sweeps(rows, "generic_sweep_reversal") == 2
+    assert _sweeps(rows, "mss_confirmed_sweep_reversal") == 1
+
+
 def _run(name: str, *, horizon: int) -> EdgeStudyResult:
     return run_edge_study(
         load_candle_fixture(FIXTURE_DIR / name),
@@ -102,6 +198,121 @@ def _run(name: str, *, horizon: int) -> EdgeStudyResult:
         config=strategy_config_from_defaults(load_default_config()),
         instrument_rules=_rules(),
         horizon=horizon,
+    )
+
+
+def _scan_algorithm_fixture(candles, *, algorithms: tuple[str, ...]):
+    return run_edge_scan(
+        candles,
+        instrument="EUR_USD",
+        config=strategy_config_from_defaults(load_default_config()),
+        instrument_rules=_rules(),
+        horizons=(1,),
+        algorithm_ids=algorithms,
+    )
+
+
+def _sweeps(rows, algorithm_id: str) -> int:
+    return next(row.total_sweeps for row in rows if row.algorithm_id == algorithm_id)
+
+
+def _sweep_spec(
+    *,
+    day: int,
+    local_hour: int = 9,
+    local_minute: int = 45,
+    pre_tap: bool = False,
+    asia_high: str = "1.1000",
+    london_high: str = "1.1050",
+    mss_break: bool = False,
+) -> dict[str, object]:
+    return {
+        "day": day,
+        "local_hour": local_hour,
+        "local_minute": local_minute,
+        "pre_tap": pre_tap,
+        "asia_high": asia_high,
+        "london_high": london_high,
+        "mss_break": mss_break,
+    }
+
+
+def _algorithm_fixture_candles(specs: list[dict[str, object]]) -> list:
+    candles = []
+    for spec in specs:
+        candles.extend(_day_candles(**spec))
+    return candles
+
+
+def _day_candles(
+    *,
+    day: int,
+    local_hour: int,
+    local_minute: int,
+    pre_tap: bool,
+    asia_high: str,
+    london_high: str,
+    mss_break: bool,
+) -> list:
+    base = date(2026, 1, 15) + timedelta(days=day)
+    # london_low sits far below asia_low so the only sweepable level is asia_low.
+    candles = [
+        _candle(_utc(base, 20, 0, previous=True), high=asia_high, low="1.0800", close="1.0900"),
+        _candle(_utc(base, 23, 59, previous=True), high=asia_high, low="1.0800", close="1.0900"),
+        _candle(_utc(base, 2, 0), high=london_high, low="1.0700", close="1.0850"),
+        _candle(_utc(base, 4, 59), high=london_high, low="1.0700", close="1.0850"),
+        _candle(_utc(base, 9, 29), high="1.0920", low="1.0860", close="1.0900"),
+        _candle(_utc(base, 9, 30), high="1.0915", low="1.0865", close="1.0890"),
+    ]
+    if pre_tap:
+        # Touches asia_low (1.0800) without sweeping it (low is not below the buffer).
+        candles.append(
+            _candle(_utc(base, 9, 40), high="1.0820", low="1.0800", close="1.0810"),
+        )
+    if mss_break:
+        # Build a confirmed swing-high pivot at 09:36 before the sweep.
+        candles.extend(
+            [
+                _candle(_utc(base, 9, 35), high="1.0900", low="1.0830", close="1.0880"),
+                _candle(_utc(base, 9, 36), high="1.0950", low="1.0830", close="1.0900"),
+                _candle(_utc(base, 9, 37), high="1.0900", low="1.0830", close="1.0880"),
+                _candle(_utc(base, 9, 38), high="1.0895", low="1.0830", close="1.0880"),
+            ]
+        )
+    sweep_dt = _utc(base, local_hour, local_minute)
+    candles.append(_candle(sweep_dt, high="1.0885", low="1.0790", close="1.0810"))
+    if mss_break:
+        # Post-sweep close breaks above the prior swing high → MSS confirmed.
+        candles.append(
+            _candle(sweep_dt + timedelta(minutes=1), high="1.0970", low="1.0830", close="1.0960"),
+        )
+    candles.append(
+        _candle(sweep_dt + timedelta(minutes=2), high="1.0905", low="1.0830", close="1.0900"),
+    )
+    candles.append(
+        _candle(sweep_dt + timedelta(minutes=3), high="1.0905", low="1.0830", close="1.0900"),
+    )
+    return sorted(candles, key=lambda candle: candle.ts)
+
+
+_NY = ZoneInfo("America/New_York")
+
+
+def _utc(value_date: date, hour: int, minute: int, *, previous: bool = False) -> datetime:
+    local_date = value_date - timedelta(days=1) if previous else value_date
+    local = datetime.combine(local_date, time(hour=hour, minute=minute), tzinfo=_NY)
+    return local.astimezone(UTC)
+
+
+def _candle(ts: datetime, *, high: str, low: str, close: str):
+    return ClosedCandle(
+        instrument="EUR_USD",
+        ts=ts,
+        o=Decimal(close),
+        h=Decimal(high),
+        low=Decimal(low),
+        c=Decimal(close),
+        volume=100,
     )
 
 

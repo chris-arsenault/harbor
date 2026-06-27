@@ -20,6 +20,8 @@ from harbor_bot.instruments import RESEARCH_INSTRUMENTS, default_instrument_rule
 from harbor_bot.research.edge import (
     DEFAULT_HORIZON,
     adjust_edge_scan_rows_for_universe,
+    available_edge_algorithms,
+    default_edge_algorithm_ids,
     run_edge_scan,
     run_edge_study,
 )
@@ -40,6 +42,7 @@ class ResearchService:
         instrument: str,
         horizon: int = DEFAULT_HORIZON,
         window_days: int = DEFAULT_RESEARCH_WINDOW_DAYS,
+        algorithm_id: str = "generic_sweep_reversal",
     ) -> dict[str, Any]:
         config = replace(
             strategy_config_from_defaults(load_default_config()), instrument=instrument
@@ -67,6 +70,7 @@ class ResearchService:
             config=config,
             instrument_rules=rules,
             horizon=horizon,
+            algorithm_id=algorithm_id,
         )
         return result.to_jsonable()
 
@@ -75,9 +79,11 @@ class ResearchService:
         *,
         instruments: tuple[str, ...] | None = None,
         horizons: tuple[int, ...] = (15, 30, 60, 120),
+        algorithm_ids: tuple[str, ...] | None = None,
         window_days: int = DEFAULT_RESEARCH_WINDOW_DAYS,
     ) -> dict[str, Any]:
         resolved = instruments or RESEARCH_INSTRUMENTS
+        resolved_algorithms = algorithm_ids or default_edge_algorithm_ids()
         selector = self.window_selector or select_latest_complete_candle_window
         reader = self.candle_reader or read_persisted_candle_records
         all_rows: list[Any] = []
@@ -110,6 +116,7 @@ class ResearchService:
                 config=config,
                 instrument_rules=rules,
                 horizons=horizons,
+                algorithm_ids=resolved_algorithms,
             )
             all_rows.extend(rows)
 
@@ -118,10 +125,26 @@ class ResearchService:
         return {
             "instruments": list(resolved),
             "horizons": list(horizons),
+            "algorithms": [
+                algorithm.to_jsonable()
+                for algorithm in available_edge_algorithms()
+                if algorithm.algorithm_id in resolved_algorithms
+            ],
             "results": [row.to_jsonable() for row in adjusted_rows],
             "statistical_notes": {
+                "instrument_count": len(resolved),
+                "algorithm_count": len(resolved_algorithms),
+                "horizon_count": len(horizons),
+                "planned_overall_test_count": (
+                    len(resolved) * len(resolved_algorithms) * len(horizons)
+                ),
                 "overall_test_count": len(adjusted_rows),
                 "overall_multiple_test_method": "bonferroni",
                 "conditional_multiple_test_method": "bonferroni_per_row",
             },
+        }
+
+    def edge_algorithms(self) -> dict[str, Any]:
+        return {
+            "algorithms": [algorithm.to_jsonable() for algorithm in available_edge_algorithms()]
         }

@@ -358,9 +358,18 @@ def create_app(
     async def read_edge_study(
         instrument: str,
         horizon: int = DEFAULT_HORIZON,
+        algorithm_id: str = "generic_sweep_reversal",
         service: ResearchService = RESEARCH_SERVICE_DEPENDENCY,
     ) -> dict[str, Any]:
-        return await service.edge_study(instrument=instrument, horizon=horizon)
+        return await service.edge_study(
+            instrument=instrument, horizon=horizon, algorithm_id=algorithm_id
+        )
+
+    @app.get("/api/research/edge/algorithms")
+    async def read_edge_algorithms(
+        service: ResearchService = RESEARCH_SERVICE_DEPENDENCY,
+    ) -> dict[str, Any]:
+        return service.edge_algorithms()
 
     @app.post("/api/research/edge/scan")
     async def scan_edge(
@@ -379,7 +388,15 @@ def create_app(
             if isinstance(raw_horizons, list)
             else (15, 30, 60, 120)
         )
-        return await service.edge_scan(instruments=instruments, horizons=horizons)
+        raw_algorithms = payload.get("algorithms")
+        algorithms = (
+            tuple(str(value).strip() for value in raw_algorithms)
+            if isinstance(raw_algorithms, list)
+            else None
+        )
+        return await service.edge_scan(
+            instruments=instruments, horizons=horizons, algorithm_ids=algorithms
+        )
 
     @app.get("/api/trades")
     async def read_trade_journal(

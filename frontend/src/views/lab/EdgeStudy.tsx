@@ -9,6 +9,7 @@ function EdgeTiles({ study }: { readonly study: EdgeStudyResult }) {
   return (
     <div className="tiles tiles--tight">
       <StatTile label="Sweeps" value={String(study.total_sweeps)} />
+      <StatTile label="Hypothesis" value={study.hypothesis_id} />
       <StatTile label="Forward" value={`${study.horizon}m`} />
       <StatTile label="Reversal hit-rate" value={fmtPct(study.overall.hit_rate)} />
       <StatTile
@@ -91,7 +92,8 @@ function EdgeBody({ query }: { readonly query: ReturnType<typeof useEdgeStudyQue
     <>
       <EdgeTiles study={study} />
       <p className="mute">
-        t-stat uses {study.statistical_notes.standard_error_correction}; effective N is{" "}
+        Algorithm: {study.algorithm_label}. t-stat uses{" "}
+        {study.statistical_notes.standard_error_correction}; effective N is{" "}
         {study.statistical_notes.effective_sample_unit}; conditional p-values use{" "}
         {study.statistical_notes.conditional_multiple_test_method} across{" "}
         {study.statistical_notes.conditional_test_count} slices.

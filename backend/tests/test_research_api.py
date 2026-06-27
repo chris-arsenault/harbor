@@ -14,11 +14,22 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures" / "backtester"
 
 class FakeResearchService:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, int]] = []
+        self.calls: list[tuple[str, int, str]] = []
 
-    async def edge_study(self, *, instrument: str, horizon: int) -> dict[str, Any]:
-        self.calls.append((instrument, horizon))
-        return {"instrument": instrument, "horizon": horizon, "total_sweeps": 0, "has_edge": False}
+    async def edge_study(
+        self, *, instrument: str, horizon: int, algorithm_id: str
+    ) -> dict[str, Any]:
+        self.calls.append((instrument, horizon, algorithm_id))
+        return {
+            "algorithm_id": algorithm_id,
+            "instrument": instrument,
+            "horizon": horizon,
+            "total_sweeps": 0,
+            "has_edge": False,
+        }
+
+    def edge_algorithms(self) -> dict[str, Any]:
+        return {"algorithms": []}
 
 
 def test_get_edge_study_routes_through_injected_service() -> None:
@@ -29,7 +40,7 @@ def test_get_edge_study_routes_through_injected_service() -> None:
 
     assert response.status_code == 200
     assert response.json()["instrument"] == "GBP_USD"
-    assert service.calls == [("GBP_USD", 5)]
+    assert service.calls == [("GBP_USD", 5, "generic_sweep_reversal")]
 
 
 def test_edge_study_runs_over_loaded_candles() -> None:
@@ -61,11 +72,42 @@ def test_edge_scan_reports_multiple_testing_notes() -> None:
         service.edge_scan(instruments=("EUR_USD",), horizons=(3, 5), window_days=1)
     )
 
-    assert result["statistical_notes"]["overall_test_count"] == 2
+    assert result["statistical_notes"]["instrument_count"] == 1
+    assert result["statistical_notes"]["algorithm_count"] == 6
+    assert result["statistical_notes"]["horizon_count"] == 2
+    assert result["statistical_notes"]["planned_overall_test_count"] == 12
+    assert result["statistical_notes"]["overall_test_count"] == 12
     assert result["statistical_notes"]["overall_multiple_test_method"] == "bonferroni"
+    assert len(result["algorithms"]) == 6
+    assert {row["algorithm_id"] for row in result["results"]} >= {
+        "generic_sweep_reversal",
+        "mss_confirmed_sweep_reversal",
+    }
     assert result["results"][0]["statistical_notes"]["standard_error_correction"] == (
         "max(iid, cluster_by_trading_day)"
     )
+
+
+def test_edge_scan_can_limit_algorithms() -> None:
+    service = ResearchService(candle_reader=_fixture_records, window_selector=_fixed_window)
+
+    result = asyncio.run(
+        service.edge_scan(
+            instruments=("EUR_USD",),
+            horizons=(3,),
+            algorithm_ids=("generic_sweep_reversal", "clean_level_sweep_reversal"),
+            window_days=1,
+        )
+    )
+
+    assert [algorithm["algorithm_id"] for algorithm in result["algorithms"]] == [
+        "generic_sweep_reversal",
+        "clean_level_sweep_reversal",
+    ]
+    assert {row["algorithm_id"] for row in result["results"]} == {
+        "generic_sweep_reversal",
+        "clean_level_sweep_reversal",
+    }
 
 
 async def _fixture_records(

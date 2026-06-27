@@ -16,6 +16,8 @@ function ScanRow({ row, rank }: { readonly row: EdgeScanRow; readonly rank: numb
   return (
     <tr>
       <td className="num mute">{rank}</td>
+      <td className="cell-strong">{row.hypothesis_id}</td>
+      <td className="mute">{row.algorithm_label}</td>
       <td className="cell-strong">{row.instrument}</td>
       <td className="num">{row.horizon}m</td>
       <td className="num">{row.total_sweeps}</td>
@@ -53,6 +55,8 @@ function ScanTable({ result }: { readonly result: EdgeScanResult }) {
         <thead>
           <tr>
             <th className="num">#</th>
+            <th>Hypothesis</th>
+            <th>Algorithm</th>
             <th>Instrument</th>
             <th className="num">Horizon</th>
             <th className="num">Sweeps</th>
@@ -76,16 +80,44 @@ function ScanTable({ result }: { readonly result: EdgeScanResult }) {
   );
 }
 
+interface ScanCounts {
+  readonly instrumentCount: number;
+  readonly algorithmCount: number;
+  readonly horizonCount: number;
+  readonly plannedTests: number;
+  readonly observedTests: number;
+  readonly edgeCount: number;
+}
+
+function scanCounts(result: EdgeScanResult): ScanCounts {
+  const notes = result.statistical_notes ?? {};
+  const instrumentCount = notes.instrument_count ?? result.instruments.length;
+  const algorithmCount = notes.algorithm_count ?? result.algorithms.length;
+  const horizonCount = notes.horizon_count ?? result.horizons.length;
+  const plannedTests =
+    notes.planned_overall_test_count ?? instrumentCount * algorithmCount * horizonCount;
+  const observedTests = notes.overall_test_count ?? result.results.length;
+  const edgeCount = result.results.filter((r) => r.has_edge).length;
+  return {
+    instrumentCount,
+    algorithmCount,
+    horizonCount,
+    plannedTests,
+    observedTests,
+    edgeCount,
+  };
+}
+
 function ScanSummary({ result }: { readonly result: EdgeScanResult }) {
-  const withEdge = result.results.filter((r) => r.has_edge);
-  const total = result.results.length;
+  const counts = scanCounts(result);
+  const edgeText =
+    counts.edgeCount > 0 ? `${counts.edgeCount} show a statistical edge.` : "No edges found.";
   return (
     <p className="mute">
-      {result.instruments.length} instruments × {result.horizons.length} horizons = {total} combos
-      scanned.{" "}
-      {withEdge.length > 0 ? `${withEdge.length} show a statistical edge.` : "No edges found."}{" "}
-      Corrected t uses clustered trading-day standard errors; adjusted p uses Bonferroni across{" "}
-      {result.statistical_notes?.overall_test_count ?? total} overall tests.
+      {counts.instrumentCount} instruments × {counts.algorithmCount} algorithms ×{" "}
+      {counts.horizonCount} horizons = {counts.plannedTests} planned tests; {counts.observedTests}{" "}
+      returned tests had data. {edgeText} Corrected t uses clustered trading-day standard errors;
+      adjusted p uses Bonferroni across {counts.observedTests} observed overall tests.
     </p>
   );
 }
@@ -117,8 +149,9 @@ export function EdgeScan() {
         </>
       ) : (
         <p className="mute">
-          Scans all research instruments at 15m, 30m, 60m, and 120m horizons. Ranked by corrected
-          t-statistic with trading-day clustering and multiple-test-adjusted p-values.
+          Scans all research instruments, all active hypothesis algorithms, and 15m/30m/60m/120m
+          horizons. Ranked by corrected t-statistic with trading-day clustering and
+          multiple-test-adjusted p-values.
         </p>
       )}
     </Panel>

@@ -14,8 +14,9 @@ t-stat, corrected t-stat, and the unconditional baseline move are reported for
 context.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date
+from datetime import UTC, date, time
 from decimal import Decimal
 from math import erfc, sqrt
 from typing import Any
@@ -45,6 +46,7 @@ T_THRESHOLD = Decimal("2.0")
 ALPHA = Decimal("0.025")
 DEFAULT_HORIZON = 15
 DEFAULT_ATR_WINDOW = 14
+BASELINE_ALGORITHM_ID = "generic_sweep_reversal"
 
 
 @dataclass(frozen=True)
@@ -99,6 +101,9 @@ class ConditionalEdge:
 
 @dataclass(frozen=True)
 class EdgeStudyResult:
+    algorithm_id: str
+    hypothesis_id: str
+    algorithm_label: str
     instrument: str
     horizon: int
     total_candles: int
@@ -113,6 +118,9 @@ class EdgeStudyResult:
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
+            "algorithm_id": self.algorithm_id,
+            "hypothesis_id": self.hypothesis_id,
+            "algorithm_label": self.algorithm_label,
             "instrument": self.instrument,
             "horizon": self.horizon,
             "total_candles": self.total_candles,
@@ -135,6 +143,44 @@ class _Observation:
     bias: Bias
     reversal_pips: Decimal
     atr_pips: Decimal
+
+
+@dataclass(frozen=True)
+class EdgeEvent:
+    index: int
+    trading_date: date
+    level_name: LevelName
+    bias: Bias
+    atr_pips: Decimal
+    pip_size: Decimal
+
+
+@dataclass(frozen=True)
+class EdgeAlgorithm:
+    algorithm_id: str
+    hypothesis_id: str
+    label: str
+    description: str
+    event_builder: Callable[..., list[EdgeEvent]]
+
+    def to_jsonable(self) -> dict[str, str]:
+        return {
+            "algorithm_id": self.algorithm_id,
+            "hypothesis_id": self.hypothesis_id,
+            "label": self.label,
+            "description": self.description,
+        }
+
+
+@dataclass(frozen=True)
+class _SweepCandidate:
+    index: int
+    trading_date: date
+    day_index: int
+    day_start_index: int
+    day_candles: tuple[ClosedCandle, ...]
+    session_levels: Any
+    sweep: Any
 
 
 def summarize(values: list[Decimal]) -> ForwardSummary:
@@ -286,6 +332,9 @@ def summarize_observations(observations: list["_Observation"]) -> ForwardSummary
 
 @dataclass(frozen=True)
 class EdgeScanRow:
+    algorithm_id: str
+    hypothesis_id: str
+    algorithm_label: str
     instrument: str
     horizon: int
     total_sweeps: int
@@ -296,6 +345,9 @@ class EdgeScanRow:
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
+            "algorithm_id": self.algorithm_id,
+            "hypothesis_id": self.hypothesis_id,
+            "algorithm_label": self.algorithm_label,
             "instrument": self.instrument,
             "horizon": self.horizon,
             "total_sweeps": self.total_sweeps,
@@ -316,20 +368,23 @@ def run_edge_study(
     instrument_rules: InstrumentRules,
     horizon: int = DEFAULT_HORIZON,
     atr_window: int = DEFAULT_ATR_WINDOW,
+    algorithm_id: str = BASELINE_ALGORITHM_ID,
 ) -> EdgeStudyResult:
+    algorithm = get_edge_algorithm(algorithm_id)
     ordered = tuple(
         sorted((require_closed_candle(candle) for candle in candles), key=lambda c: c.ts)
     )
-    sweeps = _collect_sweeps(
-        ordered, instrument=instrument, config=config, instrument_rules=instrument_rules
+    events = algorithm.event_builder(
+        ordered,
+        instrument=instrument,
+        config=config,
+        instrument_rules=instrument_rules,
+        atr_window=atr_window,
     )
     observations = _observations_with_forward(
-        sweeps,
+        events,
         candles=ordered,
         horizon=horizon,
-        atr_window=atr_window,
-        instrument_rules=instrument_rules,
-        config=config,
     )
     overall = summarize_observations(observations)
     conditionals = _adjust_conditionals_for_family(
@@ -340,10 +395,13 @@ def run_edge_study(
         ]
     )
     return EdgeStudyResult(
+        algorithm_id=algorithm.algorithm_id,
+        hypothesis_id=algorithm.hypothesis_id,
+        algorithm_label=algorithm.label,
         instrument=instrument,
         horizon=horizon,
         total_candles=len(ordered),
-        total_sweeps=len(sweeps),
+        total_sweeps=len(events),
         overall=overall,
         has_edge=has_edge(overall),
         baseline_mean_abs_pips=_baseline_abs_pips(
@@ -367,40 +425,47 @@ def run_edge_scan(
     instrument_rules: InstrumentRules,
     horizons: tuple[int, ...] = (15, 30, 60),
     atr_window: int = DEFAULT_ATR_WINDOW,
+    algorithm_ids: tuple[str, ...] = (BASELINE_ALGORITHM_ID,),
 ) -> list[EdgeScanRow]:
-    """Run the edge study at multiple horizons, reusing sweep detection."""
+    """Run the edge study at multiple horizons and hypothesis algorithms."""
     ordered = tuple(
         sorted((require_closed_candle(candle) for candle in candles), key=lambda c: c.ts)
     )
-    sweeps = _collect_sweeps(
-        ordered, instrument=instrument, config=config, instrument_rules=instrument_rules
-    )
     rows: list[EdgeScanRow] = []
-    for horizon in horizons:
-        observations = _observations_with_forward(
-            sweeps,
-            candles=ordered,
-            horizon=horizon,
-            atr_window=atr_window,
-            instrument_rules=instrument_rules,
+    for algorithm_id in algorithm_ids:
+        algorithm = get_edge_algorithm(algorithm_id)
+        events = algorithm.event_builder(
+            ordered,
+            instrument=instrument,
             config=config,
+            instrument_rules=instrument_rules,
+            atr_window=atr_window,
         )
-        overall = summarize_observations(observations)
-        conditionals = _adjust_conditionals_for_family(_all_conditionals(observations))
-        rows.append(
-            EdgeScanRow(
-                instrument=instrument,
+        for horizon in horizons:
+            observations = _observations_with_forward(
+                events,
+                candles=ordered,
                 horizon=horizon,
-                total_sweeps=len(sweeps),
-                overall=overall,
-                has_edge=has_edge(overall),
-                best_conditional=_best_conditional(conditionals),
-                statistical_notes=_statistical_notes(
-                    conditional_test_count=len(conditionals),
-                    overall_test_count=len(horizons),
-                ),
             )
-        )
+            overall = summarize_observations(observations)
+            conditionals = _adjust_conditionals_for_family(_all_conditionals(observations))
+            rows.append(
+                EdgeScanRow(
+                    algorithm_id=algorithm.algorithm_id,
+                    hypothesis_id=algorithm.hypothesis_id,
+                    algorithm_label=algorithm.label,
+                    instrument=instrument,
+                    horizon=horizon,
+                    total_sweeps=len(events),
+                    overall=overall,
+                    has_edge=has_edge(overall),
+                    best_conditional=_best_conditional(conditionals),
+                    statistical_notes=_statistical_notes(
+                        conditional_test_count=len(conditionals),
+                        overall_test_count=len(horizons) * len(algorithm_ids),
+                    ),
+                )
+            )
     return _adjust_scan_rows_for_family(rows)
 
 
@@ -409,34 +474,146 @@ def adjust_edge_scan_rows_for_universe(rows: list[EdgeScanRow]) -> list[EdgeScan
     return _adjust_scan_rows_for_family(rows)
 
 
-def _collect_sweeps(
+def available_edge_algorithms() -> tuple[EdgeAlgorithm, ...]:
+    return (
+        EdgeAlgorithm(
+            algorithm_id=BASELINE_ALGORITHM_ID,
+            hypothesis_id="H001",
+            label="Generic session sweep reversal",
+            description="Any first Asia/London session-level sweep inside the NY window.",
+            event_builder=_generic_sweep_events,
+        ),
+        EdgeAlgorithm(
+            algorithm_id="non_news_proxy_sweep_reversal",
+            hypothesis_id="H002",
+            label="Non-news-proxy sweep reversal",
+            description=(
+                "Session sweeps excluding the 10:00 ET macro-release proxy window "
+                "where genuine repricing is more likely than stop-run reversion."
+            ),
+            event_builder=_non_news_proxy_events,
+        ),
+        EdgeAlgorithm(
+            algorithm_id="mss_confirmed_sweep_reversal",
+            hypothesis_id="H003",
+            label="MSS-confirmed sweep reversal",
+            description=(
+                "A sweep only becomes an event after a closed-candle market-structure "
+                "shift in the reversal direction."
+            ),
+            event_builder=_mss_confirmed_events,
+        ),
+        EdgeAlgorithm(
+            algorithm_id="compressed_range_sweep_reversal",
+            hypothesis_id="H004",
+            label="Compressed-range sweep reversal",
+            description=(
+                "Sweeps after below-median Asia/London range compression should reverse "
+                "more cleanly than sweeps after expanded ranges."
+            ),
+            event_builder=_compressed_range_events,
+        ),
+        EdgeAlgorithm(
+            algorithm_id="clean_level_sweep_reversal",
+            hypothesis_id="H005",
+            label="Clean-level first-touch sweep",
+            description=(
+                "Sweeps of levels not already tapped in the NY window are cleaner "
+                "liquidity events than repeatedly traded levels."
+            ),
+            event_builder=_clean_level_events,
+        ),
+        EdgeAlgorithm(
+            algorithm_id="early_ny_sweep_reversal",
+            hypothesis_id="H006",
+            label="Early-NY sweep reversal",
+            description=(
+                "Sweeps during the opening NY liquidity auction should behave "
+                "differently from late-window sweeps."
+            ),
+            event_builder=_early_ny_events,
+        ),
+    )
+
+
+def default_edge_algorithm_ids() -> tuple[str, ...]:
+    return tuple(algorithm.algorithm_id for algorithm in available_edge_algorithms())
+
+
+def get_edge_algorithm(algorithm_id: str) -> EdgeAlgorithm:
+    algorithms = {algorithm.algorithm_id: algorithm for algorithm in available_edge_algorithms()}
+    try:
+        return algorithms[algorithm_id]
+    except KeyError as exc:
+        msg = f"unknown edge algorithm {algorithm_id!r}"
+        raise ValueError(msg) from exc
+
+
+def _collect_sweep_candidates(
     candles: tuple[ClosedCandle, ...],
     *,
     instrument: str,
     config: StrategyConfig,
     instrument_rules: InstrumentRules,
-) -> list[tuple[int, Any]]:
-    sweeps: list[tuple[int, Any]] = []
+) -> list[_SweepCandidate]:
+    candidates: list[_SweepCandidate] = []
+    for trading_date, day_start_index, day_candles in _day_groups(candles, config):
+        candidates.extend(
+            _collect_sweep_candidates_for_day(
+                day_candles,
+                trading_date=trading_date,
+                day_start_index=day_start_index,
+                instrument=instrument,
+                config=config,
+                instrument_rules=instrument_rules,
+            )
+        )
+    return candidates
+
+
+def _day_groups(
+    candles: tuple[ClosedCandle, ...],
+    config: StrategyConfig,
+) -> list[tuple[date, int, tuple[ClosedCandle, ...]]]:
+    groups: list[tuple[date, int, tuple[ClosedCandle, ...]]] = []
     trading_date: date | None = None
+    start_index = 0
+    current: list[ClosedCandle] = []
+    for index, candle in enumerate(candles):
+        next_date = trading_date_for_candle(candle, config)
+        if trading_date is not None and next_date != trading_date:
+            groups.append((trading_date, start_index, tuple(current)))
+            current = []
+            start_index = index
+        trading_date = next_date
+        current.append(candle)
+    if trading_date is not None:
+        groups.append((trading_date, start_index, tuple(current)))
+    return groups
+
+
+def _collect_sweep_candidates_for_day(
+    day_candles: tuple[ClosedCandle, ...],
+    *,
+    trading_date: date,
+    day_start_index: int,
+    instrument: str,
+    config: StrategyConfig,
+    instrument_rules: InstrumentRules,
+) -> list[_SweepCandidate]:
+    candidates: list[_SweepCandidate] = []
     day_state: DayState | None = None
     session_levels = None
     day_history: list[ClosedCandle] = []
-    for index, candle in enumerate(candles):
-        next_date = trading_date_for_candle(candle, config)
-        if next_date != trading_date:
-            trading_date, day_state, session_levels, day_history = (
-                next_date,
-                DayState(trading_date=next_date),
-                None,
-                [],
-            )
+    day_state = DayState(trading_date=trading_date)
+    for day_index, candle in enumerate(day_candles):
         day_history.append(candle)
-        if session_levels is None and candle.ts.astimezone(UTC) >= _ny_start(next_date, config):
+        if session_levels is None and candle.ts.astimezone(UTC) >= _ny_start(trading_date, config):
             session_levels = _try_levels(
-                day_history, trading_date=next_date, instrument=instrument, config=config
+                day_history, trading_date=trading_date, instrument=instrument, config=config
             )
         if session_levels is None or not is_in_ny_trade_window(
-            candle, trading_date=next_date, config=config
+            candle, trading_date=trading_date, config=config
         ):
             continue
         sweep = detect_sweep(
@@ -445,39 +622,268 @@ def _collect_sweeps(
             config=config,
             instrument_rules=instrument_rules,
             day_state=day_state,
-            candle_index=index,
+            candle_index=day_index,
         )
         if sweep is not None:
-            sweeps.append((index, sweep))
+            candidates.append(
+                _SweepCandidate(
+                    index=day_start_index + day_index,
+                    trading_date=trading_date,
+                    day_index=day_index,
+                    day_start_index=day_start_index,
+                    day_candles=day_candles,
+                    session_levels=session_levels,
+                    sweep=sweep,
+                )
+            )
             day_state = mark_level_taken(day_state, sweep.level_name)
-    return sweeps
+    return candidates
+
+
+def _generic_sweep_events(
+    candles: tuple[ClosedCandle, ...],
+    *,
+    instrument: str,
+    config: StrategyConfig,
+    instrument_rules: InstrumentRules,
+    atr_window: int,
+) -> list[EdgeEvent]:
+    return _events_from_candidates(
+        _collect_sweep_candidates(
+            candles, instrument=instrument, config=config, instrument_rules=instrument_rules
+        ),
+        candles=candles,
+        atr_window=atr_window,
+        instrument_rules=instrument_rules,
+    )
+
+
+def _non_news_proxy_events(
+    candles: tuple[ClosedCandle, ...],
+    *,
+    instrument: str,
+    config: StrategyConfig,
+    instrument_rules: InstrumentRules,
+    atr_window: int,
+) -> list[EdgeEvent]:
+    candidates = [
+        candidate
+        for candidate in _collect_sweep_candidates(
+            candles, instrument=instrument, config=config, instrument_rules=instrument_rules
+        )
+        if not _in_time_window(
+            candles[candidate.index],
+            config,
+            start=time(9, 55),
+            end=time(10, 10),
+        )
+    ]
+    return _events_from_candidates(
+        candidates, candles=candles, atr_window=atr_window, instrument_rules=instrument_rules
+    )
+
+
+def _mss_confirmed_events(
+    candles: tuple[ClosedCandle, ...],
+    *,
+    instrument: str,
+    config: StrategyConfig,
+    instrument_rules: InstrumentRules,
+    atr_window: int,
+) -> list[EdgeEvent]:
+    from harbor_bot.strategy.structure import mss_confirmed
+
+    events: list[EdgeEvent] = []
+    candidates = _collect_sweep_candidates(
+        candles, instrument=instrument, config=config, instrument_rules=instrument_rules
+    )
+    for candidate in candidates:
+        deadline = min(candidate.day_index + config.fvg_window, len(candidate.day_candles) - 1)
+        for current_day_index in range(candidate.day_index + 1, deadline + 1):
+            if mss_confirmed(
+                list(candidate.day_candles[: current_day_index + 1]),
+                sweep=candidate.sweep,
+                current_index=current_day_index,
+                config=config,
+            ):
+                events.append(
+                    _event_from_candidate(
+                        candidate,
+                        index=candidate.day_start_index + current_day_index,
+                        candles=candles,
+                        atr_window=atr_window,
+                        instrument_rules=instrument_rules,
+                    )
+                )
+                break
+    return events
+
+
+def _compressed_range_events(
+    candles: tuple[ClosedCandle, ...],
+    *,
+    instrument: str,
+    config: StrategyConfig,
+    instrument_rules: InstrumentRules,
+    atr_window: int,
+) -> list[EdgeEvent]:
+    candidates = _collect_sweep_candidates(
+        candles, instrument=instrument, config=config, instrument_rules=instrument_rules
+    )
+    ranges = [_session_range_pips(candidate, instrument_rules) for candidate in candidates]
+    median = _median(ranges)
+    filtered = [
+        candidate
+        for candidate, range_pips in zip(candidates, ranges, strict=True)
+        if range_pips <= median
+    ]
+    return _events_from_candidates(
+        filtered, candles=candles, atr_window=atr_window, instrument_rules=instrument_rules
+    )
+
+
+def _clean_level_events(
+    candles: tuple[ClosedCandle, ...],
+    *,
+    instrument: str,
+    config: StrategyConfig,
+    instrument_rules: InstrumentRules,
+    atr_window: int,
+) -> list[EdgeEvent]:
+    candidates = [
+        candidate
+        for candidate in _collect_sweep_candidates(
+            candles, instrument=instrument, config=config, instrument_rules=instrument_rules
+        )
+        if _level_clean_before_sweep(candidate, config=config, instrument_rules=instrument_rules)
+    ]
+    return _events_from_candidates(
+        candidates, candles=candles, atr_window=atr_window, instrument_rules=instrument_rules
+    )
+
+
+def _early_ny_events(
+    candles: tuple[ClosedCandle, ...],
+    *,
+    instrument: str,
+    config: StrategyConfig,
+    instrument_rules: InstrumentRules,
+    atr_window: int,
+) -> list[EdgeEvent]:
+    candidates = [
+        candidate
+        for candidate in _collect_sweep_candidates(
+            candles, instrument=instrument, config=config, instrument_rules=instrument_rules
+        )
+        if _in_time_window(candles[candidate.index], config, start=time(9, 30), end=time(10, 15))
+    ]
+    return _events_from_candidates(
+        candidates, candles=candles, atr_window=atr_window, instrument_rules=instrument_rules
+    )
+
+
+def _events_from_candidates(
+    candidates: list[_SweepCandidate],
+    *,
+    candles: tuple[ClosedCandle, ...],
+    atr_window: int,
+    instrument_rules: InstrumentRules,
+) -> list[EdgeEvent]:
+    return [
+        _event_from_candidate(
+            candidate,
+            index=candidate.index,
+            candles=candles,
+            atr_window=atr_window,
+            instrument_rules=instrument_rules,
+        )
+        for candidate in candidates
+    ]
+
+
+def _event_from_candidate(
+    candidate: _SweepCandidate,
+    *,
+    index: int,
+    candles: tuple[ClosedCandle, ...],
+    atr_window: int,
+    instrument_rules: InstrumentRules,
+) -> EdgeEvent:
+    return EdgeEvent(
+        index=index,
+        trading_date=candidate.trading_date,
+        level_name=candidate.sweep.level_name,
+        bias=candidate.sweep.bias,
+        atr_pips=_atr_pips(candles, index, atr_window, instrument_rules),
+        pip_size=instrument_rules.pip_size,
+    )
+
+
+def _in_time_window(
+    candle: ClosedCandle,
+    config: StrategyConfig,
+    *,
+    start: time,
+    end: time,
+) -> bool:
+    local_time = candle.ts.astimezone(_zone(config)).time().replace(tzinfo=None)
+    return start <= local_time < end
+
+
+def _zone(config: StrategyConfig) -> Any:
+    from zoneinfo import ZoneInfo
+
+    return ZoneInfo(config.timezone)
+
+
+def _session_range_pips(
+    candidate: _SweepCandidate,
+    instrument_rules: InstrumentRules,
+) -> Decimal:
+    levels = candidate.session_levels
+    high = max(levels.asia_high, levels.london_high)
+    low = min(levels.asia_low, levels.london_low)
+    return (high - low) / instrument_rules.pip_size
+
+
+def _level_clean_before_sweep(
+    candidate: _SweepCandidate,
+    *,
+    config: StrategyConfig,
+    instrument_rules: InstrumentRules,
+) -> bool:
+    level_price = candidate.sweep.level_price
+    buffer = instrument_rules.pips_to_price(config.sweep_buffer_pips)
+    prior = list(candidate.day_candles[: candidate.day_index])
+    for candle in prior:
+        if not is_in_ny_trade_window(candle, trading_date=candidate.trading_date, config=config):
+            continue
+        if candle.low - buffer <= level_price <= candle.h + buffer:
+            return False
+    return True
 
 
 def _observations_with_forward(
-    sweeps: list[tuple[int, Any]],
+    events: list[EdgeEvent],
     *,
     candles: tuple[ClosedCandle, ...],
     horizon: int,
-    atr_window: int,
-    instrument_rules: InstrumentRules,
-    config: StrategyConfig,
 ) -> list[_Observation]:
-    pip = instrument_rules.pip_size
     observations: list[_Observation] = []
-    for index, sweep in sweeps:
-        forward_index = index + horizon
+    for event in events:
+        forward_index = event.index + horizon
         if forward_index >= len(candles):
             continue
-        signed = candles[forward_index].c - candles[index].c
-        reversal = signed if sweep.bias == Bias.BULLISH else -signed
+        signed = candles[forward_index].c - candles[event.index].c
+        reversal = signed if event.bias == Bias.BULLISH else -signed
         observations.append(
             _Observation(
-                index=index,
-                trading_date=trading_date_for_candle(candles[index], config),
-                level_name=sweep.level_name,
-                bias=sweep.bias,
-                reversal_pips=reversal / pip,
-                atr_pips=_atr_pips(candles, index, atr_window, instrument_rules),
+                index=event.index,
+                trading_date=event.trading_date,
+                level_name=event.level_name,
+                bias=event.bias,
+                reversal_pips=reversal / event.pip_size,
+                atr_pips=event.atr_pips,
             )
         )
     return observations
@@ -548,6 +954,9 @@ def _adjust_scan_rows_for_family(rows: list[EdgeScanRow]) -> list[EdgeScanRow]:
         }
         adjusted.append(
             EdgeScanRow(
+                algorithm_id=row.algorithm_id,
+                hypothesis_id=row.hypothesis_id,
+                algorithm_label=row.algorithm_label,
                 instrument=row.instrument,
                 horizon=row.horizon,
                 total_sweeps=row.total_sweeps,

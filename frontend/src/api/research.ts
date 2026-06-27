@@ -34,11 +34,18 @@ export interface EdgeStatisticalNotes {
   effective_sample_unit?: string;
   conditional_test_count?: number;
   conditional_multiple_test_method?: string;
+  instrument_count?: number;
+  algorithm_count?: number;
+  horizon_count?: number;
+  planned_overall_test_count?: number;
   overall_test_count?: number;
   overall_multiple_test_method?: string;
 }
 
 export interface EdgeStudyResult {
+  algorithm_id: string;
+  hypothesis_id: string;
+  algorithm_label: string;
   instrument: string;
   horizon: number;
   total_candles: number;
@@ -55,15 +62,22 @@ export interface EdgeStudyResult {
 export function fetchEdgeStudy(params: {
   instrument: string;
   horizon?: number;
+  algorithm_id?: string;
 }): Promise<EdgeStudyResult> {
   const search = new URLSearchParams({ instrument: params.instrument });
   if (params.horizon !== undefined) {
     search.set("horizon", String(params.horizon));
   }
+  if (params.algorithm_id !== undefined) {
+    search.set("algorithm_id", params.algorithm_id);
+  }
   return apiGet<EdgeStudyResult>(`/api/research/edge?${search.toString()}`);
 }
 
 export interface EdgeScanRow {
+  algorithm_id: string;
+  hypothesis_id: string;
+  algorithm_label: string;
   instrument: string;
   horizon: number;
   total_sweeps: number;
@@ -76,13 +90,22 @@ export interface EdgeScanRow {
 export interface EdgeScanResult {
   instruments: string[];
   horizons: number[];
+  algorithms: EdgeAlgorithm[];
   results: EdgeScanRow[];
   statistical_notes?: EdgeStatisticalNotes;
+}
+
+export interface EdgeAlgorithm {
+  algorithm_id: string;
+  hypothesis_id: string;
+  label: string;
+  description: string;
 }
 
 export function fetchEdgeScan(payload: {
   instruments?: string[];
   horizons?: number[];
+  algorithms?: string[];
 }): Promise<EdgeScanResult> {
   return apiPost<EdgeScanResult>("/api/research/edge/scan", payload);
 }
