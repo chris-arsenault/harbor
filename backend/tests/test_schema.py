@@ -6,6 +6,7 @@ from harbor_bot.persistence.schema import metadata
 EXPECTED_TABLES = {
     "backtest_runs",
     "backtest_trades",
+    "book_snapshots",
     "broker_transactions",
     "candles",
     "config",
@@ -87,6 +88,23 @@ def test_config_and_events_store_jsonb_payloads() -> None:
     assert _is_jsonb("events", "data_json")
     assert _is_jsonb("broker_transactions", "raw_json")
     assert _has_unique_constraint(metadata.tables["broker_transactions"], ["transaction_id"])
+
+
+def test_book_snapshots_are_append_only_jsonb_snapshots() -> None:
+    snapshots = metadata.tables["book_snapshots"]
+    assert {
+        "book_type",
+        "instrument",
+        "snapshot_time",
+        "mid_price",
+        "bucket_width",
+        "bucket_count",
+        "buckets_json",
+        "recorded_ts",
+    } <= set(snapshots.columns.keys())
+    assert _is_jsonb("book_snapshots", "buckets_json")
+    assert _has_unique_constraint(snapshots, ["book_type", "instrument", "snapshot_time"])
+    assert _has_check_constraint(snapshots, "book_type_check")
 
 
 def _has_unique_constraint(table, columns: list[str]) -> bool:

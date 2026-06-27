@@ -24,6 +24,7 @@ from harbor_bot.backtester.service import BacktestService
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.config.models import ConfigUpdateRequest
 from harbor_bot.config.service import ConfigService
+from harbor_bot.feed.book_recorder import BookRecorderStatusService, run_book_recorder
 from harbor_bot.feed.live import ingest_pricing_stream
 from harbor_bot.feed.source_service import CandleSourceService
 from harbor_bot.instruments import default_instrument_rules
@@ -84,6 +85,10 @@ def get_candle_source_service(connection: HTTPConnection) -> CandleSourceService
     return connection.app.state.candle_source_service
 
 
+def get_book_recorder_status_service(connection: HTTPConnection) -> BookRecorderStatusService:
+    return connection.app.state.book_recorder_status_service
+
+
 def get_config_service(connection: HTTPConnection) -> ConfigService:
     return connection.app.state.config_service
 
@@ -118,6 +123,7 @@ LAB_SERVICE_DEPENDENCY = Depends(get_lab_service)
 PAPER_FORWARD_SERVICE_DEPENDENCY = Depends(get_paper_forward_service)
 PRODUCT_QUERY_SERVICE_DEPENDENCY = Depends(get_product_query_service)
 CANDLE_SOURCE_SERVICE_DEPENDENCY = Depends(get_candle_source_service)
+BOOK_RECORDER_STATUS_SERVICE_DEPENDENCY = Depends(get_book_recorder_status_service)
 CONFIG_SERVICE_DEPENDENCY = Depends(get_config_service)
 RESEARCH_SERVICE_DEPENDENCY = Depends(get_research_service)
 CONTROL_SERVICE_DEPENDENCY = Depends(get_control_service)
@@ -138,6 +144,7 @@ def create_app(
     paper_forward_service: PaperForwardService | None = None,
     product_query_service: Any | None = None,
     candle_source_service: CandleSourceService | None = None,
+    book_recorder_status_service: BookRecorderStatusService | None = None,
     config_service: ConfigService | None = None,
     research_service: ResearchService | None = None,
     control_service: Any | None = None,
@@ -158,6 +165,8 @@ def create_app(
     app.state.practice_execution_service = practice_execution_service
     app.state.live_pricing_stream_state = {"state": "disabled", "running": False}
     app.state.live_pricing_stream_task = None
+    app.state.book_recorder_state = {"state": "disabled", "running": False}
+    app.state.book_recorder_task = None
     persistence_engine = None
     if (
         observability_service is None
@@ -166,6 +175,7 @@ def create_app(
         or paper_forward_service is None
         or product_query_service is None
         or candle_source_service is None
+        or book_recorder_status_service is None
         or config_service is None
         or research_service is None
         or readiness_checker is None
@@ -203,6 +213,13 @@ def create_app(
             live_stream_status_provider=lambda: _live_pricing_stream_status(app),
         )
     app.state.candle_source_service = candle_source_service
+    if book_recorder_status_service is None:
+        book_recorder_status_service = BookRecorderStatusService(
+            engine=persistence_engine,
+            settings=app.state.settings,
+            recorder_status_provider=lambda: _book_recorder_status(app),
+        )
+    app.state.book_recorder_status_service = book_recorder_status_service
     if config_service is None:
         config_service = ConfigService(
             engine=persistence_engine,
@@ -231,37 +248,23 @@ def create_app(
 
     @app.on_event("startup")
     async def start_runtime_workers() -> None:
-        if not _should_start_live_pricing_stream(app):
-            return
-        now = DateTime.now(tz=UTC)
-        app.state.live_pricing_stream_state = {
-            "state": "starting",
-            "running": False,
-            "last_started_at": now,
-        }
-        task = asyncio.create_task(_run_live_pricing_stream(app))
-        app.state.live_pricing_stream_task = task
-        app.state.live_pricing_stream_state = {
-            "state": "running",
-            "running": True,
-            "last_started_at": now,
-        }
-        task.add_done_callback(lambda done: _record_live_pricing_stream_done(app, done))
+        if _should_start_live_pricing_stream(app):
+            _start_live_pricing_stream(app)
+        if _should_start_book_recorder(app):
+            _start_book_recorder(app)
 
     @app.on_event("shutdown")
     async def stop_runtime_workers() -> None:
-        task = app.state.live_pricing_stream_task
-        if task is None:
-            return
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
-        app.state.live_pricing_stream_state = {
-            **dict(app.state.live_pricing_stream_state),
-            "state": "stopped",
-            "running": False,
-            "last_stopped_at": DateTime.now(tz=UTC),
-        }
+        await _cancel_runtime_task(
+            app,
+            task_attr="live_pricing_stream_task",
+            state_attr="live_pricing_stream_state",
+        )
+        await _cancel_runtime_task(
+            app,
+            task_attr="book_recorder_task",
+            state_attr="book_recorder_state",
+        )
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -405,6 +408,12 @@ def create_app(
         service: ResearchService = RESEARCH_SERVICE_DEPENDENCY,
     ) -> dict[str, Any]:
         return service.edge_algorithms()
+
+    @app.get("/api/research/books/status")
+    async def read_book_recorder_status(
+        service: BookRecorderStatusService = BOOK_RECORDER_STATUS_SERVICE_DEPENDENCY,
+    ) -> dict[str, Any]:
+        return _jsonable(await service.get_status())
 
     @app.post("/api/research/edge/scan")
     async def scan_edge(
@@ -727,6 +736,23 @@ def _should_start_live_pricing_stream(app: FastAPI) -> bool:
     )
 
 
+def _start_live_pricing_stream(app: FastAPI) -> None:
+    now = DateTime.now(tz=UTC)
+    app.state.live_pricing_stream_state = {
+        "state": "starting",
+        "running": False,
+        "last_started_at": now,
+    }
+    task = asyncio.create_task(_run_live_pricing_stream(app))
+    app.state.live_pricing_stream_task = task
+    app.state.live_pricing_stream_state = {
+        "state": "running",
+        "running": True,
+        "last_started_at": now,
+    }
+    task.add_done_callback(lambda done: _record_live_pricing_stream_done(app, done))
+
+
 async def _run_live_pricing_stream(app: FastAPI) -> None:
     settings = app.state.settings
     instruments = settings.research_instruments
@@ -768,6 +794,53 @@ def _live_pricing_stream_status(app: FastAPI) -> dict[str, Any]:
     return state
 
 
+def _should_start_book_recorder(app: FastAPI) -> bool:
+    settings = app.state.settings
+    return bool(
+        settings.oanda_book_recorder_enabled
+        and settings.oanda_api_token
+        and settings.oanda_account_id
+        and getattr(app.state, "persistence_engine", None) is not None
+    )
+
+
+def _start_book_recorder(app: FastAPI) -> None:
+    now = DateTime.now(tz=UTC)
+    app.state.book_recorder_state = {
+        "state": "starting",
+        "running": False,
+        "last_started_at": now,
+    }
+    task = asyncio.create_task(_run_book_recorder(app))
+    app.state.book_recorder_task = task
+    app.state.book_recorder_state = {
+        "state": "running",
+        "running": True,
+        "last_started_at": now,
+    }
+    task.add_done_callback(lambda done: _record_book_recorder_done(app, done))
+
+
+async def _run_book_recorder(app: FastAPI) -> None:
+    settings = app.state.settings
+    await run_book_recorder(
+        settings=settings,
+        engine=app.state.persistence_engine,
+        interval_seconds=settings.oanda_book_poll_interval_seconds,
+    )
+
+
+def _book_recorder_status(app: FastAPI) -> dict[str, Any]:
+    state = dict(getattr(app.state, "book_recorder_state", {}))
+    task = getattr(app.state, "book_recorder_task", None)
+    if task is not None and not task.done():
+        state["running"] = True
+        state["state"] = "running"
+    else:
+        state["running"] = False
+    return state
+
+
 def _record_live_pricing_stream_done(app: FastAPI, task: asyncio.Task[Any]) -> None:
     state = dict(getattr(app.state, "live_pricing_stream_state", {}))
     state["running"] = False
@@ -782,6 +855,41 @@ def _record_live_pricing_stream_done(app: FastAPI, task: asyncio.Task[Any]) -> N
             state["state"] = "failed"
             state["last_error"] = redact_secret_text(error)
     app.state.live_pricing_stream_state = state
+
+
+def _record_book_recorder_done(app: FastAPI, task: asyncio.Task[Any]) -> None:
+    state = dict(getattr(app.state, "book_recorder_state", {}))
+    state["running"] = False
+    state["last_stopped_at"] = DateTime.now(tz=UTC)
+    if task.cancelled():
+        state["state"] = "stopped"
+    else:
+        error = task.exception()
+        if error is None:
+            state["state"] = "stopped"
+        else:
+            state["state"] = "failed"
+            state["last_error"] = redact_secret_text(error)
+    app.state.book_recorder_state = state
+
+
+async def _cancel_runtime_task(app: FastAPI, *, task_attr: str, state_attr: str) -> None:
+    task = getattr(app.state, task_attr, None)
+    if task is None:
+        return
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+    setattr(
+        app.state,
+        state_attr,
+        {
+            **dict(getattr(app.state, state_attr, {})),
+            "state": "stopped",
+            "running": False,
+            "last_stopped_at": DateTime.now(tz=UTC),
+        },
+    )
 
 
 class ReadinessChecker:

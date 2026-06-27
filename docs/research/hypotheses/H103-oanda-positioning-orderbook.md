@@ -1,6 +1,6 @@
 # H103 — OANDA positioning and order-book information
 
-- Status: proposed / data recorder needed
+- Status: recorder built; awaiting forward data
 - Future algorithms: retail-position contrarian, liquidity-cluster proximity
 
 ## Hypothesis
@@ -11,10 +11,10 @@ identify real liquidity pools better than guessed session highs/lows.
 
 ## Data requirement
 
-This data is not backfillable in Harbor today. A lightweight recorder should log
-OANDA position/order-book snapshots forward before this can be tested.
+This data is not backfillable in Harbor today. Harbor now includes a lightweight
+recorder that logs OANDA position/order-book snapshots forward once enabled.
 
 ## Implementation note
 
-Building the recorder is integration plumbing and should be delegated unless it
-becomes a research blocker.
+Do not test H103 until enough forward-recorded snapshots exist for the selected
+instrument universe.

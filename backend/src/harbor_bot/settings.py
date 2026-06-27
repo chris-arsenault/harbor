@@ -73,6 +73,14 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="HARBOR_LIVE_INGEST_ENABLED",
     )
+    oanda_book_recorder_enabled: bool = Field(
+        default=False,
+        validation_alias="OANDA_BOOK_RECORDER_ENABLED",
+    )
+    oanda_book_poll_interval_seconds: float = Field(
+        default=300.0,
+        validation_alias="OANDA_BOOK_POLL_INTERVAL_SECONDS",
+    )
     research_instruments_csv: str = Field(
         default="GBP_USD,EUR_USD,USD_JPY,EUR_JPY,GBP_JPY,AUD_JPY,AUD_USD,EUR_GBP",
         validation_alias="HARBOR_RESEARCH_INSTRUMENTS",

@@ -11,6 +11,8 @@ from harbor_bot.oanda.types import (
     parse_account_summary,
     parse_historical_candles,
     parse_instruments,
+    parse_order_book,
+    parse_position_book,
     parse_pricing_frame,
     parse_transaction_frame,
 )
@@ -84,6 +86,30 @@ def test_historical_candles_parse_bid_and_ask_extremes() -> None:
     assert candle.bid_h == Decimal("1.1049")
     assert candle.ask_low == Decimal("1.0991")
     assert candle.ask_h == Decimal("1.1051")
+
+
+def test_order_book_parses_snapshot_header_and_buckets() -> None:
+    snapshot = parse_order_book(_load_json("order_book.json"))
+
+    assert snapshot.book_type == "order"
+    assert snapshot.instrument == "EUR_USD"
+    assert snapshot.time == datetime(2026, 1, 15, 14, 20, tzinfo=UTC)
+    assert snapshot.price == Decimal("1.09000")
+    assert snapshot.bucket_width == Decimal("0.00050")
+    assert len(snapshot.buckets) == 2
+    assert snapshot.buckets[0].price == Decimal("1.08500")
+    assert snapshot.buckets[0].long_percent == Decimal("0.20")
+    assert snapshot.buckets[0].short_percent == Decimal("0.15")
+
+
+def test_position_book_parses_snapshot_header_and_buckets() -> None:
+    snapshot = parse_position_book(_load_json("position_book.json"))
+
+    assert snapshot.book_type == "position"
+    assert snapshot.instrument == "EUR_USD"
+    assert snapshot.time == datetime(2026, 1, 15, 14, 20, tzinfo=UTC)
+    assert snapshot.buckets[1].long_percent == Decimal("0.51")
+    assert snapshot.buckets[1].short_percent == Decimal("0.49")
 
 
 def test_pricing_price_and_heartbeat_frames_are_distinct() -> None:

@@ -98,6 +98,31 @@ async def test_client_omits_include_first_without_from_time() -> None:
 
 
 @pytest.mark.asyncio
+async def test_client_requests_order_and_position_books() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/orderBook"):
+            return httpx.Response(200, json=_load_json("order_book.json"))
+        return httpx.Response(200, json=_load_json("position_book.json"))
+
+    async with _client(handler) as client:
+        order_book = await client.get_order_book(
+            instrument="EUR_USD",
+            time=datetime(2026, 1, 15, 14, 30, tzinfo=UTC),
+        )
+        position_book = await client.get_position_book(instrument="EUR_USD")
+
+    assert requests[0].url.path == "/v3/instruments/EUR_USD/orderBook"
+    assert requests[0].url.params["time"] == "2026-01-15T14:30:00Z"
+    assert requests[1].url.path == "/v3/instruments/EUR_USD/positionBook"
+    assert "time" not in requests[1].url.params
+    assert order_book.book_type == "order"
+    assert position_book.book_type == "position"
+
+
+@pytest.mark.asyncio
 async def test_client_requests_bounded_historical_candles() -> None:
     requests: list[httpx.Request] = []
 

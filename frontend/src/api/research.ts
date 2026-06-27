@@ -226,3 +226,42 @@ export interface CrossScanPayload {
 export function fetchCrossScan(payload: CrossScanPayload): Promise<CrossScanResult> {
   return apiPost<CrossScanResult>("/api/research/cross/scan", payload);
 }
+
+export interface BookRecorderRuntime {
+  running: boolean;
+  state: string;
+  last_started_at?: string | null;
+  last_stopped_at?: string | null;
+  last_error?: string | null;
+}
+
+export interface BookCoverageRow {
+  book_type: string;
+  instrument: string;
+  snapshot_count: number;
+  from: string | null;
+  to: string | null;
+  latest_mid_price: string | null;
+}
+
+export interface LatestBookSnapshot {
+  snapshot_time: string;
+  bucket_count: number;
+  mid_price?: string | null;
+  recorded_ts?: string | null;
+}
+
+export interface InstrumentBookLatest {
+  order: LatestBookSnapshot | null;
+  position: LatestBookSnapshot | null;
+}
+
+export interface BookRecorderStatus {
+  recorder: BookRecorderRuntime;
+  coverage: BookCoverageRow[];
+  latest: Record<string, InstrumentBookLatest>;
+}
+
+export function fetchBookRecorderStatus(): Promise<BookRecorderStatus> {
+  return apiGet<BookRecorderStatus>("/api/research/books/status");
+}

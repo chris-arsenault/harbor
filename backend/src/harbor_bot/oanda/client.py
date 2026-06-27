@@ -7,6 +7,7 @@ import httpx
 
 from harbor_bot.oanda.types import (
     AccountSummary,
+    BookSnapshot,
     HistoricalCandle,
     Instrument,
     MarketOrderRequest,
@@ -22,7 +23,9 @@ from harbor_bot.oanda.types import (
     parse_instruments,
     parse_open_positions,
     parse_open_trades,
+    parse_order_book,
     parse_order_create_result,
+    parse_position_book,
     parse_position_close_result,
     parse_trade_close_result,
     parse_transaction_history_page,
@@ -144,6 +147,28 @@ class OandaClient:
             params=params,
         )
         return parse_historical_candles(payload)
+
+    async def get_order_book(
+        self, *, instrument: str, time: datetime | None = None
+    ) -> BookSnapshot:
+        payload = await self._request_json(
+            self._rest_client,
+            "GET",
+            f"instruments/{instrument}/orderBook",
+            params=_time_params(time),
+        )
+        return parse_order_book(payload)
+
+    async def get_position_book(
+        self, *, instrument: str, time: datetime | None = None
+    ) -> BookSnapshot:
+        payload = await self._request_json(
+            self._rest_client,
+            "GET",
+            f"instruments/{instrument}/positionBook",
+            params=_time_params(time),
+        )
+        return parse_position_book(payload)
 
     async def stream_pricing_lines(self, instruments: Sequence[str]) -> AsyncIterator[str]:
         params = {"instruments": ",".join(instruments)}
@@ -281,6 +306,12 @@ def _format_rfc3339(value: datetime) -> str:
         msg = "OANDA request timestamps must be timezone-aware"
         raise ValueError(msg)
     return value.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _time_params(value: datetime | None) -> dict[str, str] | None:
+    if value is None:
+        return None
+    return {"time": _format_rfc3339(value)}
 
 
 def _bool_param(value: bool) -> str:

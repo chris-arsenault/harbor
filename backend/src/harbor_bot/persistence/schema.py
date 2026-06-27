@@ -7,6 +7,8 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
+    Index,
+    Integer,
     MetaData,
     Numeric,
     String,
@@ -141,6 +143,33 @@ broker_transactions = Table(
     Column("ts", DateTime(timezone=True), nullable=False),
     Column("raw_json", JSONB, nullable=False),
     UniqueConstraint("transaction_id", name="broker_transactions_transaction_id_key"),
+)
+
+book_snapshots = Table(
+    "book_snapshots",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    Column("book_type", String(16), nullable=False),
+    Column("instrument", String(32), nullable=False),
+    Column("snapshot_time", DateTime(timezone=True), nullable=False),
+    Column("mid_price", price, nullable=False),
+    Column("bucket_width", price, nullable=False),
+    Column("bucket_count", Integer, nullable=False),
+    Column("buckets_json", JSONB, nullable=False),
+    Column("recorded_ts", DateTime(timezone=True), nullable=False),
+    UniqueConstraint(
+        "book_type",
+        "instrument",
+        "snapshot_time",
+        name="book_snapshots_book_type_instrument_snapshot_time_key",
+    ),
+    CheckConstraint("book_type IN ('order', 'position')", name="book_type_check"),
+    Index(
+        "ix_book_snapshots_book_type_instrument_snapshot_time",
+        "book_type",
+        "instrument",
+        "snapshot_time",
+    ),
 )
 
 equity_snapshots = Table(

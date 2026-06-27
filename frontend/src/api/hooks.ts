@@ -28,7 +28,13 @@ import {
   updateConfig,
 } from "./client";
 import { fetchCandleBackfill, startCandleBackfill, syncCandles } from "./candles";
-import { fetchCaptureScan, fetchCrossScan, fetchEdgeScan, fetchEdgeStudy } from "./research";
+import {
+  fetchBookRecorderStatus,
+  fetchCaptureScan,
+  fetchCrossScan,
+  fetchEdgeScan,
+  fetchEdgeStudy,
+} from "./research";
 import { createLiveConnection, liveWebSocketUrl } from "./live";
 import type { FlattenResult, OptimizationStartPayload, WebSocketEnvelope } from "./types";
 
@@ -152,6 +158,14 @@ export function useCaptureScanMutation() {
 export function useCrossScanMutation() {
   return useMutation({
     mutationFn: fetchCrossScan,
+  });
+}
+
+export function useBookRecorderStatusQuery() {
+  return useQuery({
+    queryKey: ["book-recorder-status"],
+    queryFn: fetchBookRecorderStatus,
+    refetchInterval: 30_000,
   });
 }
 

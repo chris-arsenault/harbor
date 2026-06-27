@@ -45,6 +45,23 @@ class HistoricalCandle:
 
 
 @dataclass(frozen=True)
+class BookBucket:
+    price: Decimal
+    long_percent: Decimal
+    short_percent: Decimal
+
+
+@dataclass(frozen=True)
+class BookSnapshot:
+    book_type: str
+    instrument: str
+    time: datetime
+    price: Decimal
+    bucket_width: Decimal
+    buckets: tuple[BookBucket, ...]
+
+
+@dataclass(frozen=True)
 class PriceBucket:
     price: Decimal
     liquidity: int
@@ -215,6 +232,14 @@ def parse_historical_candles(payload: dict[str, Any]) -> list[HistoricalCandle]:
     return parsed
 
 
+def parse_order_book(payload: dict[str, Any]) -> BookSnapshot:
+    return _parse_book_snapshot(payload, payload_key="orderBook", book_type="order")
+
+
+def parse_position_book(payload: dict[str, Any]) -> BookSnapshot:
+    return _parse_book_snapshot(payload, payload_key="positionBook", book_type="position")
+
+
 def _optional_ohlc(group: Any, key: str) -> Decimal | None:
     if not isinstance(group, dict):
         return None
@@ -370,6 +395,28 @@ def parse_transaction_history_page(payload: dict[str, Any]) -> TransactionHistor
     )
 
 
+def _parse_book_snapshot(
+    payload: dict[str, Any], *, payload_key: str, book_type: str
+) -> BookSnapshot:
+    book = _mapping(payload[payload_key])
+    try:
+        raw_time = str(book["time"])
+        raw_price = book["price"]
+        raw_bucket_width = book["bucketWidth"]
+    except KeyError as exc:
+        msg = f"{payload_key} response missing required field: {exc.args[0]}"
+        raise ValueError(msg) from exc
+
+    return BookSnapshot(
+        book_type=book_type,
+        instrument=str(book["instrument"]),
+        time=parse_rfc3339(raw_time),
+        price=_decimal(raw_price),
+        bucket_width=_decimal(raw_bucket_width),
+        buckets=_parse_book_buckets(book.get("buckets", [])),
+    )
+
+
 def parse_rfc3339(value: str) -> datetime:
     normalized = value
     if normalized.endswith("Z"):
@@ -396,6 +443,20 @@ def _parse_price_buckets(raw_buckets: list[dict[str, Any]]) -> tuple[PriceBucket
     return tuple(
         PriceBucket(price=_decimal(bucket["price"]), liquidity=int(bucket["liquidity"]))
         for bucket in raw_buckets
+    )
+
+
+def _parse_book_buckets(raw_buckets: Any) -> tuple[BookBucket, ...]:
+    if not isinstance(raw_buckets, list):
+        msg = "book buckets must be a JSON array"
+        raise TypeError(msg)
+    return tuple(
+        BookBucket(
+            price=_decimal(bucket["price"]),
+            long_percent=_decimal(bucket["longCountPercent"]),
+            short_percent=_decimal(bucket["shortCountPercent"]),
+        )
+        for bucket in (_mapping(raw_bucket) for raw_bucket in raw_buckets)
     )
 
 

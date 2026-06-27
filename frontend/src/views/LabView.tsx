@@ -8,6 +8,7 @@ import type {
 } from "../api/types";
 import type { OptimizationPreflightResponse } from "../api/optimizerTypes";
 import { EmptyState, Notice, Panel, ViewHead } from "../ui/primitives";
+import { BookRecorder } from "./lab/BookRecorder";
 import { CandleSource } from "./lab/CandleSource";
 import { CrossInstrument } from "./lab/CrossInstrument";
 import { EdgeCapture } from "./lab/EdgeCapture";
@@ -56,6 +57,7 @@ export function LabView({ model }: { readonly model: LabViewModel }) {
         onInstrumentChange={model.onInstrumentChange}
         onImportCandles={model.onImportCandles}
       />
+      <BookRecorder />
       <CrossInstrument />
       <EdgeScan />
       <EdgeCapture />

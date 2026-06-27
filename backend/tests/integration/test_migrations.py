@@ -10,6 +10,7 @@ EXPECTED_TABLES = {
     "alembic_version",
     "backtest_runs",
     "backtest_trades",
+    "book_snapshots",
     "broker_transactions",
     "candles",
     "config",
@@ -28,6 +29,7 @@ EXPECTED_TABLES = {
 
 EXPECTED_CONSTRAINTS = {
     "broker_transactions_transaction_id_key",
+    "book_snapshots_book_type_instrument_snapshot_time_key",
     "candles_instrument_ts_key",
     "sessions_date_instrument_key",
     "signals_signal_key_key",
@@ -39,6 +41,7 @@ EXPECTED_CONSTRAINTS = {
     "ck_signals_signals_status_check",
     "ck_trades_trades_side_check",
     "ck_variants_variants_status_check",
+    "ck_book_snapshots_book_type_check",
 }
 
 
@@ -52,7 +55,7 @@ def test_migrations_apply_to_empty_postgres(postgres_url: str) -> None:
         )
     )
 
-    assert rows == [("0005_candle_coverage_index",)]
+    assert rows == [("0006_orderbook_positionbook",)]
 
 
 def test_expected_tables_and_constraints_exist(postgres_url: str) -> None:
