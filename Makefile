@@ -83,7 +83,7 @@ compose-config:
 	docker compose --env-file .env.example config --quiet
 
 shell-check:
-	bash -n scripts/build-lambda.sh scripts/deploy.sh
+	bash -n scripts/build-lambda.sh scripts/deploy.sh scripts/smoke.sh
 
 verify-docs:
 	test -f README.md

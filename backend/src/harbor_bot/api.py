@@ -19,6 +19,7 @@ from fastapi import (
 from sqlalchemy import text
 from starlette.requests import HTTPConnection
 
+from harbor_bot import __version__
 from harbor_bot.backtester.service import BacktestService
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.config.models import ConfigUpdateRequest
@@ -46,6 +47,7 @@ from harbor_bot.research.edge import DEFAULT_HORIZON
 from harbor_bot.research.service import ResearchService
 from harbor_bot.settings import Settings, redact_secret_text
 from harbor_bot.strategy.models import InstrumentRules, strategy_config_from_defaults
+from harbor_bot.version import VersionInfo, build_version_info
 
 FromQuery = Annotated[DateTime, Query(alias="from")]
 ToQuery = Annotated[DateTime, Query(alias="to")]
@@ -105,6 +107,10 @@ def get_readiness_checker(connection: HTTPConnection) -> Any:
     return connection.app.state.readiness_checker
 
 
+def get_version_info(connection: HTTPConnection) -> VersionInfo:
+    return connection.app.state.version_info
+
+
 BACKTEST_SERVICE_DEPENDENCY = Depends(get_backtest_service)
 OBSERVABILITY_SERVICE_DEPENDENCY = Depends(get_observability_service)
 OPTIMIZER_SERVICE_DEPENDENCY = Depends(get_optimizer_service)
@@ -117,6 +123,7 @@ RESEARCH_SERVICE_DEPENDENCY = Depends(get_research_service)
 CONTROL_SERVICE_DEPENDENCY = Depends(get_control_service)
 WEBSOCKET_HUB_DEPENDENCY = Depends(get_websocket_hub)
 READINESS_CHECKER_DEPENDENCY = Depends(get_readiness_checker)
+VERSION_INFO_DEPENDENCY = Depends(get_version_info)
 
 
 def _packaged_fixture_base_path() -> Path:
@@ -139,12 +146,13 @@ def create_app(
     readiness_checker: Any | None = None,
     settings: Settings | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Harbor", version="0.1.0")
+    app = FastAPI(title="Harbor", version=__version__)
     app.state.backtest_service = backtest_service or BacktestService(
         fixture_base_path=_packaged_fixture_base_path()
     )
     app.state.settings = settings or Settings()
     app.state.settings.validate_startup()
+    app.state.version_info = build_version_info(app.state.settings)
     app.state.websocket_hub = websocket_hub or WebSocketHub()
     app.state.control_service = control_service
     app.state.practice_execution_service = practice_execution_service
@@ -169,6 +177,7 @@ def create_app(
             engine=persistence_engine,
             settings=app.state.settings,
             execution_status_provider=control_service,
+            version_info=app.state.version_info,
         )
     app.state.observability_service = observability_service
     if optimizer_service is None:
@@ -258,6 +267,12 @@ def create_app(
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/version")
+    async def version(
+        version_info: VersionInfo = VERSION_INFO_DEPENDENCY,
+    ) -> dict[str, str]:
+        return version_info.to_jsonable()
+
     @app.get("/ready")
     async def ready(
         checker: Any = READINESS_CHECKER_DEPENDENCY,
@@ -299,6 +314,22 @@ def create_app(
         service: CandleSourceService = CANDLE_SOURCE_SERVICE_DEPENDENCY,
     ) -> dict[str, Any]:
         return _jsonable(await service.get_status(instrument=instrument))
+
+    @app.get("/api/candles/backfill")
+    async def read_candle_backfill(
+        service: CandleSourceService = CANDLE_SOURCE_SERVICE_DEPENDENCY,
+    ) -> dict[str, Any]:
+        return _jsonable(await service.get_backfill_status())
+
+    @app.post("/api/candles/backfill")
+    async def start_candle_backfill(
+        payload: dict[str, Any],
+        service: CandleSourceService = CANDLE_SOURCE_SERVICE_DEPENDENCY,
+    ) -> dict[str, Any]:
+        try:
+            return _jsonable(await service.start_backfill(payload))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/candles/import")
     async def import_candles(

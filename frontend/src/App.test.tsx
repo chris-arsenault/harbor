@@ -116,6 +116,7 @@ test("renders guarded practice controls and posts enable requests", async () => 
 
   expect(await screen.findByRole("heading", { name: "Cockpit" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Operations" }));
+  expect(screen.getByText("5e43815abcde")).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Confirmation"), {
     target: { value: "OANDA_PRACTICE" },
   });

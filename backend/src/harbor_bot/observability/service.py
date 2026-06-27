@@ -22,6 +22,7 @@ from harbor_bot.persistence.market_repository import get_prior_day_range
 from harbor_bot.settings import Settings
 from harbor_bot.strategy.models import StrategyConfig, strategy_config_from_defaults
 from harbor_bot.strategy.sessions import session_windows_for_date
+from harbor_bot.version import VersionInfo
 
 DEFAULT_EVENTS_LIMIT = 100
 
@@ -37,6 +38,7 @@ class ObservabilityService:
         clock: Callable[[], datetime] | None = None,
         strategy_config: StrategyConfig | None = None,
         execution_status_provider: Any | None = None,
+        version_info: VersionInfo | None = None,
     ) -> None:
         self._engine = engine
         self._settings = settings
@@ -47,6 +49,7 @@ class ObservabilityService:
             load_default_config()
         )
         self._execution_status_provider = execution_status_provider
+        self._version_info = version_info
 
     async def get_status(
         self,
@@ -93,7 +96,7 @@ class ObservabilityService:
             reconciliation_state=execution_overlay.get("reconciliation_state"),
             open_position=execution_overlay.get("open_position"),
             notifier_state=execution_overlay.get("notifier_state", _default_notifier_state()),
-            deployment=execution_overlay.get("deployment", _deployment_facts()),
+            deployment=execution_overlay.get("deployment", _deployment_facts(self._version_info)),
         )
 
     async def get_levels(
@@ -339,8 +342,8 @@ def _default_notifier_state() -> dict[str, Any]:
     return {"ntfy_enabled": False, "telegram_enabled": False}
 
 
-def _deployment_facts() -> dict[str, Any]:
-    return {
+def _deployment_facts(version_info: VersionInfo | None) -> dict[str, Any]:
+    facts = {
         "access": "LAN",
         "frontend_url": "http://192.168.66.3:30091/",
         "public_route": False,
@@ -349,6 +352,9 @@ def _deployment_facts() -> dict[str, Any]:
         "api_path": "/api",
         "websocket_path": "/ws",
     }
+    if version_info is not None:
+        facts.update(version_info.to_jsonable())
+    return facts
 
 
 def _sweep_marker(row: dict[str, Any]) -> ChartMarker:

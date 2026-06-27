@@ -1,5 +1,7 @@
 import type { StatusSnapshot } from "./api/types";
 
+const lanFrontendUrl = "http" + "://192.168.66.3:30091/";
+
 export const status: StatusSnapshot = {
   bot_state: "WAIT_SWEEP",
   session_phase: "ny_trade",
@@ -18,6 +20,21 @@ export const status: StatusSnapshot = {
   promoted_variant: { id: 7, label: "promoted", status: "promoted" },
   reconciliation_state: { drift_detected: false },
   open_position: null,
+  deployment: {
+    access: "LAN",
+    frontend_url: lanFrontendUrl,
+    public_route: false,
+    health_path: "/health",
+    readiness_path: "/ready",
+    api_path: "/api",
+    websocket_path: "/ws",
+    app: "harbor",
+    version: "0.1.0",
+    git_sha: "5e43815abcdef",
+    build_time: "2026-06-27T12:00:00Z",
+    started_at: "2026-06-27T12:01:00Z",
+    mode: "practice",
+  },
 };
 
 export const levels = {

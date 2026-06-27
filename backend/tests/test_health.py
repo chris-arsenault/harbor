@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from harbor_bot.api import create_app
 from harbor_bot.main import JsonLogFormatter
+from harbor_bot.settings import Settings
 
 
 def test_health_reports_ok() -> None:
@@ -26,6 +27,23 @@ def test_ready_reports_injected_readiness_checker() -> None:
         "status": "ready",
         "checks": {"config": "ok", "database": "ok"},
     }
+
+
+def test_version_reports_build_identity(monkeypatch) -> None:
+    monkeypatch.setenv("HARBOR_GIT_SHA", "5e43815abcdef")
+    monkeypatch.setenv("HARBOR_BUILD_TIME", "2026-06-27T12:00:00Z")
+    client = TestClient(create_app(settings=Settings(OANDA_ENV="practice")))
+
+    response = client.get("/version")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["app"] == "harbor"
+    assert payload["version"] == "0.1.0"
+    assert payload["git_sha"] == "5e43815abcdef"
+    assert payload["build_time"] == "2026-06-27T12:00:00Z"
+    assert payload["started_at"].endswith("Z")
+    assert payload["mode"] == "practice"
 
 
 def test_json_log_formatter_redacts_secret_values() -> None:

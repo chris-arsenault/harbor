@@ -27,7 +27,7 @@ import {
   startOptimization,
   updateConfig,
 } from "./client";
-import { syncCandles } from "./candles";
+import { fetchCandleBackfill, startCandleBackfill, syncCandles } from "./candles";
 import { fetchEdgeScan, fetchEdgeStudy } from "./research";
 import { createLiveConnection, liveWebSocketUrl } from "./live";
 import type { FlattenResult, OptimizationStartPayload, WebSocketEnvelope } from "./types";
@@ -185,6 +185,25 @@ export function useCandleSyncMutation() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["candle-source"] });
       await queryClient.invalidateQueries({ queryKey: ["candles"] });
+    },
+  });
+}
+
+export function useCandleBackfillQuery() {
+  return useQuery({
+    queryKey: ["candle-backfill"],
+    queryFn: fetchCandleBackfill,
+    refetchInterval: 3_000,
+  });
+}
+
+export function useStartCandleBackfillMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: startCandleBackfill,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["candle-backfill"] });
+      await queryClient.invalidateQueries({ queryKey: ["candle-source"] });
     },
   });
 }

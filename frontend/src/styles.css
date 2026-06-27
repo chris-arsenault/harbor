@@ -841,6 +841,70 @@ button {
   color: var(--ink);
   font-weight: 600;
 }
+
+/* Data backfill ------------------------------------------------------- */
+.backfill-head {
+  display: grid;
+  grid-template-columns: minmax(9rem, 15rem) 1fr;
+  gap: 0.8rem;
+  align-items: end;
+  margin-bottom: 0.8rem;
+}
+.backfill-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.4rem, 1fr));
+  gap: 0.45rem;
+}
+.month-cell {
+  display: grid;
+  gap: 0.2rem;
+  min-height: 3.2rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--bg-inset);
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  text-align: left;
+  cursor: pointer;
+}
+.month-cell span {
+  font-size: 0.66rem;
+  color: var(--ink-mute);
+}
+.month-cell strong {
+  font-size: 1rem;
+  font-weight: 700;
+  color: inherit;
+}
+.month-cell--complete {
+  border-color: rgba(52, 192, 139, 0.35);
+  background: var(--up-soft);
+  color: var(--up);
+}
+.month-cell--partial {
+  border-color: rgba(228, 171, 60, 0.38);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.month-cell--missing {
+  border-color: rgba(234, 90, 78, 0.34);
+  background: var(--down-soft);
+  color: var(--down);
+}
+.month-cell[aria-pressed="true"] {
+  border-color: var(--beam);
+  box-shadow: 0 0 0 1px var(--beam-glow);
+}
+.backfill-detail {
+  margin-top: 0.8rem;
+}
 .side-long {
   color: var(--up);
 }
@@ -1384,5 +1448,11 @@ button {
   }
   .hb-vitals {
     display: none;
+  }
+  .backfill-head {
+    grid-template-columns: 1fr;
+  }
+  .backfill-metrics {
+    justify-content: flex-start;
   }
 }

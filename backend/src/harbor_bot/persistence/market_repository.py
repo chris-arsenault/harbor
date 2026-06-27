@@ -28,6 +28,7 @@ async def upsert_candle(
     bid_l: Decimal | None = None,
     ask_h: Decimal | None = None,
     ask_l: Decimal | None = None,
+    replace_existing: bool = True,
 ) -> None:
     ts = _require_aware_utc(ts)
     values = {
@@ -44,14 +45,16 @@ async def upsert_candle(
         "ask_h": ask_h,
         "ask_l": ask_l,
     }
-    statement = (
-        insert(candles)
-        .values(**values)
-        .on_conflict_do_update(
+    insert_statement = insert(candles).values(**values)
+    if replace_existing:
+        statement = insert_statement.on_conflict_do_update(
             index_elements=[candles.c.instrument, candles.c.ts],
             set_={key: value for key, value in values.items() if key not in ("instrument", "ts")},
         )
-    )
+    else:
+        statement = insert_statement.on_conflict_do_nothing(
+            index_elements=[candles.c.instrument, candles.c.ts]
+        )
     await connection.execute(statement)
 
 
@@ -186,6 +189,42 @@ async def get_bulk_candle_coverage(
     }
     empty = {"candle_count": 0, "from": None, "to": None, "bid_ask_count": 0}
     return [by_instrument.get(inst, {"instrument": inst, **empty}) for inst in instruments]
+
+
+async def get_daily_candle_coverage(
+    connection: AsyncConnection,
+    *,
+    instruments: tuple[str, ...],
+    start: Date,
+    end: Date,
+) -> list[dict[str, Any]]:
+    start_ts = datetime.combine(start, datetime.min.time(), tzinfo=UTC)
+    end_ts = datetime.combine(end + timedelta(days=1), datetime.min.time(), tzinfo=UTC)
+    result = await connection.execute(
+        select(
+            candles.c.instrument,
+            func.date(candles.c.ts).label("day"),
+            func.count(candles.c.id).label("candle_count"),
+            func.count(candles.c.bid_h).label("bid_ask_count"),
+        )
+        .where(
+            candles.c.instrument.in_(instruments),
+            candles.c.ts >= start_ts,
+            candles.c.ts < end_ts,
+            candles.c.complete.is_(True),
+        )
+        .group_by(candles.c.instrument, func.date(candles.c.ts))
+        .order_by(candles.c.instrument, func.date(candles.c.ts))
+    )
+    return [
+        {
+            "instrument": row["instrument"],
+            "day": _to_date(row["day"]),
+            "candle_count": int(row["candle_count"]),
+            "bid_ask_count": int(row["bid_ask_count"]),
+        }
+        for row in result.mappings()
+    ]
 
 
 async def get_prior_day_range(

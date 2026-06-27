@@ -1,10 +1,16 @@
 import { useState } from "react";
 
-import type { CandleSyncResult } from "../api/candles";
-import { useCandleSourceQuery, useCandleSyncMutation } from "../api/hooks";
+import type { CandleBackfillStatus, CandleSyncResult } from "../api/candles";
+import {
+  useCandleBackfillQuery,
+  useCandleSourceQuery,
+  useCandleSyncMutation,
+  useStartCandleBackfillMutation,
+} from "../api/hooks";
 import type { CandleCoverage, CandleSourceStatus } from "../api/types";
 import { fmtDateTime, fmtInt } from "../ui/format";
 import { EmptyState, Field, Notice, Panel, StatTile, Tag, ViewHead } from "../ui/primitives";
+import { BackfillControls, BackfillSummaryPanel } from "./DataBackfill";
 
 type Tone = "up" | "warn" | "muted";
 
@@ -14,6 +20,7 @@ interface Badge {
 }
 
 type SyncMutation = ReturnType<typeof useCandleSyncMutation>;
+type BackfillMutation = ReturnType<typeof useStartCandleBackfillMutation>;
 
 function freshness(to: string | null): Badge {
   if (!to) {
@@ -200,13 +207,94 @@ function SyncResults({ result }: { readonly result: CandleSyncResult }) {
   );
 }
 
+function SourceConfigSlot({ status }: { readonly status: CandleSourceStatus | null }) {
+  return status ? <SourceConfig status={status} /> : null;
+}
+
+function CredentialNotice({
+  status,
+  ready,
+}: {
+  readonly status: CandleSourceStatus | null;
+  readonly ready: boolean;
+}) {
+  if (!status || ready) {
+    return null;
+  }
+  return (
+    <Notice tone="error">
+      OANDA practice credentials are not configured — set OANDA_API_TOKEN and OANDA_ACCOUNT_ID (run
+      the API via the credential broker) before sourcing data.
+    </Notice>
+  );
+}
+
+function UniverseCoveragePanel({
+  coverages,
+  days,
+  onDaysChange,
+  ready,
+  sync,
+}: {
+  readonly coverages: CandleCoverage[];
+  readonly days: number;
+  readonly onDaysChange: (days: number) => void;
+  readonly ready: boolean;
+  readonly sync: SyncMutation;
+}) {
+  return (
+    <Panel
+      title="Universe coverage"
+      note={`${coverages.length} instruments`}
+      label="Universe coverage"
+    >
+      <SyncControls days={days} onDaysChange={onDaysChange} ready={ready} sync={sync} />
+      <CoverageTable
+        coverages={coverages}
+        pending={sync.isPending}
+        onSync={(instrument, repair) => sync.mutate({ instrument, days, repair })}
+      />
+    </Panel>
+  );
+}
+
+function DataNotices({
+  startBackfill,
+  backfillStatus,
+  sync,
+}: {
+  readonly startBackfill: BackfillMutation;
+  readonly backfillStatus: CandleBackfillStatus | null;
+  readonly sync: SyncMutation;
+}) {
+  return (
+    <>
+      {startBackfill.error ? <Notice tone="error">{startBackfill.error.message}</Notice> : null}
+      {backfillStatus?.error ? <Notice tone="error">{backfillStatus.error}</Notice> : null}
+      {backfillStatus?.status === "completed" ? (
+        <Notice tone="ok">
+          Collected {fmtInt(backfillStatus.imported_count)} candles across{" "}
+          {fmtInt(backfillStatus.completed_ranges)} ranges.
+        </Notice>
+      ) : null}
+      {sync.error ? <Notice tone="error">{sync.error.message}</Notice> : null}
+      {sync.data ? <SyncResults result={sync.data} /> : null}
+    </>
+  );
+}
+
 export function DataImportView() {
   const source = useCandleSourceQuery();
+  const backfill = useCandleBackfillQuery();
+  const startBackfill = useStartCandleBackfillMutation();
   const sync = useCandleSyncMutation();
   const [days, setDays] = useState(180);
+  const [selectedInstrument, setSelectedInstrument] = useState("GBP_USD");
   const status = source.data;
+  const backfillStatus = backfill.data;
   const coverages = universeCoverages(status);
   const ready = status?.oanda_historical_import_configured ?? false;
+  const running = backfillStatus?.status === "running";
 
   return (
     <section className="view" aria-label="Data">
@@ -214,28 +302,27 @@ export function DataImportView() {
         kicker="Research"
         title="Data"
         sub="Source real OANDA bid/ask candles. Sync fetches only the missing gaps."
-        actions={<SyncControls days={days} onDaysChange={setDays} ready={ready} sync={sync} />}
+        actions={<BackfillControls ready={ready} running={running} mutation={startBackfill} />}
       />
-      {status ? <SourceConfig status={status} /> : null}
-      {status && !ready ? (
-        <Notice tone="error">
-          OANDA practice credentials are not configured — set OANDA_API_TOKEN and OANDA_ACCOUNT_ID
-          (run the API via the credential broker) before sourcing data.
-        </Notice>
-      ) : null}
-      <Panel
-        title="Universe coverage"
-        note={`${coverages.length} instruments`}
-        label="Universe coverage"
-      >
-        <CoverageTable
-          coverages={coverages}
-          pending={sync.isPending}
-          onSync={(instrument, repair) => sync.mutate({ instrument, days, repair })}
-        />
-      </Panel>
-      {sync.error ? <Notice tone="error">{sync.error.message}</Notice> : null}
-      {sync.data ? <SyncResults result={sync.data} /> : null}
+      <SourceConfigSlot status={status ?? null} />
+      <CredentialNotice status={status ?? null} ready={ready} />
+      <UniverseCoveragePanel
+        coverages={coverages}
+        days={days}
+        onDaysChange={setDays}
+        ready={ready}
+        sync={sync}
+      />
+      <BackfillSummaryPanel
+        status={backfillStatus ?? null}
+        selectedInstrument={selectedInstrument}
+        onInstrumentChange={setSelectedInstrument}
+      />
+      <DataNotices
+        startBackfill={startBackfill}
+        backfillStatus={backfillStatus ?? null}
+        sync={sync}
+      />
     </section>
   );
 }

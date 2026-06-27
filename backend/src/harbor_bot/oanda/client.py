@@ -121,6 +121,7 @@ class OandaClient:
         *,
         instrument: str,
         from_time: datetime | None = None,
+        to_time: datetime | None = None,
         count: int | None = None,
         include_first: bool = True,
     ) -> list[HistoricalCandle]:
@@ -133,6 +134,8 @@ class OandaClient:
         if from_time is not None:
             params["from"] = _format_rfc3339(from_time)
             params["includeFirst"] = _bool_param(include_first)
+        if to_time is not None:
+            params["to"] = _format_rfc3339(to_time)
 
         payload = await self._request_json(
             self._rest_client,

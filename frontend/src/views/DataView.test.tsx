@@ -18,8 +18,10 @@ test("shows universe coverage with data quality and syncs the universe", async (
   renderWithClient(<DataImportView />);
 
   expect(await screen.findByRole("heading", { name: "Data" })).toBeInTheDocument();
+  expect(await screen.findByRole("region", { name: "Historical backfill" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Month coverage")).toHaveTextContent("75%");
   // Per-instrument coverage rows render with bid/ask data-quality tags.
-  expect(await screen.findByText("GBP_USD")).toBeInTheDocument();
+  expect((await screen.findAllByText("GBP_USD")).length).toBeGreaterThan(0);
   expect(screen.getByText("EUR_USD")).toBeInTheDocument();
   expect(screen.getByText("bid/ask 100%")).toBeInTheDocument();
   expect(screen.getByText("bid/ask 0%")).toBeInTheDocument();
@@ -34,6 +36,21 @@ test("shows universe coverage with data quality and syncs the universe", async (
     })
   );
   expect(await screen.findByText(/new candles\s+sourced/)).toBeInTheDocument();
+});
+
+test("starts the one-click backfill job", async () => {
+  renderWithClient(<DataImportView />);
+
+  await screen.findByText("ready");
+  fireEvent.click(screen.getByRole("button", { name: "Collect missing data" }));
+
+  await waitFor(() =>
+    expect(fetch).toHaveBeenCalledWith("/api/candles/backfill", {
+      body: JSON.stringify({}),
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      method: "POST",
+    })
+  );
 });
 
 test("repairs bid/ask on an instrument that lacks it via a forced re-fetch", async () => {
@@ -65,6 +82,9 @@ function requestUrl(input: FetchInput): string {
 
 function fetchResponse(input: FetchInput) {
   const url = requestUrl(input);
+  if (url.startsWith("/api/candles/backfill")) {
+    return json(backfillStatus);
+  }
   if (url.startsWith("/api/candles/sync")) {
     return json({
       status: "completed",
@@ -122,4 +142,60 @@ const sourceStatus = {
     replaces_existing: false,
   },
   oanda_historical_import_configured: true,
+};
+
+const backfillStatus = {
+  status: "completed",
+  job_id: "job-1",
+  started_at: "2026-06-27T12:00:00Z",
+  finished_at: "2026-06-27T12:10:00Z",
+  error: null,
+  current_instrument: null,
+  imported_count: 500,
+  completed_ranges: 1,
+  total_ranges: 4,
+  historical: {
+    start: "2024-06-27",
+    end: "2025-12-27",
+    expected_days: 4,
+    loaded_days: 3,
+    missing_days: 1,
+    filled_days: 0,
+    pending_days: 1,
+  },
+  recent: { pending_ranges: 1, completed_ranges: 0 },
+  instruments: [
+    {
+      instrument: "GBP_USD",
+      status: "completed",
+      imported_count: 500,
+      completed_ranges: 1,
+      total_ranges: 4,
+      recent: {
+        status: "pending",
+        from: "2026-06-20T12:00:00Z",
+        to: "2026-06-27T12:00:00Z",
+        imported_count: 0,
+      },
+      historical: {
+        expected_days: 4,
+        loaded_days: 3,
+        missing_days: 1,
+        filled_days: 0,
+        pending_days: 1,
+        months: [
+          {
+            month: "2024-06",
+            expected_days: 4,
+            loaded_days: 3,
+            missing_days: 1,
+            filled_days: 0,
+            pending_days: 1,
+            complete_days: 3,
+            completion_ratio: 0.75,
+          },
+        ],
+      },
+    },
+  ],
 };

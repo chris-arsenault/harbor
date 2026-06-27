@@ -4,6 +4,7 @@ from typing import Any
 
 from harbor_bot.observability.service import ObservabilityService
 from harbor_bot.settings import Settings
+from harbor_bot.version import VersionInfo
 
 DEFAULT_LEVELS = object()
 
@@ -15,6 +16,14 @@ def test_status_is_read_only_and_uses_persisted_equity_and_trade_summary() -> No
         settings=Settings(OANDA_ENV="practice"),
         repository=repo,
         clock=lambda: datetime(2026, 1, 15, 14, 45, tzinfo=UTC),
+        version_info=VersionInfo(
+            app="harbor",
+            version="0.1.0",
+            git_sha="5e43815abcdef",
+            build_time="2026-06-27T12:00:00Z",
+            started_at=datetime(2026, 6, 27, 12, 1, tzinfo=UTC),
+            mode="practice",
+        ),
     )
 
     status = run(service.get_status())
@@ -29,6 +38,10 @@ def test_status_is_read_only_and_uses_persisted_equity_and_trade_summary() -> No
     assert status.day_pnl == Decimal("60.00000000")
     assert status.account_nav == Decimal("10060.00000000")
     assert status.last_heartbeat == datetime(2026, 1, 15, 14, 31, tzinfo=UTC)
+    assert status.deployment is not None
+    assert status.deployment["git_sha"] == "5e43815abcdef"
+    assert status.deployment["build_time"] == "2026-06-27T12:00:00Z"
+    assert status.deployment["started_at"] == "2026-06-27T12:01:00Z"
 
 
 def test_service_maps_persisted_facts_to_dashboard_models() -> None:

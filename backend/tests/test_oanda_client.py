@@ -98,6 +98,29 @@ async def test_client_omits_include_first_without_from_time() -> None:
 
 
 @pytest.mark.asyncio
+async def test_client_requests_bounded_historical_candles() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=_load_json("candles.json"))
+
+    async with _client(handler) as client:
+        await client.get_historical_candles(
+            instrument="EUR_USD",
+            from_time=datetime(2026, 1, 15, 14, 30, tzinfo=UTC),
+            to_time=datetime(2026, 1, 16, 14, 30, tzinfo=UTC),
+            include_first=False,
+        )
+
+    params = requests[0].url.params
+    assert params["from"] == "2026-01-15T14:30:00Z"
+    assert params["to"] == "2026-01-16T14:30:00Z"
+    assert params["includeFirst"] == "false"
+    assert "count" not in params
+
+
+@pytest.mark.asyncio
 async def test_client_opens_pricing_and_transaction_stream_lines() -> None:
     paths: list[str] = []
 

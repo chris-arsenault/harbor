@@ -13,6 +13,13 @@ function bool(value: unknown): "enabled" | "disabled" {
   return value === true ? "enabled" : "disabled";
 }
 
+function shortCommit(value: unknown): string {
+  if (typeof value !== "string" || value.length === 0) {
+    return "unknown";
+  }
+  return value.length > 12 ? value.slice(0, 12) : value;
+}
+
 function ExecutionState({ status }: { readonly status: StatusSnapshot }) {
   const drift = rec(status.reconciliation_state, "drift_detected") === true;
   return (
@@ -35,6 +42,7 @@ function ExecutionState({ status }: { readonly status: StatusSnapshot }) {
 
 function AlertsAndDeploy({ status }: { readonly status: StatusSnapshot }) {
   const deployment = status.deployment;
+  const gitSha = rec(deployment, "git_sha");
   return (
     <div className="duo">
       <Panel title="Alerts" label="Alerts">
@@ -57,6 +65,10 @@ function AlertsAndDeploy({ status }: { readonly status: StatusSnapshot }) {
           <dd>{displayValue(rec(deployment, "public_route"), "—")}</dd>
           <dt>Health</dt>
           <dd>{displayValue(rec(deployment, "health_path"), "—")}</dd>
+          <dt>Commit</dt>
+          <dd title={typeof gitSha === "string" ? gitSha : undefined}>{shortCommit(gitSha)}</dd>
+          <dt>Build</dt>
+          <dd>{displayValue(rec(deployment, "build_time"), "unknown")}</dd>
         </dl>
       </Panel>
     </div>

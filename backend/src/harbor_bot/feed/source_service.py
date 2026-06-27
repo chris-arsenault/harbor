@@ -1,11 +1,24 @@
+import asyncio
+import copy
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from harbor_bot.config.defaults import load_default_config
+from harbor_bot.feed.backfill import (
+    HISTORICAL_END_OFFSET_DAYS,
+    HISTORICAL_LOOKBACK_DAYS,
+    BackfillPlan,
+    backfill_status_from_plan,
+    build_backfill_plan,
+    idle_backfill_status,
+    mark_fetch_completed,
+    public_backfill_status,
+)
 from harbor_bot.feed.historical import ingest_historical_candles
 from harbor_bot.feed.ingest import SyncReport, sync_universe
 from harbor_bot.instruments import RESEARCH_INSTRUMENTS
@@ -14,6 +27,7 @@ from harbor_bot.persistence.market_repository import (
     get_bid_ask_candle_count,
     get_bulk_candle_coverage,
     get_candle_coverage,
+    get_daily_candle_coverage,
 )
 from harbor_bot.settings import Settings
 from harbor_bot.strategy.models import strategy_config_from_defaults
@@ -21,16 +35,22 @@ from harbor_bot.strategy.models import strategy_config_from_defaults
 OandaClientFactory = Callable[[Settings], Any]
 HistoricalIngestor = Callable[..., Awaitable[int]]
 LiveStreamStatusProvider = Callable[[], Mapping[str, Any]]
+Clock = Callable[[], datetime]
 _UTC_OFFSET = timedelta(0)
 
 
-@dataclass(frozen=True)
+@dataclass
 class CandleSourceService:
     engine: AsyncEngine
     settings: Settings
     client_factory: OandaClientFactory = OandaClient.from_settings
     historical_ingestor: HistoricalIngestor = ingest_historical_candles
     live_stream_status_provider: LiveStreamStatusProvider | None = None
+    clock: Clock = lambda: datetime.now(UTC)
+
+    def __post_init__(self) -> None:
+        self._backfill_task: asyncio.Task[None] | None = None
+        self._backfill_status: dict[str, Any] = idle_backfill_status()
 
     async def get_status(self, *, instrument: str | None = None) -> dict[str, Any]:
         resolved_instrument = instrument or _default_instrument()
@@ -149,6 +169,79 @@ class CandleSourceService:
             "repair": repair,
             "reports": [_report_jsonable(report) for report in reports],
         }
+
+    async def get_backfill_status(self) -> dict[str, Any]:
+        return public_backfill_status(copy.deepcopy(self._backfill_status))
+
+    async def start_backfill(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        if self._backfill_task is not None and not self._backfill_task.done():
+            return await self.get_backfill_status()
+        if not (self.settings.oanda_api_token and self.settings.oanda_account_id):
+            msg = "OANDA_API_TOKEN and OANDA_ACCOUNT_ID are required to source candles"
+            raise ValueError(msg)
+
+        instruments = _payload_instruments(payload, self.settings)
+        moment = self.clock().astimezone(UTC)
+        plan = await self._build_backfill_plan(instruments=instruments, moment=moment)
+        self._backfill_status = backfill_status_from_plan(plan, job_id=uuid4().hex)
+        self._backfill_task = asyncio.create_task(self._run_backfill_worker(plan))
+        return await self.get_backfill_status()
+
+    async def _build_backfill_plan(
+        self, *, instruments: tuple[str, ...], moment: datetime
+    ) -> BackfillPlan:
+        historical_start = (moment - timedelta(days=HISTORICAL_LOOKBACK_DAYS)).date()
+        historical_end = (moment - timedelta(days=HISTORICAL_END_OFFSET_DAYS)).date()
+        async with self.engine.connect() as connection:
+            coverages = {
+                row["instrument"]: row
+                for row in await get_bulk_candle_coverage(connection, instruments=instruments)
+            }
+            daily_rows = await get_daily_candle_coverage(
+                connection,
+                instruments=instruments,
+                start=historical_start,
+                end=historical_end,
+            )
+        daily_coverages: dict[str, dict[date, dict[str, Any]]] = {
+            instrument: {} for instrument in instruments
+        }
+        for row in daily_rows:
+            daily_coverages.setdefault(row["instrument"], {})[row["day"]] = row
+        return build_backfill_plan(
+            moment=moment,
+            instruments=instruments,
+            coverages=coverages,
+            daily_coverages=daily_coverages,
+        )
+
+    async def _run_backfill_worker(self, plan: BackfillPlan) -> None:
+        try:
+            async with self.client_factory(self.settings) as client:
+                for fetch in plan.fetches:
+                    self._backfill_status["status"] = "running"
+                    self._backfill_status["current_instrument"] = fetch.instrument
+                    imported = await self.historical_ingestor(
+                        client=client,
+                        engine=self.engine,
+                        instrument=fetch.instrument,
+                        from_time=fetch.from_time,
+                        to_time=fetch.to_time,
+                        page_size=self.settings.oanda_historical_candle_page_size,
+                        request_interval_seconds=(
+                            self.settings.oanda_historical_request_interval_seconds
+                        ),
+                        include_first=fetch.include_first,
+                        replace_existing=False,
+                    )
+                    mark_fetch_completed(self._backfill_status, fetch, imported=imported)
+            self._backfill_status["status"] = "completed"
+            self._backfill_status["current_instrument"] = None
+            self._backfill_status["finished_at"] = _iso_or_none(self.clock().astimezone(UTC))
+        except Exception as exc:  # pragma: no cover - exercised through live worker failures
+            self._backfill_status["status"] = "failed"
+            self._backfill_status["error"] = str(exc)
+            self._backfill_status["finished_at"] = _iso_or_none(self.clock().astimezone(UTC))
 
 
 def _report_jsonable(report: SyncReport) -> dict[str, Any]:
