@@ -7,6 +7,7 @@ same data the backtester does. Per-instrument: the caller selects the instrument
 
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -16,6 +17,7 @@ from harbor_bot.backtester.service import read_persisted_candle_records
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.instruments import RESEARCH_INSTRUMENTS, default_instrument_rules
 from harbor_bot.persistence.market_repository import get_candle_coverage
+from harbor_bot.research.capture import run_capture_scan
 from harbor_bot.research.edge import (
     DEFAULT_HORIZON,
     adjust_edge_scan_rows_for_universe,
@@ -171,6 +173,77 @@ class ResearchService:
                 "overall_multiple_test_method": "bonferroni",
                 "conditional_multiple_test_method": "bonferroni_per_row",
             },
+        }
+
+    async def capture_scan(
+        self,
+        *,
+        instrument: str = "EUR_USD",
+        horizons: tuple[int, ...] = (15, 30, 60),
+        algorithm_ids: tuple[str, ...] = (
+            "generic_sweep_continuation",
+            "early_ny_sweep_continuation",
+        ),
+        window_days: int = DEFAULT_RESEARCH_WINDOW_DAYS,
+        spread_pips: Any = "0.8",
+        slippage_pips: Any = "0.1",
+    ) -> dict[str, Any]:
+        config = replace(
+            strategy_config_from_defaults(load_default_config()),
+            instrument=instrument,
+        )
+        rules = default_instrument_rules(instrument)
+        selector = self.window_selector or select_latest_research_candle_window
+        reader = self.candle_reader or read_persisted_candle_records
+        window = await selector(
+            self.persistence_engine,
+            instrument=instrument,
+            required_days=window_days,
+        )
+        warnings = _window_warnings(window, instrument=instrument, requested_days=window_days)
+        candles: list[Any] = []
+        if window is not None:
+            records = await reader(
+                self.persistence_engine,
+                instrument=instrument,
+                start=window["from"],
+                end=window["to"],
+            )
+            candles = candles_from_records(records, default_instrument=instrument)
+            if not candles:
+                warnings.append(
+                    {
+                        "instrument": instrument,
+                        "type": "empty_window",
+                        "message": "selected research window returned no candle rows",
+                        "requested_days": window_days,
+                    }
+                )
+        rows = run_capture_scan(
+            candles,
+            instrument=instrument,
+            config=config,
+            instrument_rules=rules,
+            algorithm_ids=algorithm_ids,
+            horizons=horizons,
+            spread_pips=Decimal(str(spread_pips)),
+            slippage_pips=Decimal(str(slippage_pips)),
+        )
+        rows.sort(key=lambda row: row.stats.mean_net_pips, reverse=True)
+        return {
+            "instrument": instrument,
+            "horizons": list(horizons),
+            "algorithms": [
+                algorithm.to_jsonable()
+                for algorithm in available_edge_algorithms()
+                if algorithm.algorithm_id in algorithm_ids
+            ],
+            "spread_pips": str(Decimal(str(spread_pips))),
+            "slippage_pips": str(Decimal(str(slippage_pips))),
+            "requested_window_days": window_days,
+            "window": _window_jsonable(window),
+            "warnings": warnings,
+            "results": [row.to_jsonable() for row in rows],
         }
 
     def edge_algorithms(self) -> dict[str, Any]:

@@ -32,6 +32,9 @@ class FakeResearchService:
     def edge_algorithms(self) -> dict[str, Any]:
         return {"algorithms": []}
 
+    async def capture_scan(self, **kwargs: Any) -> dict[str, Any]:
+        return {"received": kwargs, "results": []}
+
 
 def test_get_edge_study_routes_through_injected_service() -> None:
     service = FakeResearchService()
@@ -43,6 +46,33 @@ def test_get_edge_study_routes_through_injected_service() -> None:
     assert response.json()["instrument"] == "GBP_USD"
     assert service.calls == [("GBP_USD", 5, "generic_sweep_reversal")]
     assert response.json()["window_days"] == 90
+
+
+def test_capture_scan_routes_payload_to_research_service() -> None:
+    service = FakeResearchService()
+    client = TestClient(create_app(research_service=service))
+
+    response = client.post(
+        "/api/research/capture",
+        json={
+            "instrument": "eur_usd",
+            "algorithms": ["generic_sweep_continuation"],
+            "horizons": [15, 30],
+            "window_days": 730,
+            "spread_pips": "0.7",
+            "slippage_pips": "0.2",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["received"] == {
+        "instrument": "EUR_USD",
+        "algorithm_ids": ["generic_sweep_continuation"],
+        "horizons": [15, 30],
+        "window_days": 730,
+        "spread_pips": "0.7",
+        "slippage_pips": "0.2",
+    }
 
 
 def test_edge_study_runs_over_loaded_candles() -> None:
@@ -190,6 +220,25 @@ def test_edge_scan_runs_with_partial_available_window_and_reports_warning() -> N
     assert result["results"]
     assert result["warnings"][0]["type"] == "partial_window"
     assert result["windows"][0]["available_days"] == 2
+
+
+def test_capture_scan_runs_over_loaded_candles_with_cost_assumptions() -> None:
+    service = ResearchService(candle_reader=_fixture_records, window_selector=_fixed_window)
+
+    result = asyncio.run(
+        service.capture_scan(
+            instrument="EUR_USD",
+            horizons=(3,),
+            algorithm_ids=("generic_sweep_continuation",),
+            spread_pips="0.8",
+            slippage_pips="0.1",
+        )
+    )
+
+    assert result["spread_pips"] == "0.8"
+    assert result["slippage_pips"] == "0.1"
+    assert result["results"][0]["algorithm_id"] == "generic_sweep_continuation"
+    assert result["results"][0]["stats"]["count"] == 1
 
 
 async def _fixture_records(

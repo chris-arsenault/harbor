@@ -1,6 +1,6 @@
 # H005 — Clean-level first-touch sweep
 
-- Status: active / underpowered promising
+- Status: rejected
 - Edge algorithm: `clean_level_sweep_reversal`
 
 ## Hypothesis
@@ -30,22 +30,18 @@ The latest broad scan showed a coherent GBP_JPY cluster:
 This is promising but underpowered. It does not yet pass the edge gate because
 effective sample size is too small and the multiple-test-adjusted p-values are
 not significant.
+## Confirmatory result
 
-## Confirmatory test
+The larger-sample confirmatory scan did not preserve the exploratory signal:
 
-After the 2-year backfill, run GBP_JPY only with this algorithm at 15m/30m/60m.
-Keep the H005 definition frozen. Target at least 30 effective NY trading-day
-clusters, preferably 50+, before considering entry/exit capture tests.
+- 60m: N=102, hit-rate=52.0%, mean=6.4p, corrected t=1.48, effective N=92, adjusted p=0.2088.
+- 15m: N=102, hit-rate=53.9%, mean=1.8p, corrected t=0.89, effective N=92, adjusted p=0.5620.
+- 30m: N=102, hit-rate=51.0%, mean=1.3p, corrected t=0.45, effective N=92, adjusted p=0.9814.
 
-## Run command after 2-year backfill
+The earlier high hit-rate / high mean result was not stable when the sample expanded.
 
-```bash
-curl -X POST "http://192.168.66.3:30091/api/research/edge/scan" \
-  -H "content-type: application/json" \
-  -d '{
-    "instruments": ["GBP_JPY"],
-    "algorithms": ["clean_level_sweep_reversal"],
-    "horizons": [15, 30, 60],
-    "window_days": 730
-  }'
-```
+## Decision
+
+Reject H005 as a reversal basis. Do not build or optimize strategy variants around
+GBP_JPY clean-level first-touch reversal unless a materially different economic
+hypothesis is proposed.

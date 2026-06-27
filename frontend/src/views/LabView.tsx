@@ -9,6 +9,7 @@ import type {
 import type { OptimizationPreflightResponse } from "../api/optimizerTypes";
 import { EmptyState, Notice, Panel, ViewHead } from "../ui/primitives";
 import { CandleSource } from "./lab/CandleSource";
+import { EdgeCapture } from "./lab/EdgeCapture";
 import { EdgeScan } from "./lab/EdgeScan";
 import { EdgeStudy } from "./lab/EdgeStudy";
 import { SearchSpacePanel } from "./lab/SearchSpace";
@@ -55,6 +56,7 @@ export function LabView({ model }: { readonly model: LabViewModel }) {
         onImportCandles={model.onImportCandles}
       />
       <EdgeScan />
+      <EdgeCapture />
       <EdgeStudy instrument={model.selectedInstrument} />
       <Workbench
         studyPayload={model.studyPayload}

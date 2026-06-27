@@ -139,3 +139,53 @@ export interface EdgeScanPayload {
 export function fetchEdgeScan(payload: EdgeScanPayload): Promise<EdgeScanResult> {
   return apiPost<EdgeScanResult>("/api/research/edge/scan", payload);
 }
+
+export interface CaptureStats {
+  count: number;
+  hit_rate: string;
+  mean_gross_pips: string;
+  mean_net_pips: string;
+  median_net_pips: string;
+  total_net_pips: string;
+  average_mfe_pips: string;
+  average_mae_pips: string;
+}
+
+export interface CaptureRow {
+  algorithm_id: string;
+  hypothesis_id: string;
+  algorithm_label: string;
+  instrument: string;
+  horizon: number;
+  event_count: number;
+  stats: CaptureStats;
+  spread_pips: string;
+  slippage_pips: string;
+  entry_model: string;
+  exit_model: string;
+}
+
+export interface CaptureResult {
+  instrument: string;
+  horizons: number[];
+  algorithms: EdgeAlgorithm[];
+  spread_pips: string;
+  slippage_pips: string;
+  requested_window_days: number;
+  window: EdgeDataWindow | null;
+  warnings: EdgeDataWarning[];
+  results: CaptureRow[];
+}
+
+export interface CapturePayload {
+  instrument: string;
+  horizons: number[];
+  algorithms: string[];
+  window_days: number;
+  spread_pips: string;
+  slippage_pips: string;
+}
+
+export function fetchCaptureScan(payload: CapturePayload): Promise<CaptureResult> {
+  return apiPost<CaptureResult>("/api/research/capture", payload);
+}

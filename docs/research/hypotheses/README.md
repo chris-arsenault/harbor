@@ -10,9 +10,9 @@ an economic claim first, then an edge-search algorithm. Status values are
 | [H002](H002-non-news-proxy-sweep-reversal.md) | proposed | `non_news_proxy_sweep_reversal` | Sweep reversals are more likely outside the 10:00 ET macro-release proxy window. |
 | [H003](H003-mss-confirmed-sweep-reversal.md) | proposed | `mss_confirmed_sweep_reversal` | A sweep only has reversal edge after market-structure shift confirmation. |
 | [H004](H004-compressed-range-sweep-reversal.md) | proposed | `compressed_range_sweep_reversal` | Sweeps after compressed Asia/London range have cleaner reversal behavior. |
-| [H005](H005-clean-level-sweep-reversal.md) | active / underpowered promising | `clean_level_sweep_reversal` | GBP_JPY clean first-touch sweeps show promising 15m/30m reversal, pending larger sample. |
+| [H005](H005-clean-level-sweep-reversal.md) | rejected | `clean_level_sweep_reversal` | GBP_JPY clean first-touch reversal failed the larger-sample confirmatory scan. |
 | [H006](H006-early-ny-sweep-reversal.md) | proposed | `early_ny_sweep_reversal` | NY opening-auction sweeps behave differently from late-window sweeps. |
-| [H007](H007-eurusd-sweep-continuation.md) | active / exploratory | `generic_sweep_continuation`, `mss_confirmed_sweep_continuation`, `early_ny_sweep_continuation` | EUR_USD sweeps may continue rather than reverse. |
+| [H007](H007-eurusd-sweep-continuation.md) | active / cost-capture testing | `generic_sweep_continuation`, `mss_confirmed_sweep_continuation`, `early_ny_sweep_continuation` | EUR_USD sweeps show continuation signal; next gate is net capture after costs. |
 
 ## Research gate
 

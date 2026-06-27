@@ -437,6 +437,33 @@ def create_app(
             window_days=window_days,
         )
 
+    @app.post("/api/research/capture")
+    async def capture_edge(
+        payload: dict[str, Any],
+        service: ResearchService = RESEARCH_SERVICE_DEPENDENCY,
+    ) -> dict[str, Any]:
+        raw_horizons = payload.get("horizons")
+        horizons = (
+            tuple(int(h) for h in raw_horizons) if isinstance(raw_horizons, list) else (15, 30, 60)
+        )
+        raw_algorithms = payload.get("algorithms")
+        algorithms = (
+            tuple(str(value).strip() for value in raw_algorithms)
+            if isinstance(raw_algorithms, list)
+            else (
+                "generic_sweep_continuation",
+                "early_ny_sweep_continuation",
+            )
+        )
+        return await service.capture_scan(
+            instrument=str(payload.get("instrument") or "EUR_USD").strip().upper(),
+            horizons=horizons,
+            algorithm_ids=algorithms,
+            window_days=int(payload.get("window_days") or DEFAULT_RESEARCH_WINDOW_DAYS),
+            spread_pips=payload.get("spread_pips", "0.8"),
+            slippage_pips=payload.get("slippage_pips", "0.1"),
+        )
+
     @app.get("/api/trades")
     async def read_trade_journal(
         start: OptionalFromQuery = None,

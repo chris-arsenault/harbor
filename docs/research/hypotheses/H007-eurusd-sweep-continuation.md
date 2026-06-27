@@ -1,6 +1,6 @@
 # H007 — EUR_USD sweep continuation
 
-- Status: active / exploratory
+- Status: active / cost-capture testing
 - Edge algorithms: `generic_sweep_continuation`, `mss_confirmed_sweep_continuation`, `early_ny_sweep_continuation`
 
 ## Hypothesis
@@ -49,3 +49,20 @@ curl -X POST "http://192.168.66.3:30091/api/research/edge/scan" \
     "window_days": 730
   }'
 ```
+## Latest evidence
+
+The larger-window H007 scan showed a coherent positive continuation signal but
+with small EUR_USD mean moves:
+
+- Generic continuation 15m: N=443, hit-rate=55.1%, mean=1.3p, corrected t=2.49, effective N=311, adjusted p=0.0766.
+- Generic continuation 60m: N=443, hit-rate=53.3%, mean=2.1p, corrected t=2.48, effective N=311, adjusted p=0.0787.
+- Early-NY continuation 15m: N=257, hit-rate=57.6%, mean=1.8p, corrected t=2.46, effective N=210, adjusted p=0.0842.
+
+The signal is directionally coherent but cost-thin. The next gate is whether a
+simple event-capture model remains positive after spread/slippage assumptions.
+
+## Next gate
+
+Run a cost-aware event-capture test for EUR_USD H007 using event-close/next-open
+style continuation entries and fixed horizon exits. Only consider strategy work if
+net pips after costs remain positive with tolerable adverse excursion.
