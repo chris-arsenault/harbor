@@ -190,7 +190,7 @@ async def run_book_recorder(
 ### 6.5 Settings (`settings.py`)
 
 Add:
-- `oanda_book_recorder_enabled: bool` (alias `OANDA_BOOK_RECORDER_ENABLED`, default `False`).
+- `oanda_book_recorder_enabled: bool` (alias `OANDA_BOOK_RECORDER_ENABLED`, default `True`).
 - `oanda_book_poll_interval_seconds: float` (alias `OANDA_BOOK_POLL_INTERVAL_SECONDS`, default `300`).
 
 Recorder instruments reuse `settings.research_instruments`.
@@ -289,11 +289,11 @@ Full gate:
 
 ## 9. Acceptance criteria
 
-1. With `OANDA_BOOK_RECORDER_ENABLED=true` and valid practice credentials, Harbor records order+position book snapshots for all `research_instruments` on interval.
+1. With valid practice credentials, Harbor records order+position book snapshots for all `research_instruments` on interval.
 2. Re-polling the same snapshot does not duplicate rows.
 3. `GET /api/research/books/status` reports recorder state and per-instrument coverage.
 4. Lab shows recorder health and latest snapshot age.
-5. No broker writes, no strategy/execution changes, recorder disabled by default.
+5. No broker writes, no strategy/execution changes, recorder enabled by default in practice deployment.
 6. All new code is covered by tests and `make ci` passes.
 
 ## 10. File checklist

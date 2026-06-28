@@ -18,6 +18,8 @@ services:
       OANDA_ACCOUNT_ID: "${OANDA_ACCOUNT_ID}"
       OANDA_API_KEY: "${OANDA_API_KEY}"
       OANDA_API_TOKEN: "${OANDA_API_TOKEN}"
+      OANDA_BOOK_POLL_INTERVAL_SECONDS: "300"
+      OANDA_BOOK_RECORDER_ENABLED: "true"
       OANDA_ENV: "practice"
     healthcheck:
       test:

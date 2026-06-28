@@ -74,7 +74,7 @@ class Settings(BaseSettings):
         validation_alias="HARBOR_LIVE_INGEST_ENABLED",
     )
     oanda_book_recorder_enabled: bool = Field(
-        default=False,
+        default=True,
         validation_alias="OANDA_BOOK_RECORDER_ENABLED",
     )
     oanda_book_poll_interval_seconds: float = Field(

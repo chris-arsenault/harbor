@@ -60,7 +60,7 @@ def test_oanda_settings_default_to_practice_without_credentials(monkeypatch) -> 
     assert settings.oanda_historical_import_count == 259_200
     assert settings.oanda_historical_request_interval_seconds == 0.1
     assert settings.oanda_pricing_stream_enabled is False
-    assert settings.oanda_book_recorder_enabled is False
+    assert settings.oanda_book_recorder_enabled is True
     assert settings.oanda_book_poll_interval_seconds == 300.0
 
 
