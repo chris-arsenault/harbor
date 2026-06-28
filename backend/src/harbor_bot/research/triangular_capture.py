@@ -84,6 +84,13 @@ def run_triangular_capture(
     lookback: int = DEFAULT_LOOKBACK,
     cost_bps_per_leg: float = DEFAULT_COST_BPS_PER_LEG,
 ) -> list[TriangularCaptureRow]:
+    _validate_params(
+        thresholds=thresholds,
+        horizons=horizons,
+        constructions=constructions,
+        lookback=lookback,
+        cost_bps_per_leg=cost_bps_per_leg,
+    )
     series = _aligned_series(candles_by_instrument)
     rows: list[TriangularCaptureRow] = []
     if series is None:
@@ -196,3 +203,29 @@ def _stddev(values: list[float]) -> float:
     mean = sum(values) / len(values)
     variance = sum((value - mean) ** 2 for value in values) / (len(values) - 1)
     return sqrt(variance)
+
+
+def _validate_params(
+    *,
+    thresholds: tuple[float, ...],
+    horizons: tuple[int, ...],
+    constructions: tuple[str, ...],
+    lookback: int,
+    cost_bps_per_leg: float,
+) -> None:
+    if not thresholds or any(threshold <= 0 for threshold in thresholds):
+        msg = "thresholds must be positive"
+        raise ValueError(msg)
+    if not horizons or any(horizon <= 0 for horizon in horizons):
+        msg = "horizons must be positive"
+        raise ValueError(msg)
+    if lookback < 2:
+        msg = "lookback must be at least 2"
+        raise ValueError(msg)
+    if cost_bps_per_leg < 0:
+        msg = "cost_bps_per_leg cannot be negative"
+        raise ValueError(msg)
+    unknown = set(constructions) - set(_LEG_COUNT)
+    if unknown:
+        msg = f"unknown triangular construction(s): {sorted(unknown)}"
+        raise ValueError(msg)

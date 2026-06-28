@@ -4,17 +4,25 @@ import {
   createLiveConnection,
   liveWebSocketUrl,
   parseEnvelope,
+  webSocketUrlWithToken,
   type WebSocketConstructor,
 } from "./live";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  fakeWebSocketInstances.length = 0;
 });
 
 test("liveWebSocketUrl maps the current page origin to /ws", () => {
   const url = liveWebSocketUrl(new URL("https://harbor.lan/dashboard"));
 
   expect(url).toBe("wss://harbor.lan/ws");
+});
+
+test("webSocketUrlWithToken adds access token query parameter", () => {
+  expect(webSocketUrlWithToken("wss://harbor.lan/ws", "token-123")).toBe(
+    "wss://harbor.lan/ws?access_token=token-123"
+  );
 });
 
 test("parseEnvelope validates websocket envelope shape", () => {
@@ -37,7 +45,7 @@ test("parseEnvelope validates websocket envelope shape", () => {
   );
 });
 
-test("createLiveConnection forwards parsed envelopes and heartbeat notifications", () => {
+test("createLiveConnection forwards parsed envelopes and heartbeat notifications", async () => {
   const onEnvelope = vi.fn();
   const onHeartbeat = vi.fn();
   const connection = createLiveConnection({
@@ -46,8 +54,10 @@ test("createLiveConnection forwards parsed envelopes and heartbeat notifications
     onEnvelope,
     onHeartbeat,
   });
-  const socket = fakeWebSocketInstances[0];
 
+  await vi.waitFor(() => expect(fakeWebSocketInstances).toHaveLength(1));
+  const socket = fakeWebSocketInstances[0];
+  if (!socket) throw new Error("socket missing");
   socket.emit(
     JSON.stringify({
       type: "candle",

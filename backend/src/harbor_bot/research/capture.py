@@ -1,6 +1,7 @@
 """Cost-aware fixed-horizon event capture research (pure)."""
 
 from dataclasses import dataclass
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -82,6 +83,7 @@ def run_capture_scan(
     spread_pips: Decimal = Decimal("0.8"),
     slippage_pips: Decimal = Decimal("0.1"),
 ) -> list[CaptureRow]:
+    _validate_horizons(horizons)
     ordered = tuple(
         sorted((require_closed_candle(candle) for candle in candles), key=lambda item: item.ts)
     )
@@ -131,10 +133,12 @@ def _capture_trades(
 ) -> list[_CaptureTrade]:
     trades: list[_CaptureTrade] = []
     cost = rules.pips_to_price((spread_pips / Decimal("2")) + slippage_pips)
+    by_ts = {candle.ts: index for index, candle in enumerate(candles)}
     for event in events:
-        entry_index = event.index + 1
-        exit_index = event.index + horizon
-        if entry_index >= len(candles) or exit_index >= len(candles) or exit_index < entry_index:
+        event_ts = candles[event.index].ts
+        entry_index = by_ts.get(event_ts + timedelta(minutes=1))
+        exit_index = by_ts.get(event_ts + timedelta(minutes=horizon))
+        if entry_index is None or exit_index is None or exit_index < entry_index:
             continue
         entry_mid = candles[entry_index].o
         exit_mid = candles[exit_index].c
@@ -143,7 +147,7 @@ def _capture_trades(
         exit_price = exit_mid - cost if side == "long" else exit_mid + cost
         gross = _pips(side, entry_mid, exit_mid, rules)
         net = _pips(side, entry, exit_price, rules)
-        mfe, mae = _excursions(side, entry_mid, candles[entry_index : exit_index + 1], rules)
+        mfe, mae = _excursions(side, entry, candles[entry_index : exit_index + 1], rules)
         trades.append(_CaptureTrade(gross_pips=gross, net_pips=net, mfe_pips=mfe, mae_pips=mae))
     return trades
 
@@ -155,19 +159,41 @@ def _pips(side: str, entry: Decimal, exit_price: Decimal, rules: InstrumentRules
 
 def _excursions(
     side: str,
-    entry_mid: Decimal,
+    entry_price: Decimal,
     window: tuple[ClosedCandle, ...],
     rules: InstrumentRules,
 ) -> tuple[Decimal, Decimal]:
     if not window:
         return Decimal("0"), Decimal("0")
     if side == "long":
-        mfe = max(candle.h - entry_mid for candle in window) / rules.pip_size
-        mae = max(entry_mid - candle.low for candle in window) / rules.pip_size
+        mfe = max(_bid_high(candle) - entry_price for candle in window) / rules.pip_size
+        mae = max(entry_price - _bid_low(candle) for candle in window) / rules.pip_size
     else:
-        mfe = max(entry_mid - candle.low for candle in window) / rules.pip_size
-        mae = max(candle.h - entry_mid for candle in window) / rules.pip_size
+        mfe = max(entry_price - _ask_low(candle) for candle in window) / rules.pip_size
+        mae = max(_ask_high(candle) - entry_price for candle in window) / rules.pip_size
     return max(mfe, Decimal("0")), max(mae, Decimal("0"))
+
+
+def _bid_high(candle: ClosedCandle) -> Decimal:
+    return candle.bid_h if candle.bid_h is not None else candle.h
+
+
+def _bid_low(candle: ClosedCandle) -> Decimal:
+    return candle.bid_low if candle.bid_low is not None else candle.low
+
+
+def _ask_high(candle: ClosedCandle) -> Decimal:
+    return candle.ask_h if candle.ask_h is not None else candle.h
+
+
+def _ask_low(candle: ClosedCandle) -> Decimal:
+    return candle.ask_low if candle.ask_low is not None else candle.low
+
+
+def _validate_horizons(horizons: tuple[int, ...]) -> None:
+    if not horizons or any(horizon <= 0 for horizon in horizons):
+        msg = "horizons must be positive"
+        raise ValueError(msg)
 
 
 def _capture_stats(trades: list[_CaptureTrade]) -> CaptureStats:

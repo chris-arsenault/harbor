@@ -193,6 +193,8 @@ pnpm exec eslint .
 
 Backend product routes are `GET /api/trades`, `GET/POST /api/backtests`, `GET /api/backtests/{run_id}`, `GET/POST /api/optimize`, `GET /api/optimize/{study_id}`, variant create/read/retire/promote routes, `GET/PUT /api/config`, `GET /api/events`, guarded control routes, `/health`, `/ready`, and `/ws`.
 
+Runtime Harbor deployments require shared Ahara Cognito auth for `/api/*` and `/ws`. Local tests set `HARBOR_AUTH_REQUIRED=false`; deployed compose sets it to `true` and receives the Cognito issuer/client IDs through `secret-paths.yml`.
+
 Config edits are explicit: the UI previews diffs, the backend validates known config keys and bounds, and writes require `APPLY_CONFIG`. Config edits audit an event and do not mutate historical backtest, optimizer, paper-forward, or practice-execution evidence.
 
 ## Platform Integration
@@ -201,11 +203,11 @@ Harbor follows the Ahara TrueNAS LAN deployment path:
 
 - `platform.yml` declares `python`, `typescript`, `truenas`, and the `backend`/`frontend` images.
 - `.github/workflows/ci.yml` calls the shared reusable workflow.
-- `secret-paths.yml` maps compose environment variables to SSM paths.
+- `secret-paths.yml` maps compose environment variables to SSM paths, including the Harbor Cognito app client and shared user-pool identifiers.
 - `compose.yaml` runs the backend and frontend containers on TrueNAS and publishes the frontend on `192.168.66.3:30091`.
-- `ahara-infra` registers the Harbor deployer role and TrueNAS database. Harbor does not register an Ahara reverse-proxy route.
+- `ahara-infra` registers the Harbor deployer role, Cognito app permissions, auth-trigger mapping, and TrueNAS database. Harbor does not register an Ahara reverse-proxy route.
 - The LAN endpoint is `http://192.168.66.3:30091/`; backend readiness is available through the frontend at `/ready`, and `/health` remains the cheap frontend liveness check.
-- `scripts/smoke.sh` checks frontend `/health`, backend `/ready`, `/api/status`, static WebSocket proxy configuration, and the LAN endpoint binding. If a manual smoke command is extended to use OANDA, AWS, database, ntfy, Telegram, or other credentials, run it as `with-cred -- <command>`.
+- `scripts/smoke.sh` checks frontend `/health`, backend `/ready`, protected `/api/status` behavior, static WebSocket proxy configuration, and the LAN endpoint binding. Set `HARBOR_SMOKE_ACCESS_TOKEN` to exercise authenticated `/api/status`; otherwise smoke expects `/api/status` to return `401`. If a manual smoke command is extended to use OANDA, AWS, database, ntfy, Telegram, or other credentials, run it as `with-cred -- <command>`.
 
 ## Secrets
 

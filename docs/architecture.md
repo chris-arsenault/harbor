@@ -7,11 +7,11 @@ Harbor runs as an Ahara TrueNAS LAN service at `http://192.168.66.3:30091/`. The
 | Component | Current Role |
 | ---- | ---- |
 | Python backend | PostgreSQL persistence, raw OANDA read path, closed M1 candle ingestion, transaction stream framing, pure strategy decisions, deterministic backtester, persisted Backtests and Trades, offline optimizer/tuning studies, paper candidate variants, shadow paper engine, Lab APIs, Config diff/update/audit, structured Events, OANDA practice execution/reconciliation, guarded control endpoints, ntfy/Telegram notifier boundary, readiness, observability REST endpoints, and `/ws` |
-| React frontend | Full product UI: Dashboard, Trades, Backtests, Lab optimizer workflow, Config, Events, and Operations. The UI renders server-authored facts, launches experiments/tuning runs, handles guarded practice controls, and exposes LAN deployment/readiness facts without recomputing strategy or broker truth. |
+| React frontend | Full product UI: Dashboard, Trades, Backtests, Lab optimizer workflow, Config, Events, and Operations. The UI signs users into the shared Ahara Cognito pool, sends the access token on REST/WebSocket calls, renders server-authored facts, launches experiments/tuning runs, handles guarded practice controls, and exposes LAN deployment/readiness facts without recomputing strategy or broker truth. |
 | TrueNAS PostgreSQL | Durable candles, sessions, sweeps, FVGs, signals, trades, broker transactions, equity snapshots, events, config, backtests, optimization trials, variants, and variant trades |
 | Ahara platform | CI, GHCR images, Komodo deploy, SSM-backed secrets, TrueNAS DB registration, and LAN-published TrueNAS compose |
 
-The frontend container serves the LAN entrypoint, proxies `/api/` and `/ws` to the backend, exposes cheap `/health`, and proxies backend `/ready` for deployment smoke checks. Harbor does not publish a reverse-proxy route or public internet endpoint.
+The frontend container serves the LAN entrypoint, generates Cognito runtime config from SSM-backed environment variables, proxies `/api/` and `/ws` to the backend, exposes cheap `/health`, and proxies backend `/ready` for deployment smoke checks. Harbor does not publish a reverse-proxy route or public internet endpoint. `/api/*` and `/ws` require a valid Harbor Cognito app token; `/health`, `/ready`, and `/version` stay open for container health and deploy verification.
 
 ## Architecture Rules
 

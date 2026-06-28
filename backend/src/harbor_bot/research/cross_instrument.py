@@ -12,6 +12,7 @@ from statistics import median
 from typing import Any
 
 from harbor_bot.feed.candles import ClosedCandle
+from harbor_bot.strategy.models import require_closed_candle
 
 
 @dataclass(frozen=True)
@@ -161,6 +162,7 @@ def run_cross_scan(
 def daily_closes(candles: list[ClosedCandle]) -> list[DailyClose]:
     by_day: dict[date, ClosedCandle] = {}
     for candle in sorted(candles, key=lambda item: item.ts):
+        require_closed_candle(candle)
         by_day[candle.ts.date()] = candle
     return [DailyClose(day=day, close=float(candle.c)) for day, candle in sorted(by_day.items())]
 
@@ -173,6 +175,8 @@ def _aligned_maps(closes: dict[str, list[DailyClose]]) -> dict[str, dict[date, f
 
 def _common_days(maps: dict[str, dict[date, float]], instruments: list[str]) -> list[date]:
     if not instruments:
+        return []
+    if any(instrument not in maps for instrument in instruments):
         return []
     days = set(maps[instruments[0]])
     for instrument in instruments[1:]:
@@ -255,7 +259,7 @@ def _tri_eur_gbp(closes: dict[str, list[DailyClose]]) -> list[CrossObservation]:
 
 def _usd_dispersion(closes: dict[str, list[DailyClose]]) -> list[CrossObservation]:
     maps = _aligned_maps(closes)
-    instruments = sorted(maps)
+    instruments = sorted(instrument for instrument in maps if _usd_orientation(instrument) != 0)
     days = _common_days(maps, instruments)
     observations: list[CrossObservation] = []
     if len(instruments) < 4:
@@ -264,16 +268,50 @@ def _usd_dispersion(closes: dict[str, list[DailyClose]]) -> list[CrossObservatio
     leg_count = max(1, len(instruments) // 4)
     for idx in range(lookback, len(days) - horizon):
         recent = {
-            instrument: log(maps[instrument][days[idx]] / maps[instrument][days[idx - lookback]])
+            instrument: _usd_oriented_return(maps, instrument, days[idx - lookback], days[idx])
             for instrument in instruments
         }
         mean = sum(recent.values()) / len(recent)
-        residuals = sorted((instrument, value - mean) for instrument, value in recent.items())
+        residuals = sorted(
+            ((instrument, value - mean) for instrument, value in recent.items()),
+            key=lambda item: item[1],
+        )
+        if residuals[-1][1] - residuals[0][1] <= 1e-8:
+            continue
         longs = [instrument for instrument, _ in residuals[:leg_count]]
         shorts = [instrument for instrument, _ in residuals[-leg_count:]]
-        forward = _basket_forward(maps, days, idx, horizon, longs=longs, shorts=shorts)
+        forward = _usd_oriented_basket_forward(maps, days, idx, horizon, longs=longs, shorts=shorts)
         observations.append(CrossObservation(day=days[idx], return_bps=forward * 10_000))
     return observations
+
+
+def _usd_orientation(instrument: str) -> int:
+    if instrument.endswith("_USD"):
+        return 1
+    if instrument.startswith("USD_"):
+        return -1
+    return 0
+
+
+def _usd_oriented_return(
+    maps: dict[str, dict[date, float]], instrument: str, start: date, end: date
+) -> float:
+    return _usd_orientation(instrument) * log(maps[instrument][end] / maps[instrument][start])
+
+
+def _usd_oriented_basket_forward(
+    maps: dict[str, dict[date, float]],
+    days: list[date],
+    idx: int,
+    horizon: int,
+    *,
+    longs: list[str],
+    shorts: list[str],
+) -> float:
+    start, end = days[idx], days[idx + horizon]
+    long_return = sum(_usd_oriented_return(maps, instrument, start, end) for instrument in longs)
+    short_return = sum(_usd_oriented_return(maps, instrument, start, end) for instrument in shorts)
+    return (long_return / len(longs)) - (short_return / len(shorts))
 
 
 def _stats(values: list[float]) -> CrossStats:

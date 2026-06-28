@@ -26,12 +26,21 @@ import type {
   VariantDetail,
 } from "./types";
 import type { OptimizationPreflightResponse } from "./optimizerTypes";
+import { getAccessToken } from "../auth/cognito";
 
 const API_BASE_URL = "";
 
+async function apiHeaders(json = false): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (json) headers["Content-Type"] = "application/json";
+  const token = await getAccessToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
 export async function apiGet<TResponse>(path: string): Promise<TResponse> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { Accept: "application/json" },
+    headers: await apiHeaders(),
   });
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, "GET", path));
@@ -42,7 +51,7 @@ export async function apiGet<TResponse>(path: string): Promise<TResponse> {
 export async function apiPost<TResponse>(path: string, payload: unknown = {}): Promise<TResponse> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    headers: await apiHeaders(true),
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
@@ -54,7 +63,7 @@ export async function apiPost<TResponse>(path: string, payload: unknown = {}): P
 export async function apiPut<TResponse>(path: string, payload: unknown): Promise<TResponse> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "PUT",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    headers: await apiHeaders(true),
     body: JSON.stringify(payload),
   });
   if (!response.ok) {

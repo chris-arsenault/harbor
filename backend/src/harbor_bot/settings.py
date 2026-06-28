@@ -81,6 +81,15 @@ class Settings(BaseSettings):
         default=300.0,
         validation_alias="OANDA_BOOK_POLL_INTERVAL_SECONDS",
     )
+    harbor_auth_required: bool = Field(default=True, validation_alias="HARBOR_AUTH_REQUIRED")
+    harbor_auth_issuer_url: str | None = Field(
+        default=None,
+        validation_alias="HARBOR_AUTH_ISSUER_URL",
+    )
+    harbor_auth_client_id: str | None = Field(
+        default=None,
+        validation_alias="HARBOR_AUTH_CLIENT_ID",
+    )
     research_instruments_csv: str = Field(
         default="GBP_USD,EUR_USD,USD_JPY,EUR_JPY,GBP_JPY,AUD_JPY,AUD_USD,EUR_GBP",
         validation_alias="HARBOR_RESEARCH_INSTRUMENTS",
@@ -130,6 +139,14 @@ class Settings(BaseSettings):
         if normalized_env == "live" and not self.allow_live:
             msg = "OANDA live mode requires ALLOW_LIVE=true"
             raise ValueError(msg)
+        if self.harbor_auth_required and (
+            not self.harbor_auth_issuer_url or not self.harbor_auth_client_id
+        ):
+            msg = (
+                "HARBOR_AUTH_ISSUER_URL and HARBOR_AUTH_CLIENT_ID must be set "
+                "when HARBOR_AUTH_REQUIRED=true"
+            )
+            raise ValueError(msg)
 
         database_url = self.async_database_url
         _ = self.oanda_rest_base_url
@@ -139,6 +156,7 @@ class Settings(BaseSettings):
             "oanda_env": normalized_env,
             "allow_live": self.allow_live,
             "practice_only": normalized_env == "practice",
+            "auth": "enabled" if self.auth_enabled else "disabled",
         }
 
     @property
@@ -148,6 +166,10 @@ class Settings(BaseSettings):
             for item in self.research_instruments_csv.split(",")
             if item.strip()
         )
+
+    @property
+    def auth_enabled(self) -> bool:
+        return bool(self.harbor_auth_issuer_url and self.harbor_auth_client_id)
 
 
 def redact_secret_text(value: object) -> str:

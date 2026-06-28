@@ -8,8 +8,11 @@ from harbor_bot.config.defaults import load_default_config
 from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.research.edge import (
     MIN_SAMPLES,
+    EdgeEvent,
     EdgeStudyResult,
     _Observation,
+    _observations_with_forward,
+    get_edge_algorithm,
     has_edge,
     run_edge_scan,
     run_edge_study,
@@ -192,9 +195,13 @@ def test_mss_confirmed_algorithm_uses_confirmed_structure_break_event() -> None:
 
 
 def test_generic_continuation_algorithm_inverts_reversal_direction() -> None:
-    rows = _scan_algorithm_fixture(
+    rows = run_edge_scan(
         _algorithm_fixture_candles([_sweep_spec(day=0, continuation_down=True)]),
-        algorithms=("generic_sweep_reversal", "generic_sweep_continuation"),
+        instrument="EUR_USD",
+        config=strategy_config_from_defaults(load_default_config()),
+        instrument_rules=_rules(),
+        horizons=(2,),
+        algorithm_ids=("generic_sweep_reversal", "generic_sweep_continuation"),
     )
 
     reversal = next(row for row in rows if row.algorithm_id == "generic_sweep_reversal")
@@ -202,6 +209,123 @@ def test_generic_continuation_algorithm_inverts_reversal_direction() -> None:
 
     assert reversal.overall.mean_pips < 0
     assert continuation.overall.mean_pips > 0
+
+
+def test_forward_observation_uses_exact_timestamp_horizon_and_ignores_later_spike() -> None:
+    candles = [
+        _simple_candle("2026-01-15T14:30:00+00:00", "1.1000"),
+        _simple_candle("2026-01-15T14:31:00+00:00", "1.1010"),
+        _simple_candle("2026-01-15T14:32:00+00:00", "1.1020"),
+        _simple_candle("2026-01-15T14:33:00+00:00", "1.1500"),
+    ]
+    event = EdgeEvent(
+        index=0,
+        trading_date=date(2026, 1, 15),
+        level_name=LevelName.ASIA_LOW,
+        bias=Bias.BULLISH,
+        atr_pips=Decimal("1"),
+        pip_size=Decimal("0.0001"),
+    )
+
+    observations = _observations_with_forward([event], candles=tuple(candles), horizon=2)
+
+    assert len(observations) == 1
+    assert observations[0].reversal_pips == Decimal("20")
+
+
+def test_forward_observation_skips_sparse_missing_target_timestamp() -> None:
+    candles = [
+        _simple_candle("2026-01-15T14:30:00+00:00", "1.1000"),
+        _simple_candle("2026-01-15T14:31:00+00:00", "1.1010"),
+        _simple_candle("2026-01-15T15:00:00+00:00", "1.1500"),
+    ]
+    event = EdgeEvent(
+        index=0,
+        trading_date=date(2026, 1, 15),
+        level_name=LevelName.ASIA_LOW,
+        bias=Bias.BULLISH,
+        atr_pips=Decimal("1"),
+        pip_size=Decimal("0.0001"),
+    )
+
+    assert _observations_with_forward([event], candles=tuple(candles), horizon=2) == []
+
+
+def test_edge_scan_rejects_nonpositive_horizons() -> None:
+    candles = list(load_candle_fixture(FIXTURE_DIR / "clean_signal_day.json"))
+
+    for horizon in (0, -1):
+        try:
+            run_edge_scan(
+                candles,
+                instrument="EUR_USD",
+                config=strategy_config_from_defaults(load_default_config()),
+                instrument_rules=_rules(),
+                horizons=(horizon,),
+            )
+        except ValueError as exc:
+            assert "horizons must be positive" in str(exc)
+        else:  # pragma: no cover - failure path
+            raise AssertionError("nonpositive horizon was accepted")
+
+
+def test_time_window_boundaries_are_open_on_end() -> None:
+    rows = _scan_algorithm_fixture(
+        _algorithm_fixture_candles(
+            [
+                _sweep_spec(day=0, local_hour=9, local_minute=54),
+                _sweep_spec(day=1, local_hour=9, local_minute=55),
+                _sweep_spec(day=2, local_hour=10, local_minute=9),
+                _sweep_spec(day=3, local_hour=10, local_minute=10),
+            ]
+        ),
+        algorithms=("generic_sweep_reversal", "non_news_proxy_sweep_reversal"),
+    )
+
+    assert _sweeps(rows, "generic_sweep_reversal") == 4
+    assert _sweeps(rows, "non_news_proxy_sweep_reversal") == 2
+
+
+def test_compressed_range_classification_is_prefix_invariant() -> None:
+    prefix = _algorithm_fixture_candles(
+        [
+            _sweep_spec(day=0, asia_high="1.1000", london_high="1.1050"),
+            _sweep_spec(day=1, asia_high="1.1300", london_high="1.1350"),
+        ]
+    )
+    extended = _algorithm_fixture_candles(
+        [
+            _sweep_spec(day=0, asia_high="1.1000", london_high="1.1050"),
+            _sweep_spec(day=1, asia_high="1.1300", london_high="1.1350"),
+            _sweep_spec(day=2, asia_high="1.0900", london_high="1.0950"),
+            _sweep_spec(day=3, asia_high="1.0910", london_high="1.0960"),
+        ]
+    )
+    config = strategy_config_from_defaults(load_default_config())
+    algorithm = get_edge_algorithm("compressed_range_sweep_reversal")
+
+    prefix_indices = [
+        event.index
+        for event in algorithm.event_builder(
+            tuple(prefix),
+            instrument="EUR_USD",
+            config=config,
+            instrument_rules=_rules(),
+            atr_window=14,
+        )
+    ]
+    extended_indices = [
+        event.index
+        for event in algorithm.event_builder(
+            tuple(extended),
+            instrument="EUR_USD",
+            config=config,
+            instrument_rules=_rules(),
+            atr_window=14,
+        )
+    ]
+
+    assert prefix_indices == extended_indices[: len(prefix_indices)]
 
 
 def _run(name: str, *, horizon: int) -> EdgeStudyResult:
@@ -331,6 +455,18 @@ def _candle(ts: datetime, *, high: str, low: str, close: str):
         low=Decimal(low),
         c=Decimal(close),
         volume=100,
+    )
+
+
+def _simple_candle(ts: str, close: str) -> ClosedCandle:
+    return ClosedCandle(
+        instrument="EUR_USD",
+        ts=datetime.fromisoformat(ts),
+        o=Decimal(close),
+        h=Decimal(close),
+        low=Decimal(close),
+        c=Decimal(close),
+        volume=1,
     )
 
 

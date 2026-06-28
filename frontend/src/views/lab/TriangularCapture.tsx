@@ -120,7 +120,13 @@ function CaptureTable({ result }: { readonly result: TriangularCaptureResult }) 
   );
 }
 
-function Fields({ draft, onChange }: { readonly draft: Draft; readonly onChange: (d: Draft) => void }) {
+function Fields({
+  draft,
+  onChange,
+}: {
+  readonly draft: Draft;
+  readonly onChange: (d: Draft) => void;
+}) {
   return (
     <div className="fieldset">
       <Field label="Z thresholds">

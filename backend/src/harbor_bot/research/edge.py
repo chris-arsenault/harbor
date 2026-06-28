@@ -16,7 +16,7 @@ context.
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, time
+from datetime import UTC, date, time, timedelta
 from decimal import Decimal
 from math import erfc, sqrt
 from typing import Any
@@ -370,6 +370,7 @@ def run_edge_study(
     atr_window: int = DEFAULT_ATR_WINDOW,
     algorithm_id: str = BASELINE_ALGORITHM_ID,
 ) -> EdgeStudyResult:
+    _validate_horizons((horizon,))
     algorithm = get_edge_algorithm(algorithm_id)
     ordered = tuple(
         sorted((require_closed_candle(candle) for candle in candles), key=lambda c: c.ts)
@@ -428,6 +429,7 @@ def run_edge_scan(
     algorithm_ids: tuple[str, ...] = (BASELINE_ALGORITHM_ID,),
 ) -> list[EdgeScanRow]:
     """Run the edge study at multiple horizons and hypothesis algorithms."""
+    _validate_horizons(horizons)
     ordered = tuple(
         sorted((require_closed_candle(candle) for candle in candles), key=lambda c: c.ts)
     )
@@ -724,6 +726,11 @@ def _mss_confirmed_events(
     for candidate in candidates:
         deadline = min(candidate.day_index + config.fvg_window, len(candidate.day_candles) - 1)
         for current_day_index in range(candidate.day_index + 1, deadline + 1):
+            current = candidate.day_candles[current_day_index]
+            if not is_in_ny_trade_window(
+                current, trading_date=candidate.trading_date, config=config
+            ):
+                continue
             if mss_confirmed(
                 list(candidate.day_candles[: current_day_index + 1]),
                 sweep=candidate.sweep,
@@ -754,13 +761,13 @@ def _compressed_range_events(
     candidates = _collect_sweep_candidates(
         candles, instrument=instrument, config=config, instrument_rules=instrument_rules
     )
-    ranges = [_session_range_pips(candidate, instrument_rules) for candidate in candidates]
-    median = _median(ranges)
-    filtered = [
-        candidate
-        for candidate, range_pips in zip(candidates, ranges, strict=True)
-        if range_pips <= median
-    ]
+    filtered = []
+    ranges_so_far: list[Decimal] = []
+    for candidate in candidates:
+        range_pips = _session_range_pips(candidate, instrument_rules)
+        ranges_so_far.append(range_pips)
+        if range_pips <= _median(ranges_so_far):
+            filtered.append(candidate)
     return _events_from_candidates(
         filtered, candles=candles, atr_window=atr_window, instrument_rules=instrument_rules
     )
@@ -969,9 +976,10 @@ def _observations_with_forward(
     horizon: int,
 ) -> list[_Observation]:
     observations: list[_Observation] = []
+    by_ts = {candle.ts: index for index, candle in enumerate(candles)}
     for event in events:
-        forward_index = event.index + horizon
-        if forward_index >= len(candles):
+        forward_index = by_ts.get(candles[event.index].ts + timedelta(minutes=horizon))
+        if forward_index is None:
             continue
         signed = candles[forward_index].c - candles[event.index].c
         reversal = signed if event.bias == Bias.BULLISH else -signed
@@ -1111,12 +1119,21 @@ def _volatility_bucket(observations: list[_Observation]) -> Any:
 def _baseline_abs_pips(
     candles: tuple[ClosedCandle, ...], *, horizon: int, instrument_rules: InstrumentRules
 ) -> Decimal:
+    _validate_horizons((horizon,))
     pip = instrument_rules.pip_size
+    by_ts = {candle.ts: candle for candle in candles}
     moves = [
-        abs(candles[index + horizon].c - candles[index].c) / pip
-        for index in range(len(candles) - horizon)
+        abs(forward.c - candle.c) / pip
+        for candle in candles
+        if (forward := by_ts.get(candle.ts + timedelta(minutes=horizon))) is not None
     ]
     return summarize(moves).mean_pips
+
+
+def _validate_horizons(horizons: tuple[int, ...]) -> None:
+    if not horizons or any(horizon <= 0 for horizon in horizons):
+        msg = "horizons must be positive"
+        raise ValueError(msg)
 
 
 def _atr_pips(

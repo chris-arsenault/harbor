@@ -130,6 +130,27 @@ def test_startup_validation_rejects_live_mode_without_allow_live(monkeypatch) ->
         settings.validate_startup()
 
 
+def test_startup_validation_requires_auth_config_when_auth_required(monkeypatch) -> None:
+    monkeypatch.setenv("HARBOR_AUTH_REQUIRED", "true")
+    monkeypatch.delenv("HARBOR_AUTH_ISSUER_URL", raising=False)
+    monkeypatch.delenv("HARBOR_AUTH_CLIENT_ID", raising=False)
+
+    settings = Settings()
+
+    with pytest.raises(ValueError, match="HARBOR_AUTH_ISSUER_URL"):
+        settings.validate_startup()
+
+
+def test_startup_summary_reports_auth_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("HARBOR_AUTH_REQUIRED", "true")
+    monkeypatch.setenv("HARBOR_AUTH_ISSUER_URL", "https://issuer.test")
+    monkeypatch.setenv("HARBOR_AUTH_CLIENT_ID", "harbor-client")
+
+    summary = Settings().validate_startup()
+
+    assert summary["auth"] == "enabled"
+
+
 def test_startup_summary_redacts_database_password(monkeypatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://harbor:super-secret@db:5432/harbor")
 

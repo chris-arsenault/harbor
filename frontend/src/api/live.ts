@@ -4,6 +4,7 @@ import type {
   VariantTrade,
   WebSocketEnvelope,
 } from "./types";
+import { getAccessToken } from "../auth/cognito";
 
 export type LabEnvelope =
   | WebSocketEnvelope<VariantTrade>
@@ -37,17 +38,35 @@ export function liveWebSocketUrl(location: Pick<Location | URL, "protocol" | "ho
 
 export function createLiveConnection(options: LiveConnectionOptions): LiveConnection {
   const WebSocketImpl = options.WebSocketImpl ?? WebSocket;
-  const socket = new WebSocketImpl(options.url);
-  socket.onmessage = (event: MessageEvent<string>) => {
-    const envelope = parseEnvelope(event.data);
-    options.onEnvelope(envelope);
-    options.onHeartbeat?.(envelope.sent_at);
-  };
-  socket.onerror = (event: Event) => options.onError?.(event);
+  let socket: LiveSocket | null = null;
+  let closed = false;
+  void openSocket();
 
   return {
-    close: () => socket.close(),
+    close: () => {
+      closed = true;
+      socket?.close();
+    },
   };
+
+  async function openSocket() {
+    const token = await getAccessToken();
+    if (closed) return;
+    socket = new WebSocketImpl(webSocketUrlWithToken(options.url, token));
+    socket.onmessage = (event: MessageEvent<string>) => {
+      const envelope = parseEnvelope(event.data);
+      options.onEnvelope(envelope);
+      options.onHeartbeat?.(envelope.sent_at);
+    };
+    socket.onerror = (event: Event) => options.onError?.(event);
+  }
+}
+
+export function webSocketUrlWithToken(url: string, token: string | null): string {
+  if (!token) return url;
+  const parsed = new URL(url);
+  parsed.searchParams.set("access_token", token);
+  return parsed.toString();
 }
 
 export function parseEnvelope(raw: string): WebSocketEnvelope {

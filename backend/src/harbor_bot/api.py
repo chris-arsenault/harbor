@@ -20,6 +20,12 @@ from sqlalchemy import text
 from starlette.requests import HTTPConnection
 
 from harbor_bot import __version__
+from harbor_bot.auth import (
+    AuthState,
+    auth_state_from_settings,
+    require_http_auth,
+    require_websocket_auth,
+)
 from harbor_bot.backtester.service import BacktestService
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.config.models import ConfigUpdateRequest
@@ -152,6 +158,7 @@ def create_app(
     websocket_hub: WebSocketHub | None = None,
     readiness_checker: Any | None = None,
     settings: Settings | None = None,
+    auth_state: AuthState | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Harbor", version=__version__)
     app.state.backtest_service = backtest_service or BacktestService(
@@ -159,6 +166,7 @@ def create_app(
     )
     app.state.settings = settings or Settings()
     app.state.settings.validate_startup()
+    app.state.auth_state = auth_state or auth_state_from_settings(app.state.settings)
     app.state.version_info = build_version_info(app.state.settings)
     app.state.websocket_hub = websocket_hub or WebSocketHub()
     app.state.control_service = control_service
@@ -245,6 +253,8 @@ def create_app(
             settings=app.state.settings,
         )
     app.state.readiness_checker = readiness_checker
+
+    app.middleware("http")(require_http_auth)
 
     @app.on_event("startup")
     async def start_runtime_workers() -> None:
@@ -541,6 +551,8 @@ def create_app(
         service: ObservabilityService = OBSERVABILITY_SERVICE_DEPENDENCY,
         hub: WebSocketHub = WEBSOCKET_HUB_DEPENDENCY,
     ) -> None:
+        if not await require_websocket_auth(websocket):
+            return
         await hub.connect(websocket)
         try:
             status = await service.get_status()

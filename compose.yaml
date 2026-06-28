@@ -13,6 +13,9 @@ services:
       DB_PASSWORD: "${DB_PASSWORD}"
       DB_PORT: "5432"
       DB_USER: "${DB_USER}"
+      HARBOR_AUTH_CLIENT_ID: "${HARBOR_AUTH_CLIENT_ID}"
+      HARBOR_AUTH_ISSUER_URL: "${HARBOR_AUTH_ISSUER_URL}"
+      HARBOR_AUTH_REQUIRED: "true"
       HARBOR_GIT_SHA: "${IMAGE_TAG:-unknown}"
       HARBOR_LIVE_INGEST_ENABLED: "true"
       OANDA_ACCOUNT_ID: "${OANDA_ACCOUNT_ID}"
@@ -44,6 +47,10 @@ services:
         condition: service_healthy
     ports:
       - "192.168.66.3:30091:80"
+    environment:
+      HARBOR_AUTH_REQUIRED: "true"
+      HARBOR_COGNITO_CLIENT_ID: "${HARBOR_COGNITO_CLIENT_ID}"
+      HARBOR_COGNITO_USER_POOL_ID: "${HARBOR_COGNITO_USER_POOL_ID}"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost/health"]
       interval: 15s
