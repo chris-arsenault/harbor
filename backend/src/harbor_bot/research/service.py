@@ -31,6 +31,7 @@ from harbor_bot.research.edge import (
     run_edge_scan,
     run_edge_study,
 )
+from harbor_bot.research.triangular_capture import run_triangular_capture
 from harbor_bot.strategy.models import strategy_config_from_defaults
 
 DEFAULT_RESEARCH_WINDOW_DAYS = 90
@@ -314,6 +315,67 @@ class ResearchService:
     def cross_algorithms(self) -> dict[str, Any]:
         return {
             "algorithms": [algorithm.to_jsonable() for algorithm in available_cross_algorithms()]
+        }
+
+    async def triangular_capture(
+        self,
+        *,
+        window_days: int = DEFAULT_RESEARCH_WINDOW_DAYS,
+        thresholds: tuple[float, ...] = (1.0, 1.5, 2.0),
+        horizons: tuple[int, ...] = (1, 3, 5, 10),
+        cost_bps_per_leg: float = 1.5,
+    ) -> dict[str, Any]:
+        instruments = ("EUR_USD", "GBP_USD", "EUR_GBP")
+        selector = self.window_selector or select_latest_research_candle_window
+        reader = self.candle_reader or read_persisted_candle_records
+        candles_by_instrument: dict[str, list[Any]] = {}
+        windows: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
+        for instrument in instruments:
+            window = await selector(
+                self.persistence_engine,
+                instrument=instrument,
+                required_days=window_days,
+            )
+            warnings.extend(
+                _window_warnings(window, instrument=instrument, requested_days=window_days)
+            )
+            if window is None:
+                continue
+            windows.append(_window_jsonable(window))
+            records = await reader(
+                self.persistence_engine,
+                instrument=instrument,
+                start=window["from"],
+                end=window["to"],
+            )
+            candles = candles_from_records(records, default_instrument=instrument)
+            if candles:
+                candles_by_instrument[instrument] = list(candles)
+            else:
+                warnings.append(
+                    {
+                        "instrument": instrument,
+                        "type": "empty_window",
+                        "message": "selected research window returned no candle rows",
+                        "requested_days": window_days,
+                    }
+                )
+        rows = run_triangular_capture(
+            candles_by_instrument,
+            thresholds=thresholds,
+            horizons=horizons,
+            cost_bps_per_leg=cost_bps_per_leg,
+        )
+        return {
+            "instruments": list(instruments),
+            "requested_window_days": window_days,
+            "thresholds": [f"{value:.4f}" for value in thresholds],
+            "horizons": list(horizons),
+            "cost_bps_per_leg": f"{cost_bps_per_leg:.4f}",
+            "windows": windows,
+            "warnings": warnings,
+            "results": [row.to_jsonable() for row in rows],
         }
 
     def edge_algorithms(self) -> dict[str, Any]:

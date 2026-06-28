@@ -227,6 +227,52 @@ export function fetchCrossScan(payload: CrossScanPayload): Promise<CrossScanResu
   return apiPost<CrossScanResult>("/api/research/cross/scan", payload);
 }
 
+export interface TriangularCaptureStats {
+  count: number;
+  hit_rate: string;
+  mean_gross_bps: string;
+  mean_net_bps: string;
+  median_net_bps: string;
+  total_net_bps: string;
+  t_stat: string;
+  first_half_mean_net_bps: string;
+  second_half_mean_net_bps: string;
+}
+
+export interface TriangularCaptureRow {
+  hypothesis_id: string;
+  construction: string;
+  threshold: string;
+  horizon: number;
+  leg_count: number;
+  cost_bps_per_leg: string;
+  stats: TriangularCaptureStats;
+}
+
+export interface TriangularCaptureResult {
+  instruments: string[];
+  requested_window_days: number;
+  thresholds: string[];
+  horizons: number[];
+  cost_bps_per_leg: string;
+  windows: EdgeDataWindow[];
+  warnings: EdgeDataWarning[];
+  results: TriangularCaptureRow[];
+}
+
+export interface TriangularCapturePayload {
+  thresholds: number[];
+  horizons: number[];
+  window_days: number;
+  cost_bps_per_leg: number;
+}
+
+export function fetchTriangularCapture(
+  payload: TriangularCapturePayload
+): Promise<TriangularCaptureResult> {
+  return apiPost<TriangularCaptureResult>("/api/research/triangular/capture", payload);
+}
+
 export interface BookRecorderRuntime {
   running: boolean;
   state: string;

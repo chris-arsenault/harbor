@@ -13,6 +13,7 @@ import { CandleSource } from "./lab/CandleSource";
 import { CrossInstrument } from "./lab/CrossInstrument";
 import { EdgeCapture } from "./lab/EdgeCapture";
 import { EdgeScan } from "./lab/EdgeScan";
+import { TriangularCapture } from "./lab/TriangularCapture";
 import { EdgeStudy } from "./lab/EdgeStudy";
 import { SearchSpacePanel } from "./lab/SearchSpace";
 import { StudyResults } from "./lab/StudyResults";
@@ -59,6 +60,7 @@ export function LabView({ model }: { readonly model: LabViewModel }) {
       />
       <BookRecorder />
       <CrossInstrument />
+      <TriangularCapture />
       <EdgeScan />
       <EdgeCapture />
       <EdgeStudy instrument={model.selectedInstrument} />

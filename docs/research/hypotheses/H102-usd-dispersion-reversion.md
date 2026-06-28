@@ -1,6 +1,6 @@
 # H102 — USD-factor dispersion reversion
 
-- Status: active / research engine implemented
+- Status: deprioritized / weak signal
 - Algorithm: `usd_dispersion_reversion_5d`
 
 ## Hypothesis
@@ -18,3 +18,8 @@ to be liquidity/flow noise than durable macro repricing.
 
 The cross-instrument engine computes 5-day returns, subtracts the cross-sectional
 mean return, ranks residual under/over-performers, and scores 5-day reversion.
+
+## Latest evidence
+
+Cross-instrument scan: Obs=538, hit=51.7%, mean=1.05 bps, t=0.26 — no meaningful
+signal. Deprioritized.

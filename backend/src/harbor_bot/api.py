@@ -502,6 +502,30 @@ def create_app(
             window_days=int(payload.get("window_days") or DEFAULT_RESEARCH_WINDOW_DAYS),
         )
 
+    @app.post("/api/research/triangular/capture")
+    async def capture_triangular(
+        payload: dict[str, Any],
+        service: ResearchService = RESEARCH_SERVICE_DEPENDENCY,
+    ) -> dict[str, Any]:
+        raw_thresholds = payload.get("thresholds")
+        thresholds = (
+            tuple(float(value) for value in raw_thresholds)
+            if isinstance(raw_thresholds, list)
+            else (1.0, 1.5, 2.0)
+        )
+        raw_horizons = payload.get("horizons")
+        horizons = (
+            tuple(int(value) for value in raw_horizons)
+            if isinstance(raw_horizons, list)
+            else (1, 3, 5, 10)
+        )
+        return await service.triangular_capture(
+            thresholds=thresholds,
+            horizons=horizons,
+            window_days=int(payload.get("window_days") or DEFAULT_RESEARCH_WINDOW_DAYS),
+            cost_bps_per_leg=float(payload.get("cost_bps_per_leg") or 1.5),
+        )
+
     @app.get("/api/trades")
     async def read_trade_journal(
         start: OptionalFromQuery = None,

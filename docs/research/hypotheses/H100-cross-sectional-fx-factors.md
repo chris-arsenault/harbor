@@ -24,3 +24,16 @@ closes, aligns instruments by date, and evaluates:
 - `cs_value_60d_5d`: long 60-day underperformers, short 60-day outperformers, hold 5 trading days.
 
 Returns are reported in basket basis points, not pips.
+
+## Latest evidence
+
+First cross-instrument scan results:
+
+- `cs_value_60d_5d`: Obs=483, hit=53.4%, mean=7.56 bps, t=1.20 — positive but not significant.
+- `cs_momentum_20d_5d`: Obs=523, hit=46.7%, mean=-13.40 bps, t=-2.14 — significantly **negative**.
+
+Interpretation: short-horizon cross-sectional **momentum is inverted** in this
+universe (i.e. cross-sectional reversal). Momentum as implemented is rejected;
+value/reversion is weakly positive and kept as a lower-priority branch. A future
+`cs_reversal` algorithm (invert the momentum leg) is worth testing but is lower
+priority than H101.

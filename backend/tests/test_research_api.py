@@ -41,6 +41,9 @@ class FakeResearchService:
     def cross_algorithms(self) -> dict[str, Any]:
         return {"algorithms": []}
 
+    async def triangular_capture(self, **kwargs: Any) -> dict[str, Any]:
+        return {"received": kwargs, "results": []}
+
 
 def test_get_edge_study_routes_through_injected_service() -> None:
     service = FakeResearchService()
@@ -99,6 +102,29 @@ def test_cross_scan_routes_payload_to_research_service() -> None:
         "instruments": ["EUR_USD", "GBP_USD", "EUR_GBP"],
         "algorithm_ids": ["tri_eur_gbp_residual_5d"],
         "window_days": 730,
+    }
+
+
+def test_triangular_capture_routes_payload_to_research_service() -> None:
+    service = FakeResearchService()
+    client = TestClient(create_app(research_service=service))
+
+    response = client.post(
+        "/api/research/triangular/capture",
+        json={
+            "thresholds": [1.0, 2.0],
+            "horizons": [3, 5],
+            "window_days": 730,
+            "cost_bps_per_leg": 1.0,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["received"] == {
+        "thresholds": [1.0, 2.0],
+        "horizons": [3, 5],
+        "window_days": 730,
+        "cost_bps_per_leg": 1.0,
     }
 
 
