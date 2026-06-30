@@ -190,14 +190,25 @@ function LoginScreen({
 }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const configured = getAuthRuntimeConfig() != null;
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const usernameValue = form.get("username");
+    const passwordValue = form.get("password");
+    const submittedUsername = typeof usernameValue === "string" ? usernameValue.trim() : "";
+    const submittedPassword = typeof passwordValue === "string" ? passwordValue : "";
+    if (!submittedUsername || !submittedPassword) {
+      setFormError("Enter username and password.");
+      return;
+    }
     setSubmitting(true);
+    setFormError(null);
     try {
-      await onLogin(username, password);
+      await onLogin(submittedUsername, submittedPassword);
     } finally {
       setSubmitting(false);
     }
@@ -206,10 +217,21 @@ function LoginScreen({
   return (
     <form className="auth-card" onSubmit={(event) => void submit(event)}>
       <AuthTitle title="Authenticate to continue" />
-      {error && <div className="auth-error">{error}</div>}
-      <AuthField label="Username or email" value={username} onValue={setUsername} />
-      <AuthField label="Password" type="password" value={password} onValue={setPassword} />
-      <button disabled={!configured || submitting || !username.trim() || !password} type="submit">
+      {!configured && (
+        <div className="auth-error">
+          Cognito runtime config is missing. Set the user pool and app client IDs.
+        </div>
+      )}
+      {(formError || error) && <div className="auth-error">{formError || error}</div>}
+      <AuthField label="Username or email" name="username" value={username} onValue={setUsername} />
+      <AuthField
+        label="Password"
+        name="password"
+        type="password"
+        value={password}
+        onValue={setPassword}
+      />
+      <button disabled={submitting} type="submit">
         {submitting ? "signing in..." : "sign in"}
       </button>
     </form>
@@ -238,7 +260,7 @@ function MfaScreen({
     <form className="auth-card" onSubmit={(event) => void submit(event)}>
       <AuthTitle title="Two-factor authentication" />
       {error && <div className="auth-error">{error}</div>}
-      <AuthField label="Authenticator code" value={code} onValue={setCode} numeric />
+      <AuthField label="Authenticator code" name="code" value={code} onValue={setCode} numeric />
       <button disabled={pending || code.length < 6} type="submit">
         {pending ? "verifying..." : "verify"}
       </button>
@@ -251,12 +273,14 @@ function MfaScreen({
 
 function AuthField({
   label,
+  name,
   numeric,
   onValue,
   type = "text",
   value,
 }: {
   readonly label: string;
+  readonly name: string;
   readonly numeric?: boolean;
   readonly onValue: (value: string) => void;
   readonly type?: "password" | "text";
@@ -269,6 +293,7 @@ function AuthField({
         autoComplete={type === "password" ? "current-password" : "username"}
         inputMode={numeric ? "numeric" : undefined}
         maxLength={numeric ? 6 : undefined}
+        name={name}
         type={type}
         value={value}
         onChange={(event) => onValue(numeric ? onlyDigits(event.target.value) : event.target.value)}
