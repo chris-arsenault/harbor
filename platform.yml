@@ -3,6 +3,7 @@ prefix: harbor
 stack:
   - python
   - typescript
+  - terraform
 truenas: true
 images:
   - backend
