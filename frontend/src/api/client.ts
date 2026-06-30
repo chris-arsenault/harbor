@@ -26,7 +26,7 @@ import type {
   VariantDetail,
 } from "./types";
 import type { OptimizationPreflightResponse } from "./optimizerTypes";
-import { getAccessToken } from "../auth/cognito";
+import { expireAuthSession, getAccessToken } from "../auth/cognito";
 
 const API_BASE_URL = "";
 
@@ -42,6 +42,7 @@ export async function apiGet<TResponse>(path: string): Promise<TResponse> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: await apiHeaders(),
   });
+  handleAuthRejected(response);
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, "GET", path));
   }
@@ -54,6 +55,7 @@ export async function apiPost<TResponse>(path: string, payload: unknown = {}): P
     headers: await apiHeaders(true),
     body: JSON.stringify(payload),
   });
+  handleAuthRejected(response);
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, "POST", path));
   }
@@ -66,10 +68,17 @@ export async function apiPut<TResponse>(path: string, payload: unknown): Promise
     headers: await apiHeaders(true),
     body: JSON.stringify(payload),
   });
+  handleAuthRejected(response);
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, "PUT", path));
   }
   return (await response.json()) as TResponse;
+}
+
+function handleAuthRejected(response: Response): void {
+  if (response.status === 401) {
+    expireAuthSession();
+  }
 }
 
 async function responseErrorMessage(response: Response, method: string, path: string) {

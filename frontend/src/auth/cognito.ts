@@ -22,6 +22,9 @@ export type SignInResult =
   | { kind: "authenticated"; session: SessionSnapshot }
   | { kind: "challenge"; challenge: SignInChallenge };
 
+const AUTH_EXPIRED_EVENT = "harbor:auth-expired";
+const SESSION_EXPIRED_MESSAGE = "Session expired. Sign in again.";
+
 let cachedPool: CognitoUserPool | null = null;
 let cachedPoolKey: string | null = null;
 
@@ -62,8 +65,18 @@ export function getCurrentSession(): Promise<CognitoUserSession | null> {
 }
 
 export async function getAccessToken(): Promise<string | null> {
-  const session = await getCurrentSession();
-  return session?.getAccessToken().getJwtToken() ?? null;
+  if (!isAuthConfigured()) return null;
+  try {
+    const session = await getCurrentSession();
+    if (!session) {
+      expireAuthSession();
+      return null;
+    }
+    return session.getAccessToken().getJwtToken();
+  } catch {
+    expireAuthSession();
+    return null;
+  }
 }
 
 export async function getSessionSnapshot(): Promise<SessionSnapshot | null> {
@@ -93,6 +106,22 @@ export function signIn(username: string, password: string): Promise<SignInResult
 
 export function signOut(): void {
   getPool()?.getCurrentUser()?.signOut();
+}
+
+export function expireAuthSession(message = SESSION_EXPIRED_MESSAGE): void {
+  signOut();
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent<string>(AUTH_EXPIRED_EVENT, { detail: message }));
+}
+
+export function subscribeAuthExpired(handler: (message: string) => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const listener = (event: Event) => {
+    const message = event instanceof CustomEvent ? String(event.detail) : SESSION_EXPIRED_MESSAGE;
+    handler(message || SESSION_EXPIRED_MESSAGE);
+  };
+  window.addEventListener(AUTH_EXPIRED_EVENT, listener);
+  return () => window.removeEventListener(AUTH_EXPIRED_EVENT, listener);
 }
 
 function buildAuthCallbacks(

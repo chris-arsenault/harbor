@@ -8,8 +8,22 @@ import {
   type WebSocketConstructor,
 } from "./live";
 
+const auth = vi.hoisted(() => ({
+  getAccessToken: vi.fn(() => Promise.resolve(null as string | null)),
+  isAuthConfigured: vi.fn(() => false),
+}));
+
+vi.mock("../auth/cognito", () => ({
+  getAccessToken: auth.getAccessToken,
+  isAuthConfigured: auth.isAuthConfigured,
+}));
+
 afterEach(() => {
   vi.restoreAllMocks();
+  auth.getAccessToken.mockClear();
+  auth.getAccessToken.mockResolvedValue(null);
+  auth.isAuthConfigured.mockClear();
+  auth.isAuthConfigured.mockReturnValue(false);
   fakeWebSocketInstances.length = 0;
 });
 
@@ -74,6 +88,21 @@ test("createLiveConnection forwards parsed envelopes and heartbeat notifications
   });
   expect(onHeartbeat).toHaveBeenCalledWith("2026-01-15T14:32:00Z");
   expect(socket.closed).toBe(true);
+});
+
+test("createLiveConnection does not open a socket when configured auth has no token", async () => {
+  auth.isAuthConfigured.mockReturnValue(true);
+  auth.getAccessToken.mockResolvedValue(null);
+
+  createLiveConnection({
+    url: "ws://harbor.test/ws",
+    WebSocketImpl: FakeWebSocket,
+    onEnvelope: vi.fn(),
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  expect(fakeWebSocketInstances).toHaveLength(0);
 });
 
 interface FakeWebSocketInstance {

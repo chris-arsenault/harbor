@@ -6,6 +6,7 @@ import {
   isAuthConfigured,
   signIn,
   signOut,
+  subscribeAuthExpired,
   type SessionSnapshot,
   type SignInChallenge,
   type SignInResult,
@@ -42,6 +43,14 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(
+    () =>
+      subscribeAuthExpired((message) => {
+        setState({ kind: "anonymous", error: message });
+      }),
+    []
+  );
 
   const value = useMemo<AuthContextValue>(
     () => ({

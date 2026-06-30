@@ -4,7 +4,7 @@ import type {
   VariantTrade,
   WebSocketEnvelope,
 } from "./types";
-import { getAccessToken } from "../auth/cognito";
+import { getAccessToken, isAuthConfigured } from "../auth/cognito";
 
 export type LabEnvelope =
   | WebSocketEnvelope<VariantTrade>
@@ -51,7 +51,7 @@ export function createLiveConnection(options: LiveConnectionOptions): LiveConnec
 
   async function openSocket() {
     const token = await getAccessToken();
-    if (closed) return;
+    if (closed || (isAuthConfigured() && !token)) return;
     socket = new WebSocketImpl(webSocketUrlWithToken(options.url, token));
     socket.onmessage = (event: MessageEvent<string>) => {
       const envelope = parseEnvelope(event.data);
