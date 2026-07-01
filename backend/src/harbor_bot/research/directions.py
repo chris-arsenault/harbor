@@ -1,18 +1,14 @@
-"""Creative next-wave research probes for H108-H112 (pure).
-
-These probes intentionally change the statistical object away from the archived
-single-pair price-pattern family. They are exploratory gates: compact,
-pre-registered diagnostics that say whether a research direction deserves a
-larger build-out.
-"""
+"""Creative next-wave research probes for H108-H112 (pure)."""
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 from math import log, sqrt
 from typing import Any
 
 from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.research.cross_instrument import DailyClose, daily_closes
+from harbor_bot.strategy.models import Bias, require_closed_candle
 
 FX_MAJORS = {
     "AUD_JPY",
@@ -25,6 +21,14 @@ FX_MAJORS = {
     "USD_JPY",
 }
 RISK_PROXIES = ("BTC_USD", "ETH_USD", "SPX500_USD", "NAS100_USD")
+
+
+@dataclass(frozen=True)
+class DailyBar:
+    day: date
+    high: float
+    low: float
+    close: float
 
 
 @dataclass(frozen=True)
@@ -69,6 +73,23 @@ class DirectionRow:
         }
 
 
+@dataclass(frozen=True)
+class SweepProbeEvent:
+    instrument: str
+    index: int
+    ts: datetime
+    bias: Bias
+    pip_size: Decimal
+
+
+@dataclass(frozen=True)
+class BookState:
+    book_type: str
+    instrument: str
+    snapshot_time: datetime
+    net_long_pct: float
+
+
 def available_direction_algorithms() -> tuple[dict[str, str], ...]:
     return (
         {
@@ -87,14 +108,14 @@ def available_direction_algorithms() -> tuple[dict[str, str], ...]:
             "algorithm_id": "range_forecast_probe",
             "hypothesis_id": "H110",
             "label": "Next-session range forecast",
-            "description": "Predict next daily realized range from prior range persistence.",
+            "description": "Predict next daily high-low range from prior range persistence.",
         },
         {
             "algorithm_id": "book_conditioner_readiness",
             "hypothesis_id": "H111",
             "label": "Book-conditioned sweep readiness",
             "description": (
-                "Check whether H103 order/position-book coverage is ready for conditioning."
+                "Check H103 coverage and score first book-conditioned sweep interaction."
             ),
         },
         {
@@ -115,10 +136,17 @@ def run_direction_scan(
     *,
     algorithm_ids: tuple[str, ...] | None = None,
     book_coverage: list[dict[str, Any]] | None = None,
+    book_snapshots: list[dict[str, Any]] | None = None,
+    sweep_events_by_instrument: dict[str, list[SweepProbeEvent]] | None = None,
 ) -> list[DirectionRow]:
     requested = set(algorithm_ids or default_direction_algorithm_ids())
     closes = {
         instrument: daily_closes(candles)
+        for instrument, candles in candles_by_instrument.items()
+        if candles
+    }
+    bars = {
+        instrument: daily_bars(candles)
         for instrument, candles in candles_by_instrument.items()
         if candles
     }
@@ -128,20 +156,44 @@ def run_direction_scan(
     if "regime_resurrection_probe" in requested:
         rows.extend(_regime_resurrection(closes))
     if "range_forecast_probe" in requested:
-        rows.extend(_range_forecast(closes))
+        rows.extend(_range_forecast(bars))
     if "book_conditioner_readiness" in requested:
-        rows.extend(_book_readiness(book_coverage or []))
+        rows.extend(
+            _book_readiness(
+                book_coverage or [],
+                book_snapshots or [],
+                candles_by_instrument,
+                sweep_events_by_instrument or {},
+            )
+        )
     if "lead_lag_network_probe" in requested:
         rows.extend(_lead_lag(closes))
     return _rank_rows(rows)
 
 
-def _rank_rows(rows: list[DirectionRow]) -> list[DirectionRow]:
-    def key(row: DirectionRow) -> tuple[int, float, int]:
-        status_rank = {"candidate": 0, "ready": 1, "weak": 2, "collecting": 3, "data_required": 4}
-        return (status_rank.get(row.status, 9), -abs(row.stats.t_stat), -row.stats.count)
+def daily_bars(candles: list[ClosedCandle]) -> list[DailyBar]:
+    grouped: dict[date, list[ClosedCandle]] = {}
+    for candle in sorted(candles, key=lambda item: item.ts):
+        require_closed_candle(candle)
+        grouped.setdefault(candle.ts.date(), []).append(candle)
+    return [
+        DailyBar(
+            day=day,
+            high=float(max(c.h for c in rows)),
+            low=float(min(c.low for c in rows)),
+            close=float(rows[-1].c),
+        )
+        for day, rows in sorted(grouped.items())
+        if rows
+    ]
 
-    return sorted(rows, key=key)
+
+def _rank_rows(rows: list[DirectionRow]) -> list[DirectionRow]:
+    status_rank = {"candidate": 0, "ready": 1, "weak": 2, "collecting": 3, "data_required": 4}
+    return sorted(
+        rows,
+        key=lambda row: (status_rank.get(row.status, 9), -abs(row.stats.t_stat), -row.stats.count),
+    )
 
 
 def _daily_maps(closes: dict[str, list[DailyClose]]) -> dict[str, dict[date, float]]:
@@ -180,9 +232,10 @@ def _weekend_gap(closes: dict[str, list[DailyClose]]) -> list[DirectionRow]:
                 "BTC_USD/ETH_USD/SPX500_USD/NAS100_USD",
                 "proxy_available",
                 "flag",
-                [],
+                count=0,
                 effect=0,
                 secondary=0,
+                t_stat=0,
                 details=(
                     "No 24/7 risk proxy candles found; add crypto/index data before "
                     "testing weekend information gaps."
@@ -191,61 +244,40 @@ def _weekend_gap(closes: dict[str, list[DailyClose]]) -> list[DirectionRow]:
         ]
 
     maps = _daily_maps(closes)
-    proxy_days = sorted(maps[proxy])
     proxy_by_day = maps[proxy]
     rows: list[DirectionRow] = []
     for instrument in sorted(FX_MAJORS & closes.keys()):
-        fx_days = sorted(set(maps[instrument]) & set(proxy_days))
+        fx_days = sorted(set(maps[instrument]) & set(proxy_by_day))
         xs: list[float] = []
         ys: list[float] = []
         fx = maps[instrument]
         for day in fx_days:
-            if day.weekday() != 0:  # Monday UTC proxy for post-weekend FX session.
+            if day.weekday() != 0:
                 continue
-            friday = day.toordinal() - 3
-            sunday = day.toordinal() - 1
-            monday_prev = day.toordinal() - 1
-            fday = date.fromordinal(friday)
-            sday = date.fromordinal(sunday)
-            pday = date.fromordinal(monday_prev)
+            fday = date.fromordinal(day.toordinal() - 3)
+            sday = date.fromordinal(day.toordinal() - 1)
+            pday = date.fromordinal(day.toordinal() - 1)
             if fday not in proxy_by_day or sday not in proxy_by_day or pday not in fx:
                 continue
             xs.append(log(proxy_by_day[sday] / proxy_by_day[fday]))
             ys.append(log(fx[day] / fx[pday]))
-        corr = _corr(xs, ys)
         rows.append(
-            _row(
+            _corr_row(
                 "H108",
                 "weekend_risk_gap_probe",
                 "Weekend risk-asset gap lead",
-                _status_from_corr(corr, len(xs)),
                 instrument,
                 "corr(weekend_proxy,monday_fx)",
-                "corr",
+                xs,
                 ys,
-                effect=corr,
-                secondary=_r2(xs, ys),
+                threshold=0.15,
                 details=(
                     f"Proxy={proxy}; secondary=R²; Monday daily return approximates "
                     "reopen/early-week FX repricing."
                 ),
             )
         )
-    return rows or [
-        _row(
-            "H108",
-            "weekend_risk_gap_probe",
-            "Weekend risk-asset gap lead",
-            "data_required",
-            proxy,
-            "weekend_overlap",
-            "count",
-            [],
-            effect=0,
-            secondary=0,
-            details="Risk proxy exists but no Friday→Sunday proxy / Monday FX overlap was found.",
-        )
-    ]
+    return rows
 
 
 def _regime_resurrection(closes: dict[str, list[DailyClose]]) -> list[DirectionRow]:
@@ -253,21 +285,7 @@ def _regime_resurrection(closes: dict[str, list[DailyClose]]) -> list[DirectionR
     instruments = sorted(maps)
     days = _common_days(maps, instruments)
     if len(instruments) < 4 or len(days) < 80:
-        return [
-            _row(
-                "H109",
-                "regime_resurrection_probe",
-                "Regime-conditioned dead-signal resurrection",
-                "data_required",
-                "FX universe",
-                "minimum_daily_history",
-                "count",
-                [],
-                effect=0,
-                secondary=0,
-                details="Need at least four aligned FX instruments and ~80 daily closes.",
-            )
-        ]
+        return [_data_required("H109", "regime_resurrection_probe", "FX universe")]
     lookback, horizon = 20, 5
     records: list[tuple[float, float]] = []
     for idx in range(lookback, len(days) - horizon):
@@ -283,21 +301,13 @@ def _regime_resurrection(closes: dict[str, list[DailyClose]]) -> list[DirectionR
         leg_count = max(1, len(instruments) // 4)
         longs = [instrument for instrument, _ in ranked[:leg_count]]
         shorts = [instrument for instrument, _ in ranked[-leg_count:]]
-        momentum = _basket_forward(maps, days, idx, horizon, longs=longs, shorts=shorts)
-        regime_score = sum(abs_returns) / len(abs_returns)
-        records.append((regime_score, -momentum * 10_000))  # inverse momentum / reversal bps.
-    return _tercile_rows(
-        records,
-        hypothesis_id="H109",
-        algorithm_id="regime_resurrection_probe",
-        label="Regime-conditioned dead-signal resurrection",
-        unit="bps",
-        metric="inverse_momentum_return_by_vol_tercile",
-        details=(
-            "Effect is 5d cross-sectional reversal bps after sorting by previous "
-            "daily basket-vol tercile."
-        ),
-    )
+        records.append(
+            (
+                sum(abs_returns) / len(abs_returns),
+                -_basket_forward(maps, days, idx, horizon, longs=longs, shorts=shorts) * 10_000,
+            )
+        )
+    return _tercile_rows(records)
 
 
 def _basket_forward(
@@ -317,43 +327,46 @@ def _basket_forward(
     return (long_return / len(longs)) - (short_return / len(shorts))
 
 
-def _range_forecast(closes: dict[str, list[DailyClose]]) -> list[DirectionRow]:
+def _range_forecast(bars_by_instrument: dict[str, list[DailyBar]]) -> list[DirectionRow]:
     rows: list[DirectionRow] = []
-    for instrument, daily in sorted(closes.items()):
+    for instrument, bars in sorted(bars_by_instrument.items()):
         if instrument not in FX_MAJORS:
             continue
-        # DailyClose stores closes only, so this probe currently measures close-to-close absolute
-        # range persistence. Service/API label calls it realized movement until OHLC aggregation is
-        # expanded to expose true daily high/low.
-        ordered = sorted(daily, key=lambda item: item.day)
-        moves = [
-            abs(log(ordered[idx].close / ordered[idx - 1].close)) * 10_000
-            for idx in range(1, len(ordered))
+        ordered = sorted(bars, key=lambda item: item.day)
+        ranges = [
+            log(bar.high / bar.low) * 10_000
+            for bar in ordered
+            if bar.high > 0 and bar.low > 0 and bar.high >= bar.low
         ]
-        xs = moves[:-1]
-        ys = moves[1:]
-        corr = _corr(xs, ys)
+        xs = ranges[:-1]
+        ys = ranges[1:]
+        top_hit = _top_tercile_hit(xs, ys)
         rows.append(
-            _row(
+            _corr_row(
                 "H110",
                 "range_forecast_probe",
-                "Next-session movement forecast",
-                _status_from_corr(corr, len(xs)),
+                "Next-session range forecast",
                 instrument,
-                "corr(prev_abs_return,next_abs_return)",
-                "corr",
+                "corr(prev_daily_range,next_daily_range)",
+                xs,
                 ys,
-                effect=corr,
-                secondary=_r2(xs, ys),
+                threshold=0.15,
+                secondary=top_hit,
                 details=(
-                    "Secondary=R². Uses close-to-close absolute return as a first volatility proxy."
+                    "Effect is correlation of prior daily high-low range vs next daily range. "
+                    "Secondary is top-tercile range hit-rate among predicted high-range days."
                 ),
             )
         )
     return sorted(rows, key=lambda row: float(row.stats.secondary), reverse=True)[:8]
 
 
-def _book_readiness(book_coverage: list[dict[str, Any]]) -> list[DirectionRow]:
+def _book_readiness(
+    book_coverage: list[dict[str, Any]],
+    book_snapshots: list[dict[str, Any]],
+    candles_by_instrument: dict[str, list[ClosedCandle]],
+    sweep_events_by_instrument: dict[str, list[SweepProbeEvent]],
+) -> list[DirectionRow]:
     if not book_coverage:
         return [
             _row(
@@ -362,17 +375,23 @@ def _book_readiness(book_coverage: list[dict[str, Any]]) -> list[DirectionRow]:
                 "Book-conditioned sweep readiness",
                 "collecting",
                 "OANDA books",
-                "snapshot_count",
+                "paired_snapshots",
                 "snapshots",
-                [],
+                count=0,
                 effect=0,
                 secondary=0,
-                details=(
-                    "No book coverage rows yet; let H103 recorder accumulate order "
-                    "and position snapshots."
-                ),
+                t_stat=0,
+                details="No book coverage rows yet; let H103 recorder accumulate snapshots.",
             )
         ]
+    coverage_rows = _book_coverage_rows(book_coverage)
+    interaction_rows = _book_interaction_rows(
+        book_snapshots, candles_by_instrument, sweep_events_by_instrument
+    )
+    return [*interaction_rows, *coverage_rows]
+
+
+def _book_coverage_rows(book_coverage: list[dict[str, Any]]) -> list[DirectionRow]:
     by_instrument: dict[str, dict[str, int]] = {}
     for row in book_coverage:
         by_instrument.setdefault(str(row["instrument"]), {})[str(row["book_type"])] = int(
@@ -380,10 +399,8 @@ def _book_readiness(book_coverage: list[dict[str, Any]]) -> list[DirectionRow]:
         )
     rows = []
     for instrument, counts in sorted(by_instrument.items()):
-        order_count = counts.get("order", 0)
-        position_count = counts.get("position", 0)
-        ready_count = min(order_count, position_count)
-        status = "ready" if ready_count >= 500 else "collecting"
+        paired = min(counts.get("order", 0), counts.get("position", 0))
+        status = "ready" if paired >= 500 else "collecting"
         rows.append(
             _row(
                 "H111",
@@ -391,18 +408,107 @@ def _book_readiness(book_coverage: list[dict[str, Any]]) -> list[DirectionRow]:
                 "Book-conditioned sweep readiness",
                 status,
                 instrument,
-                "min(order,position)_snapshots",
+                "paired_order_position_snapshots",
                 "snapshots",
-                [],
-                effect=float(ready_count),
-                secondary=float(order_count + position_count),
+                count=paired,
+                effect=float(paired),
+                secondary=float(counts.get("order", 0) + counts.get("position", 0)),
+                t_stat=0,
                 details=(
-                    "Need roughly 500 paired snapshots before conditioning sweep "
-                    "events on book/position state."
+                    "Effect/N are paired snapshot count; secondary is total order+position "
+                    "snapshots. Interaction rows below are decision-relevant."
                 ),
             )
         )
     return rows
+
+
+def _book_interaction_rows(
+    book_snapshots: list[dict[str, Any]],
+    candles_by_instrument: dict[str, list[ClosedCandle]],
+    sweep_events_by_instrument: dict[str, list[SweepProbeEvent]],
+) -> list[DirectionRow]:
+    states = _position_states(book_snapshots)
+    rows: list[DirectionRow] = []
+    horizon_minutes = 60
+    for instrument, events in sorted(sweep_events_by_instrument.items()):
+        if instrument not in candles_by_instrument or instrument not in states:
+            continue
+        candles = sorted(candles_by_instrument[instrument], key=lambda candle: candle.ts)
+        by_ts = {candle.ts: candle for candle in candles}
+        instrument_states = states[instrument]
+        conditioned: list[float] = []
+        unconditioned: list[float] = []
+        for event in events:
+            entry = candles[event.index]
+            exit_candle = by_ts.get(entry.ts + timedelta(minutes=horizon_minutes))
+            if exit_candle is None:
+                continue
+            signed = exit_candle.c - entry.c
+            reversal = signed if event.bias == Bias.BULLISH else -signed
+            reversal_pips = float(reversal / event.pip_size)
+            unconditioned.append(reversal_pips)
+            state = _latest_state_before(instrument_states, entry.ts)
+            if state is None or abs(state.net_long_pct) < 10:
+                continue
+            # Crowd trapped against reversal: bullish reversal with net-short crowd, or vice versa.
+            if (event.bias == Bias.BULLISH and state.net_long_pct < 0) or (
+                event.bias == Bias.BEARISH and state.net_long_pct > 0
+            ):
+                conditioned.append(reversal_pips)
+        if not unconditioned:
+            continue
+        rows.append(
+            _values_row(
+                "H111",
+                "book_conditioner_readiness",
+                "Book-conditioned sweep interaction",
+                _status_from_values(conditioned),
+                instrument,
+                "trapped_crowd_sweep_60m_reversal",
+                "pips",
+                conditioned,
+                secondary=_mean(unconditioned),
+                details=(
+                    "Effect is 60m reversal pips after generic sweeps where latest position "
+                    "book crowd was trapped against reversal by >=10 percentage points. "
+                    "Secondary is unconditioned sweep mean pips."
+                ),
+            )
+        )
+    return rows
+
+
+def _position_states(book_snapshots: list[dict[str, Any]]) -> dict[str, list[BookState]]:
+    by_instrument: dict[str, list[BookState]] = {}
+    for row in book_snapshots:
+        if row.get("book_type") != "position":
+            continue
+        buckets = row.get("buckets_json") or []
+        net = 0.0
+        for bucket in buckets:
+            net += float(bucket.get("long_pct") or 0) - float(bucket.get("short_pct") or 0)
+        by_instrument.setdefault(str(row["instrument"]), []).append(
+            BookState(
+                book_type="position",
+                instrument=str(row["instrument"]),
+                snapshot_time=row["snapshot_time"],
+                net_long_pct=net * 100 if abs(net) <= 1.5 else net,
+            )
+        )
+    return {
+        instrument: sorted(rows, key=lambda state: state.snapshot_time)
+        for instrument, rows in by_instrument.items()
+    }
+
+
+def _latest_state_before(states: list[BookState], ts: datetime) -> BookState | None:
+    latest = None
+    for state in states:
+        if state.snapshot_time > ts:
+            break
+        latest = state
+    return latest
 
 
 def _lead_lag(closes: dict[str, list[DailyClose]]) -> list[DirectionRow]:
@@ -418,76 +524,39 @@ def _lead_lag(closes: dict[str, list[DailyClose]]) -> list[DirectionRow]:
             for lag in (1, 2, 5):
                 xs: list[float] = []
                 ys: list[float] = []
-                lagger_returns = returns[lagger]
                 for day, lead_return in returns[leader].items():
                     target = date.fromordinal(day.toordinal() + lag)
-                    if target in lagger_returns:
+                    if target in returns[lagger]:
                         xs.append(lead_return)
-                        ys.append(lagger_returns[target])
-                corr = _corr(xs, ys)
+                        ys.append(returns[lagger][target])
                 if len(xs) < 40:
                     continue
+                corr = _corr(xs, ys)
                 rows.append(
-                    _row(
+                    _corr_row(
                         "H112",
                         "lead_lag_network_probe",
                         "Currency-network lead/lag propagation",
-                        _status_from_corr(corr, len(xs), threshold=0.12),
                         f"{leader}→{lagger} +{lag}d",
                         "lead_lag_corr",
-                        "corr",
+                        xs,
                         ys,
-                        effect=corr,
+                        threshold=0.12,
                         secondary=abs(corr),
                         details=(
-                            "Effect is daily return correlation between leader at t "
-                            "and lagger at t+lag."
+                            "Effect is correlation between leader return at t and lagger return "
+                            "at t+lag; t-stat is correlation significance, not return t."
                         ),
                     )
                 )
     return sorted(rows, key=lambda row: abs(row.stats.effect), reverse=True)[:12] or [
-        _row(
-            "H112",
-            "lead_lag_network_probe",
-            "Currency-network lead/lag propagation",
-            "data_required",
-            "FX universe",
-            "minimum_overlap",
-            "count",
-            [],
-            effect=0,
-            secondary=0,
-            details="Need at least 40 overlapping daily return observations per pair/lag.",
-        )
+        _data_required("H112", "lead_lag_network_probe", "FX universe")
     ]
 
 
-def _tercile_rows(
-    records: list[tuple[float, float]],
-    *,
-    hypothesis_id: str,
-    algorithm_id: str,
-    label: str,
-    unit: str,
-    metric: str,
-    details: str,
-) -> list[DirectionRow]:
+def _tercile_rows(records: list[tuple[float, float]]) -> list[DirectionRow]:
     if len(records) < 60:
-        return [
-            _row(
-                hypothesis_id,
-                algorithm_id,
-                label,
-                "data_required",
-                "FX universe",
-                metric,
-                unit,
-                [],
-                effect=0,
-                secondary=0,
-                details="Need at least 60 observations to split into volatility terciles.",
-            )
-        ]
+        return [_data_required("H109", "regime_resurrection_probe", "FX universe")]
     ordered = sorted(records, key=lambda item: item[0])
     terciles = (
         ("low-vol", ordered[: len(ordered) // 3]),
@@ -495,22 +564,104 @@ def _tercile_rows(
         ("high-vol", ordered[2 * len(ordered) // 3 :]),
     )
     return [
-        _row(
-            hypothesis_id,
-            algorithm_id,
-            label,
-            _status_from_t([value for _, value in bucket]),
+        _values_row(
+            "H109",
+            "regime_resurrection_probe",
+            "Regime-conditioned dead-signal resurrection",
+            _status_from_values([value for _, value in bucket]),
             subject,
-            metric,
-            unit,
+            "inverse_momentum_return_by_vol_tercile",
+            "bps",
             [value for _, value in bucket],
-            effect=_mean([value for _, value in bucket]),
             secondary=float(len(bucket)),
-            details=details,
+            details=(
+                "Effect is 5d cross-sectional reversal bps after sorting by previous "
+                "daily basket-vol tercile."
+            ),
         )
         for subject, bucket in terciles
         if bucket
     ]
+
+
+def _data_required(hypothesis_id: str, algorithm_id: str, subject: str) -> DirectionRow:
+    labels = {
+        "H109": "Regime-conditioned dead-signal resurrection",
+        "H112": "Currency-network lead/lag propagation",
+    }
+    return _row(
+        hypothesis_id,
+        algorithm_id,
+        labels.get(hypothesis_id, algorithm_id),
+        "data_required",
+        subject,
+        "minimum_history",
+        "count",
+        count=0,
+        effect=0,
+        secondary=0,
+        t_stat=0,
+        details="Insufficient aligned data for this probe.",
+    )
+
+
+def _corr_row(
+    hypothesis_id: str,
+    algorithm_id: str,
+    label: str,
+    subject: str,
+    metric: str,
+    xs: list[float],
+    ys: list[float],
+    *,
+    threshold: float,
+    secondary: float | None = None,
+    details: str,
+) -> DirectionRow:
+    corr = _corr(xs, ys)
+    return _row(
+        hypothesis_id,
+        algorithm_id,
+        label,
+        _status_from_corr(corr, len(xs), threshold=threshold),
+        subject,
+        metric,
+        "corr",
+        count=len(xs),
+        effect=corr,
+        secondary=_r2(xs, ys) if secondary is None else secondary,
+        t_stat=_corr_t_stat(corr, len(xs)),
+        details=details,
+    )
+
+
+def _values_row(
+    hypothesis_id: str,
+    algorithm_id: str,
+    label: str,
+    status: str,
+    subject: str,
+    metric: str,
+    unit: str,
+    values: list[float],
+    *,
+    secondary: float,
+    details: str,
+) -> DirectionRow:
+    return _row(
+        hypothesis_id,
+        algorithm_id,
+        label,
+        status,
+        subject,
+        metric,
+        unit,
+        count=len(values),
+        effect=_mean(values),
+        secondary=secondary,
+        t_stat=_t_stat(values),
+        details=details,
+    )
 
 
 def _row(
@@ -521,10 +672,11 @@ def _row(
     subject: str,
     metric: str,
     unit: str,
-    values: list[float],
     *,
-    effect: float | None = None,
-    secondary: float = 0,
+    count: int,
+    effect: float,
+    secondary: float,
+    t_stat: float,
     details: str,
 ) -> DirectionRow:
     return DirectionRow(
@@ -535,24 +687,19 @@ def _row(
         subject=subject,
         metric=metric,
         unit=unit,
-        stats=DirectionStats(
-            count=len(values),
-            effect=_mean(values) if effect is None else effect,
-            secondary=secondary,
-            t_stat=_t_stat(values),
-        ),
+        stats=DirectionStats(count=count, effect=effect, secondary=secondary, t_stat=t_stat),
         details=details,
     )
 
 
-def _status_from_t(values: list[float]) -> str:
+def _status_from_values(values: list[float]) -> str:
     t_stat = _t_stat(values)
-    if len(values) >= 40 and t_stat >= 2:
+    if len(values) >= 30 and t_stat >= 2:
         return "candidate"
     return "weak" if values else "data_required"
 
 
-def _status_from_corr(corr: float, count: int, *, threshold: float = 0.15) -> str:
+def _status_from_corr(corr: float, count: int, *, threshold: float) -> str:
     if count < 30:
         return "data_required"
     return "candidate" if abs(corr) >= threshold else "weak"
@@ -588,6 +735,32 @@ def _corr(xs: list[float], ys: list[float]) -> float:
     return sum(x * y for x, y in zip(xdev, ydev, strict=True)) / denom
 
 
+def _corr_t_stat(corr: float, count: int) -> float:
+    if count < 3 or abs(corr) >= 1:
+        return 0.0
+    return corr * sqrt((count - 2) / (1 - corr * corr))
+
+
 def _r2(xs: list[float], ys: list[float]) -> float:
     corr = _corr(xs, ys)
     return corr * corr
+
+
+def _top_tercile_hit(xs: list[float], ys: list[float]) -> float:
+    if len(xs) != len(ys) or len(xs) < 9:
+        return 0.0
+    x_cut = _quantile(xs, 2 / 3)
+    y_cut = _quantile(ys, 2 / 3)
+    predicted = [idx for idx, value in enumerate(xs) if value >= x_cut]
+    if not predicted:
+        return 0.0
+    hits = sum(1 for idx in predicted if ys[idx] >= y_cut)
+    return hits / len(predicted)
+
+
+def _quantile(values: list[float], q: float) -> float:
+    ordered = sorted(values)
+    if not ordered:
+        return 0.0
+    idx = min(len(ordered) - 1, max(0, int(round((len(ordered) - 1) * q))))
+    return ordered[idx]

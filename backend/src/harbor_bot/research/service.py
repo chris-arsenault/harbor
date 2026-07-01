@@ -16,7 +16,7 @@ from harbor_bot.backtester.data import candles_from_records
 from harbor_bot.backtester.service import read_persisted_candle_records
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.instruments import RESEARCH_INSTRUMENTS, default_instrument_rules
-from harbor_bot.persistence.book_repository import get_book_coverage
+from harbor_bot.persistence.book_repository import get_book_coverage, list_book_snapshots_range
 from harbor_bot.persistence.market_repository import get_candle_coverage
 from harbor_bot.research.capture import run_capture_scan
 from harbor_bot.research.cross_instrument import (
@@ -26,6 +26,7 @@ from harbor_bot.research.cross_instrument import (
 )
 from harbor_bot.research.directions import (
     RISK_PROXIES,
+    SweepProbeEvent,
     available_direction_algorithms,
     default_direction_algorithm_ids,
     run_direction_scan,
@@ -35,6 +36,7 @@ from harbor_bot.research.edge import (
     adjust_edge_scan_rows_for_universe,
     available_edge_algorithms,
     default_edge_algorithm_ids,
+    get_edge_algorithm,
     run_edge_scan,
     run_edge_study,
 )
@@ -62,6 +64,7 @@ class ResearchService:
         selector = self.window_selector or select_latest_research_candle_window
         reader = self.candle_reader or read_persisted_candle_records
         candles_by_instrument: dict[str, list[Any]] = {}
+        sweep_events_by_instrument: dict[str, list[SweepProbeEvent]] = {}
         windows: list[dict[str, Any]] = []
         warnings: list[dict[str, Any]] = []
 
@@ -86,6 +89,30 @@ class ResearchService:
             candles = candles_from_records(records, default_instrument=instrument)
             if candles:
                 candles_by_instrument[instrument] = list(candles)
+                if instrument in RESEARCH_INSTRUMENTS:
+                    config = replace(
+                        strategy_config_from_defaults(load_default_config()),
+                        instrument=instrument,
+                    )
+                    rules = default_instrument_rules(instrument)
+                    ordered = tuple(sorted(candles, key=lambda candle: candle.ts))
+                    edge_algorithm = get_edge_algorithm("generic_sweep_reversal")
+                    sweep_events_by_instrument[instrument] = [
+                        SweepProbeEvent(
+                            instrument=instrument,
+                            index=event.index,
+                            ts=ordered[event.index].ts,
+                            bias=event.bias,
+                            pip_size=event.pip_size,
+                        )
+                        for event in edge_algorithm.event_builder(
+                            ordered,
+                            instrument=instrument,
+                            config=config,
+                            instrument_rules=rules,
+                            atr_window=14,
+                        )
+                    ]
             else:
                 warnings.append(
                     {
@@ -97,16 +124,27 @@ class ResearchService:
                 )
 
         book_coverage: list[dict[str, Any]] = []
-        if self.persistence_engine is not None:
+        book_snapshots: list[dict[str, Any]] = []
+        book_instruments = tuple(i for i in resolved if i in RESEARCH_INSTRUMENTS)
+        if self.persistence_engine is not None and book_instruments:
             async with self.persistence_engine.connect() as connection:
-                book_coverage = await get_book_coverage(
-                    connection, instruments=tuple(i for i in resolved if i in RESEARCH_INSTRUMENTS)
-                )
+                book_coverage = await get_book_coverage(connection, instruments=book_instruments)
+                if windows:
+                    starts = [window["from"] for window in windows]
+                    ends = [window["to"] for window in windows]
+                    book_snapshots = await list_book_snapshots_range(
+                        connection,
+                        instruments=book_instruments,
+                        start=min(starts),
+                        end=max(ends),
+                    )
 
         rows = run_direction_scan(
             candles_by_instrument,
             algorithm_ids=resolved_algorithms,
             book_coverage=book_coverage,
+            book_snapshots=book_snapshots,
+            sweep_events_by_instrument=sweep_events_by_instrument,
         )
         return {
             "instruments": list(resolved),

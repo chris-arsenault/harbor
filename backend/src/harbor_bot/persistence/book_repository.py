@@ -154,6 +154,38 @@ async def get_latest_book_snapshot(
     return None if row is None else dict(row)
 
 
+async def list_book_snapshots_range(
+    connection: AsyncConnection,
+    *,
+    instruments: tuple[str, ...],
+    start: datetime,
+    end: datetime,
+) -> list[dict[str, Any]]:
+    if not instruments:
+        return []
+    result = await connection.execute(
+        select(
+            book_snapshots.c.book_type,
+            book_snapshots.c.instrument,
+            book_snapshots.c.snapshot_time,
+            book_snapshots.c.mid_price,
+            book_snapshots.c.bucket_width,
+            book_snapshots.c.bucket_count,
+            book_snapshots.c.buckets_json,
+            book_snapshots.c.recorded_ts,
+        )
+        .where(
+            book_snapshots.c.instrument.in_(instruments),
+            book_snapshots.c.snapshot_time >= _require_aware_utc(start),
+            book_snapshots.c.snapshot_time <= _require_aware_utc(end),
+        )
+        .order_by(
+            book_snapshots.c.instrument, book_snapshots.c.book_type, book_snapshots.c.snapshot_time
+        )
+    )
+    return [dict(row) for row in result.mappings()]
+
+
 def _require_aware_utc(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() != _UTC_OFFSET:
         msg = "book snapshots require timezone-aware UTC timestamps"

@@ -17,11 +17,12 @@ standalone directional alpha.
 
 ## Initial test
 
-The first probe uses close-to-close absolute return as a cheap daily movement
-proxy and measures correlation/R² between previous movement and next movement by
-instrument.
+The probe now uses true daily high-low range from persisted candles and measures
+correlation between previous daily range and next daily range by instrument. The
+secondary metric is top-tercile range hit rate among predicted high-range days.
 
 ## Gate
 
-Promote only if the volatility proxy has stable explanatory power and materially
-improves either drawdown control or execution filtering in a later strategy gate.
+Promote only if the range forecast has stable explanatory power and materially
+improves either drawdown control, position sizing, or execution filtering in a
+later strategy gate.

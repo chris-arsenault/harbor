@@ -17,12 +17,13 @@ has enough trapped flow to matter.
 
 ## Initial test
 
-The current probe is a readiness gate over H103 recorder coverage. It marks an
-instrument ready after enough paired order/position snapshots exist to condition
-future sweep events.
+The current probe reports both readiness and a first interaction diagnostic.
+Readiness uses paired order/position snapshot counts. The interaction row tests
+generic sweep reversals conditioned on latest position-book crowding being
+trapped against the reversal direction by at least 10 percentage points.
 
 ## Gate
 
-Do not test edge until the recorder has sufficient paired snapshots. Then run a
-pre-registered sweep × book-state interaction test rather than unconditional
-sweeps.
+Do not promote from snapshot count alone. Promote only if the conditioned sweep
+interaction has enough independent trading days, positive net forward returns,
+and beats the unconditioned sweep baseline after clustered standard errors.
