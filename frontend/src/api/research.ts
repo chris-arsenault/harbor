@@ -12,6 +12,7 @@ export interface ForwardSummary {
   effective_sample_size: number;
   p_value: string;
   bonferroni_p_value: string;
+  bh_q_value?: string;
   correction: string;
 }
 
@@ -139,6 +140,62 @@ export interface EdgeScanPayload {
 
 export function fetchEdgeScan(payload: EdgeScanPayload): Promise<EdgeScanResult> {
   return apiPost<EdgeScanResult>("/api/research/edge/scan", payload);
+}
+
+export interface PooledEdgeScanResult {
+  instruments: string[];
+  pooled_instruments: string[];
+  horizons: number[];
+  requested_window_days: number;
+  windows: EdgeDataWindow[];
+  warnings: EdgeDataWarning[];
+  algorithms: EdgeAlgorithm[];
+  results: EdgeScanRow[];
+  statistical_notes: EdgeStatisticalNotes;
+}
+
+export function fetchPooledEdgeScan(payload: EdgeScanPayload): Promise<PooledEdgeScanResult> {
+  return apiPost<PooledEdgeScanResult>("/api/research/edge/pooled", payload);
+}
+
+export interface BarrierScanRow {
+  algorithm_id: string;
+  hypothesis_id: string;
+  algorithm_label: string;
+  instrument: string;
+  horizon: number;
+  barrier_r: string;
+  total_events: number;
+  resolved: number;
+  timeouts: number;
+  reversal_first: number;
+  adverse_first: number;
+  overall: ForwardSummary;
+  has_edge: boolean;
+  statistical_notes: Record<string, string | number>;
+}
+
+export interface BarrierScanResult {
+  instrument: string;
+  horizons: number[];
+  barrier_r: string;
+  requested_window_days: number;
+  window: EdgeDataWindow | null;
+  warnings: EdgeDataWarning[];
+  algorithms: EdgeAlgorithm[];
+  results: BarrierScanRow[];
+}
+
+export interface BarrierScanPayload {
+  instrument: string;
+  horizons: number[] | null;
+  barrier_r: string;
+  algorithms: string[] | null;
+  window_days: number;
+}
+
+export function fetchBarrierScan(payload: BarrierScanPayload): Promise<BarrierScanResult> {
+  return apiPost<BarrierScanResult>("/api/research/edge/barriers", payload);
 }
 
 export interface CaptureStats {

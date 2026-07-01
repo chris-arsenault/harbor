@@ -29,12 +29,14 @@ import {
 } from "./client";
 import { fetchCandleBackfill, startCandleBackfill, syncCandles } from "./candles";
 import {
+  fetchBarrierScan,
   fetchBookRecorderStatus,
   fetchCaptureScan,
   fetchCrossScan,
   fetchDirectionScan,
   fetchEdgeScan,
   fetchEdgeStudy,
+  fetchPooledEdgeScan,
   fetchTriangularCapture,
 } from "./research";
 import { createLiveConnection, liveWebSocketUrl } from "./live";
@@ -160,6 +162,18 @@ export function useEdgeScanMutation() {
 export function useCaptureScanMutation() {
   return useMutation({
     mutationFn: fetchCaptureScan,
+  });
+}
+
+export function usePooledEdgeScanMutation() {
+  return useMutation({
+    mutationFn: fetchPooledEdgeScan,
+  });
+}
+
+export function useBarrierScanMutation() {
+  return useMutation({
+    mutationFn: fetchBarrierScan,
   });
 }
 

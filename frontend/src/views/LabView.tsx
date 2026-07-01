@@ -8,9 +8,11 @@ import type {
 } from "../api/types";
 import type { OptimizationPreflightResponse } from "../api/optimizerTypes";
 import { EmptyState, Notice, Panel, ViewHead } from "../ui/primitives";
+import { BarrierScan } from "./lab/BarrierScan";
 import { BookRecorder } from "./lab/BookRecorder";
 import { CandleSource } from "./lab/CandleSource";
 import { ArchivedCrossInstrument } from "./lab/CrossInstrument";
+import { PooledEdgeScan } from "./lab/PooledEdgeScan";
 import { EdgeCapture } from "./lab/EdgeCapture";
 import { EdgeScan } from "./lab/EdgeScan";
 import { TriangularCapture } from "./lab/TriangularCapture";
@@ -61,6 +63,8 @@ export function LabView({ model }: { readonly model: LabViewModel }) {
       />
       <BookRecorder />
       <ResearchDirections />
+      <PooledEdgeScan />
+      <BarrierScan />
       <Workbench
         studyPayload={model.studyPayload}
         preflight={model.preflight}
