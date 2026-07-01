@@ -114,8 +114,12 @@ def available_cross_algorithms() -> tuple[CrossAlgorithm, ...]:
             algorithm_id="tri_eur_gbp_residual_5d",
             hypothesis_id="H101",
             label="EUR/GBP triangular residual convergence",
-            description="Trade convergence of EUR_GBP vs EUR_USD / GBP_USD residual.",
+            description=(
+                "Archived paused hypothesis: trade convergence of EUR_GBP vs "
+                "EUR_USD / GBP_USD residual."
+            ),
             evaluator=_tri_eur_gbp,
+            lifecycle="archived",
         ),
         CrossAlgorithm(
             algorithm_id="usd_dispersion_reversion_5d",

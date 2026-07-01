@@ -47,12 +47,12 @@ def test_cross_scan_runs_factor_and_residual_algorithms() -> None:
     assert triangle.stats.count > 0
 
 
-def test_default_cross_scan_includes_only_active_h101() -> None:
+def test_default_cross_scan_has_no_active_archived_cross_hypotheses() -> None:
     default_ids = set(default_cross_algorithm_ids())
     algorithms = {algorithm.algorithm_id: algorithm for algorithm in available_cross_algorithms()}
 
-    assert default_ids == {"tri_eur_gbp_residual_5d"}
-    assert algorithms["tri_eur_gbp_residual_5d"].lifecycle == "active"
+    assert default_ids == set()
+    assert algorithms["tri_eur_gbp_residual_5d"].lifecycle == "archived"
     assert algorithms["cs_momentum_20d_5d"].lifecycle == "archived"
     assert algorithms["cs_value_60d_5d"].lifecycle == "archived"
     assert algorithms["usd_dispersion_reversion_5d"].lifecycle == "archived"

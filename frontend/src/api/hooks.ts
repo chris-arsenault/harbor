@@ -32,6 +32,7 @@ import {
   fetchBookRecorderStatus,
   fetchCaptureScan,
   fetchCrossScan,
+  fetchDirectionScan,
   fetchEdgeScan,
   fetchEdgeStudy,
   fetchTriangularCapture,
@@ -133,6 +134,12 @@ export function useLabStudyQuery(studyId: number | null) {
     },
     enabled: studyId !== null,
     refetchInterval: 5_000,
+  });
+}
+
+export function useDirectionScanMutation() {
+  return useMutation({
+    mutationFn: fetchDirectionScan,
   });
 }
 

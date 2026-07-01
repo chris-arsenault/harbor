@@ -26,8 +26,8 @@ test("submits active cross-instrument preset and renders factor rows", async () 
       "/api/research/cross/scan",
       {
         body: JSON.stringify({
-          instruments: ["EUR_USD", "GBP_USD", "EUR_GBP"],
-          algorithms: ["tri_eur_gbp_residual_5d"],
+          instruments: null,
+          algorithms: null,
           window_days: 730,
         }),
         headers: { Accept: "application/json", "Content-Type": "application/json" },
@@ -36,14 +36,12 @@ test("submits active cross-instrument preset and renders factor rows", async () 
     ])
   );
 
-  expect(screen.getByLabelText("Instruments")).toHaveValue("EUR_USD, GBP_USD, EUR_GBP");
-  expect(screen.getByLabelText("Algorithms")).toHaveValue("tri_eur_gbp_residual_5d");
-  expect(await screen.findByText("EUR/GBP triangular residual convergence")).toBeInTheDocument();
-  expect(screen.getByText("H101")).toBeInTheDocument();
-  expect(screen.getByText("12.50")).toBeInTheDocument();
+  expect(screen.getByLabelText("Instruments")).toHaveValue("");
+  expect(screen.getByLabelText("Algorithms")).toHaveValue("");
+  expect(await screen.findByText("No active cross-instrument rows")).toBeInTheDocument();
 });
 
-test("submits archived H100 and H102 rerun from archive panel", async () => {
+test("submits archived H100-H102 rerun from archive panel", async () => {
   const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
     const url = requestUrl(input);
     if (url.startsWith("/api/research/cross/scan")) {
@@ -61,7 +59,12 @@ test("submits archived H100 and H102 rerun from archive panel", async () => {
       {
         body: JSON.stringify({
           instruments: null,
-          algorithms: ["cs_momentum_20d_5d", "cs_value_60d_5d", "usd_dispersion_reversion_5d"],
+          algorithms: [
+            "cs_momentum_20d_5d",
+            "cs_value_60d_5d",
+            "tri_eur_gbp_residual_5d",
+            "usd_dispersion_reversion_5d",
+          ],
           window_days: 730,
         }),
         headers: { Accept: "application/json", "Content-Type": "application/json" },
@@ -91,32 +94,8 @@ const crossResult = {
   requested_window_days: 730,
   windows: [],
   warnings: [],
-  algorithms: [
-    {
-      algorithm_id: "tri_eur_gbp_residual_5d",
-      hypothesis_id: "H101",
-      label: "EUR/GBP triangular residual convergence",
-      description: "triangular residual",
-      lifecycle: "active",
-    },
-  ],
-  results: [
-    {
-      algorithm_id: "tri_eur_gbp_residual_5d",
-      hypothesis_id: "H101",
-      algorithm_label: "EUR/GBP triangular residual convergence",
-      instruments: ["EUR_USD", "GBP_USD", "EUR_GBP"],
-      observation_count: 90,
-      stats: {
-        count: 90,
-        hit_rate: "0.57777778",
-        mean_return_bps: "12.50000000",
-        median_return_bps: "8.00000000",
-        total_return_bps: "1125.00000000",
-        t_stat: "2.40000000",
-      },
-    },
-  ],
+  algorithms: [],
+  results: [],
 };
 
 const archivedCrossResult = {

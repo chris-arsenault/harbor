@@ -10,11 +10,12 @@ import type { OptimizationPreflightResponse } from "../api/optimizerTypes";
 import { EmptyState, Notice, Panel, ViewHead } from "../ui/primitives";
 import { BookRecorder } from "./lab/BookRecorder";
 import { CandleSource } from "./lab/CandleSource";
-import { ArchivedCrossInstrument, CrossInstrument } from "./lab/CrossInstrument";
+import { ArchivedCrossInstrument } from "./lab/CrossInstrument";
 import { EdgeCapture } from "./lab/EdgeCapture";
 import { EdgeScan } from "./lab/EdgeScan";
 import { TriangularCapture } from "./lab/TriangularCapture";
 import { EdgeStudy } from "./lab/EdgeStudy";
+import { ResearchDirections } from "./lab/ResearchDirections";
 import { SearchSpacePanel } from "./lab/SearchSpace";
 import { StudyResults } from "./lab/StudyResults";
 import { Workbench, type TuningRunView } from "./lab/Workbench";
@@ -59,8 +60,7 @@ export function LabView({ model }: { readonly model: LabViewModel }) {
         onImportCandles={model.onImportCandles}
       />
       <BookRecorder />
-      <CrossInstrument />
-      <TriangularCapture />
+      <ResearchDirections />
       <Workbench
         studyPayload={model.studyPayload}
         preflight={model.preflight}
@@ -96,6 +96,7 @@ export function LabView({ model }: { readonly model: LabViewModel }) {
             on hypotheses that can still inform future work.
           </p>
           <ArchivedCrossInstrument />
+          <TriangularCapture />
           <EdgeScan />
           <EdgeCapture />
           <EdgeStudy instrument={model.selectedInstrument} />

@@ -1,6 +1,6 @@
 # H101 — Triangular residual convergence
 
-- Status: active / promising, cost-capture testing
+- Status: paused / archived; structurally interesting but underpowered
 - Algorithm: `tri_eur_gbp_residual_5d`
 
 ## Hypothesis
@@ -29,14 +29,10 @@ The cross-instrument scan flagged this as the strongest signal so far:
 Strong t-stat and a real no-arbitrage mechanism, but the sample is small and the
 per-event edge is tiny in bps, so it is execution-sensitive.
 
-## Next gate — cost-aware capture
+## Decision
 
-A triangular capture engine now tests convergence after costs across a grid of
-z-thresholds and holding horizons, in two construction modes:
+Pause and archive H101. The no-arbitrage rationale remains structurally interesting, but the cost-aware follow-up did not produce a materially substantiated tradable result: synthetic triangle construction was dead after three-leg costs, while direct EUR_GBP remained underpowered and not strong enough to justify active research attention now.
 
-- `direct_eur_gbp`: trade only EUR_GBP, fading the residual (1 leg).
-- `synthetic_triangle`: trade the EUR_GBP vs EUR_USD/GBP_USD residual (3 legs).
+## Archive location
 
-Net return is reported in basis points after a configurable per-leg cost. The
-hypothesis only advances if net return stays positive with enough events and
-holds across a first-half/second-half split.
+The cross-instrument residual scan and triangular capture surface remain available under the Lab archived-hypotheses disclosure and explicit API requests for reproducibility.

@@ -16,12 +16,19 @@ from harbor_bot.backtester.data import candles_from_records
 from harbor_bot.backtester.service import read_persisted_candle_records
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.instruments import RESEARCH_INSTRUMENTS, default_instrument_rules
+from harbor_bot.persistence.book_repository import get_book_coverage
 from harbor_bot.persistence.market_repository import get_candle_coverage
 from harbor_bot.research.capture import run_capture_scan
 from harbor_bot.research.cross_instrument import (
     available_cross_algorithms,
     default_cross_algorithm_ids,
     run_cross_scan,
+)
+from harbor_bot.research.directions import (
+    RISK_PROXIES,
+    available_direction_algorithms,
+    default_direction_algorithm_ids,
+    run_direction_scan,
 )
 from harbor_bot.research.edge import (
     DEFAULT_HORIZON,
@@ -42,6 +49,78 @@ class ResearchService:
     persistence_engine: AsyncEngine | None = None
     candle_reader: Any = None
     window_selector: Any = None
+
+    async def direction_scan(
+        self,
+        *,
+        instruments: tuple[str, ...] | None = None,
+        algorithm_ids: tuple[str, ...] | None = None,
+        window_days: int = DEFAULT_RESEARCH_WINDOW_DAYS,
+    ) -> dict[str, Any]:
+        resolved = instruments or tuple(dict.fromkeys((*RESEARCH_INSTRUMENTS, *RISK_PROXIES)))
+        resolved_algorithms = algorithm_ids or default_direction_algorithm_ids()
+        selector = self.window_selector or select_latest_research_candle_window
+        reader = self.candle_reader or read_persisted_candle_records
+        candles_by_instrument: dict[str, list[Any]] = {}
+        windows: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
+
+        for instrument in resolved:
+            window = await selector(
+                self.persistence_engine,
+                instrument=instrument,
+                required_days=window_days,
+            )
+            warnings.extend(
+                _window_warnings(window, instrument=instrument, requested_days=window_days)
+            )
+            if window is None:
+                continue
+            windows.append(_window_jsonable(window))
+            records = await reader(
+                self.persistence_engine,
+                instrument=instrument,
+                start=window["from"],
+                end=window["to"],
+            )
+            candles = candles_from_records(records, default_instrument=instrument)
+            if candles:
+                candles_by_instrument[instrument] = list(candles)
+            else:
+                warnings.append(
+                    {
+                        "instrument": instrument,
+                        "type": "empty_window",
+                        "message": "selected research window returned no candle rows",
+                        "requested_days": window_days,
+                    }
+                )
+
+        book_coverage: list[dict[str, Any]] = []
+        if self.persistence_engine is not None:
+            async with self.persistence_engine.connect() as connection:
+                book_coverage = await get_book_coverage(
+                    connection, instruments=tuple(i for i in resolved if i in RESEARCH_INSTRUMENTS)
+                )
+
+        rows = run_direction_scan(
+            candles_by_instrument,
+            algorithm_ids=resolved_algorithms,
+            book_coverage=book_coverage,
+        )
+        return {
+            "instruments": list(resolved),
+            "requested_window_days": window_days,
+            "windows": windows,
+            "warnings": warnings,
+            "algorithms": [
+                algorithm
+                for algorithm in available_direction_algorithms()
+                if algorithm["algorithm_id"] in resolved_algorithms
+            ],
+            "book_coverage": book_coverage,
+            "results": [row.to_jsonable() for row in rows],
+        }
 
     async def edge_study(
         self,

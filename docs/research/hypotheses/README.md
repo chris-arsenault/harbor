@@ -15,13 +15,18 @@ an economic claim first, then an edge-search algorithm. Status values are
 | [H007](H007-eurusd-sweep-continuation.md)       | paused / archived   | `generic_sweep_continuation`, `mss_confirmed_sweep_continuation`, `early_ny_sweep_continuation` | Archived EUR_USD sweep continuation; directionally coherent but cost-thin.     |
 
 | [H100](H100-cross-sectional-fx-factors.md) | rejected / archived | `cs_momentum_20d_5d`, `cs_value_60d_5d` | Archived factor baskets: momentum inverted; value/reversion weak. |
-| [H101](H101-triangular-residual-convergence.md) | active / promising, cost-capture testing | `tri_eur_gbp_residual_5d` | EUR/GBP triangular residual convergence; strongest signal so far (t≈4.6, small N). |
+| [H101](H101-triangular-residual-convergence.md) | paused / archived | `tri_eur_gbp_residual_5d` | EUR/GBP triangular residual convergence: structural but underpowered/cost-sensitive. |
 | [H102](H102-usd-dispersion-reversion.md) | rejected | `usd_dispersion_reversion_5d` | Corrected USD-factor dispersion reversion rerun showed no material signal. |
 | [H103](H103-oanda-positioning-orderbook.md) | proposed / data recorder needed | future OANDA positioning/order-book algorithms | Retail positioning and visible liquidity clusters. |
 | [H104](H104-rates-yield-conditioning.md) | proposed / external data layer needed | future rates conditioning | FX edge conditioned on yield differentials. |
 | [H105](H105-risk-commodity-conditioning.md) | proposed / external data layer needed | future risk/commodity conditioning | JPY/AUD pairs conditioned on risk and commodity state. |
 | [H106](H106-month-end-fix-flow.md) | proposed / calendar input needed | future month-end/fix algorithms | Forced hedge-rebalancing flow around month-end / London fix. |
 | [H107](H107-scheduled-event-surprise.md) | proposed / calendar + surprise data needed | future macro surprise algorithms | Scheduled event drift conditioned on surprise. |
+| [H108](H108-weekend-risk-gap.md) | active / data-gated | `weekend_risk_gap_probe` | Weekend 24/7 risk-asset information gap into Monday FX. |
+| [H109](H109-regime-resurrection.md) | active / exploratory | `regime_resurrection_probe` | Regime-conditioned resurrection of dead/inverted signals. |
+| [H110](H110-volatility-target.md) | active / exploratory | `range_forecast_probe` | Predict volatility/range/no-trade state instead of direction. |
+| [H111](H111-book-conditioned-sweeps.md) | active / awaiting H103 data | `book_conditioner_readiness` | Use order/position book state as sweep conditioner. |
+| [H112](H112-lead-lag-network.md) | active / exploratory | `lead_lag_network_probe` | Currency-network lead/lag propagation timing. |
 
 ## Research gate
 

@@ -312,3 +312,49 @@ export interface BookRecorderStatus {
 export function fetchBookRecorderStatus(): Promise<BookRecorderStatus> {
   return apiGet<BookRecorderStatus>("/api/research/books/status");
 }
+
+export interface DirectionStats {
+  count: number;
+  effect: string;
+  secondary: string;
+  t_stat: string;
+}
+
+export interface DirectionRow {
+  hypothesis_id: string;
+  algorithm_id: string;
+  label: string;
+  status: string;
+  subject: string;
+  metric: string;
+  unit: string;
+  stats: DirectionStats;
+  details: string;
+}
+
+export interface DirectionAlgorithm {
+  algorithm_id: string;
+  hypothesis_id: string;
+  label: string;
+  description: string;
+}
+
+export interface DirectionScanResult {
+  instruments: string[];
+  requested_window_days: number;
+  windows: EdgeDataWindow[];
+  warnings: EdgeDataWarning[];
+  algorithms: DirectionAlgorithm[];
+  book_coverage: BookCoverageRow[];
+  results: DirectionRow[];
+}
+
+export interface DirectionScanPayload {
+  instruments: string[] | null;
+  algorithms: string[] | null;
+  window_days: number;
+}
+
+export function fetchDirectionScan(payload: DirectionScanPayload): Promise<DirectionScanResult> {
+  return apiPost<DirectionScanResult>("/api/research/directions/scan", payload);
+}

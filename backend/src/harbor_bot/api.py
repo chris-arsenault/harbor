@@ -483,6 +483,29 @@ def create_app(
             slippage_pips=payload.get("slippage_pips", "0.1"),
         )
 
+    @app.post("/api/research/directions/scan")
+    async def scan_directions(
+        payload: dict[str, Any],
+        service: ResearchService = RESEARCH_SERVICE_DEPENDENCY,
+    ) -> dict[str, Any]:
+        raw_instruments = payload.get("instruments")
+        instruments = (
+            tuple(str(i).strip().upper() for i in raw_instruments)
+            if isinstance(raw_instruments, list)
+            else None
+        )
+        raw_algorithms = payload.get("algorithms")
+        algorithms = (
+            tuple(str(value).strip() for value in raw_algorithms)
+            if isinstance(raw_algorithms, list)
+            else None
+        )
+        return await service.direction_scan(
+            instruments=instruments,
+            algorithm_ids=algorithms,
+            window_days=int(payload.get("window_days") or DEFAULT_RESEARCH_WINDOW_DAYS),
+        )
+
     @app.get("/api/research/cross/algorithms")
     async def read_cross_algorithms(
         service: ResearchService = RESEARCH_SERVICE_DEPENDENCY,

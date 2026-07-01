@@ -6,14 +6,19 @@ import { fmtNum, fmtPct, valueTone } from "../../ui/format";
 import { EmptyState, Field, Notice, Panel, Tag } from "../../ui/primitives";
 
 const ACTIVE_CROSS_PRESET: CrossScanPayload = {
-  instruments: ["EUR_USD", "GBP_USD", "EUR_GBP"],
-  algorithms: ["tri_eur_gbp_residual_5d"],
+  instruments: null,
+  algorithms: [],
   window_days: 730,
 };
 
 const ARCHIVED_CROSS_PRESET: CrossScanPayload = {
   instruments: null,
-  algorithms: ["cs_momentum_20d_5d", "cs_value_60d_5d", "usd_dispersion_reversion_5d"],
+  algorithms: [
+    "cs_momentum_20d_5d",
+    "cs_value_60d_5d",
+    "tri_eur_gbp_residual_5d",
+    "usd_dispersion_reversion_5d",
+  ],
   window_days: 730,
 };
 
@@ -227,13 +232,13 @@ export function CrossInstrument() {
       preset={ACTIVE_CROSS_PRESET}
       copy={{
         title: "Cross-instrument research",
-        note: "active triangular relative-value test",
+        note: "no active cross-instrument hypotheses",
         label: "Cross-instrument research",
-        presetLabel: "H101 active preset",
+        presetLabel: "No active preset",
         runLabel: "Run cross scan",
         pendingLabel: "Scanning…",
         intro:
-          "Tests the active EUR/GBP triangular residual hypothesis. Returns are basket basis points, not pips.",
+          "No cross-instrument hypothesis is active. Archived H100/H101/H102 reruns live under Archived hypotheses.",
         emptyTitle: "No active cross-instrument rows",
       }}
     />
@@ -248,7 +253,7 @@ export function ArchivedCrossInstrument() {
         title: "Archived cross-instrument hypotheses",
         note: "rejected; reproducibility only",
         label: "Archived cross-instrument hypotheses",
-        presetLabel: "H100/H102 archived preset",
+        presetLabel: "H100–H102 archived preset",
         runLabel: "Re-run archived scan",
         pendingLabel: "Scanning archive…",
         intro:
