@@ -20,6 +20,19 @@ interface EdgeScanDraft {
 }
 
 const EDGE_SCAN_PRESETS = {
+  sweepReversalFamily: {
+    instruments: [],
+    algorithms: [
+      "generic_sweep_reversal",
+      "non_news_proxy_sweep_reversal",
+      "mss_confirmed_sweep_reversal",
+      "compressed_range_sweep_reversal",
+      "clean_level_sweep_reversal",
+      "early_ny_sweep_reversal",
+    ],
+    horizons: [15, 30, 60, 120],
+    window_days: 730,
+  },
   h005: {
     instruments: ["GBP_JPY"],
     algorithms: ["clean_level_sweep_reversal"],
@@ -227,9 +240,17 @@ function ScanActions({
         type="button"
         className="btn btn--ghost btn--sm"
         disabled={pending}
+        onClick={() => onPreset(EDGE_SCAN_PRESETS.sweepReversalFamily)}
+      >
+        H001–H006 reversal archive
+      </button>
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        disabled={pending}
         onClick={() => onPreset(EDGE_SCAN_PRESETS.h005)}
       >
-        H005 GBP_JPY confirmatory
+        H005 GBP_JPY archived confirm
       </button>
       <button
         type="button"
@@ -237,7 +258,7 @@ function ScanActions({
         disabled={pending}
         onClick={() => onPreset(EDGE_SCAN_PRESETS.h007)}
       >
-        H007 EUR_USD continuation
+        H007 continuation archive
       </button>
       <button type="button" className="btn btn--primary" disabled={pending} onClick={onSubmit}>
         {pending ? "Scanning…" : "Run edge scan"}
@@ -326,10 +347,10 @@ function ScanResultView({
 export function EdgeScan() {
   const scan = useEdgeScanMutation();
   const [draft, setDraft] = useState<EdgeScanDraft>({
-    instruments: "",
-    algorithms: "",
-    horizons: "",
-    windowDays: 730,
+    instruments: listText(EDGE_SCAN_PRESETS.sweepReversalFamily.instruments),
+    algorithms: listText(EDGE_SCAN_PRESETS.sweepReversalFamily.algorithms),
+    horizons: listText(EDGE_SCAN_PRESETS.sweepReversalFamily.horizons),
+    windowDays: EDGE_SCAN_PRESETS.sweepReversalFamily.window_days,
   });
 
   function applyPreset(preset: EdgeScanPreset) {
@@ -347,9 +368,9 @@ export function EdgeScan() {
 
   return (
     <Panel
-      title="Edge scan"
-      note="universe × horizons"
-      label="Edge scan"
+      title="Archived edge scan"
+      note="rejected sweep-pattern family"
+      label="Archived edge scan"
       actions={<ScanActions pending={scan.isPending} onPreset={applyPreset} onSubmit={submit} />}
     >
       <ScanFields draft={draft} onChange={setDraft} />

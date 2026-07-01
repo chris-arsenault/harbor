@@ -54,6 +54,7 @@ class CrossAlgorithm:
     label: str
     description: str
     evaluator: Callable[..., list[CrossObservation]]
+    lifecycle: str = "active"
 
     def to_jsonable(self) -> dict[str, str]:
         return {
@@ -61,6 +62,7 @@ class CrossAlgorithm:
             "hypothesis_id": self.hypothesis_id,
             "label": self.label,
             "description": self.description,
+            "lifecycle": self.lifecycle,
         }
 
 
@@ -90,15 +92,23 @@ def available_cross_algorithms() -> tuple[CrossAlgorithm, ...]:
             algorithm_id="cs_momentum_20d_5d",
             hypothesis_id="H100",
             label="Cross-sectional momentum 20d→5d",
-            description="Long top 20-day performers, short bottom performers, hold 5 trading days.",
+            description=(
+                "Archived rejected hypothesis: long top recent 20-day performers, "
+                "short bottom performers, hold 5 trading days."
+            ),
             evaluator=_cs_momentum,
+            lifecycle="archived",
         ),
         CrossAlgorithm(
             algorithm_id="cs_value_60d_5d",
             hypothesis_id="H100",
             label="Cross-sectional value/reversion 60d→5d",
-            description="Long 60-day underperformers, short outperformers, hold 5 trading days.",
+            description=(
+                "Archived weak hypothesis: long 60-day underperformers, short "
+                "outperformers, hold 5 trading days."
+            ),
             evaluator=_cs_value,
+            lifecycle="archived",
         ),
         CrossAlgorithm(
             algorithm_id="tri_eur_gbp_residual_5d",
@@ -112,15 +122,21 @@ def available_cross_algorithms() -> tuple[CrossAlgorithm, ...]:
             hypothesis_id="H102",
             label="USD-factor dispersion reversion",
             description=(
-                "Long underperforming pairs, short outperforming pairs versus basket residual."
+                "Archived rejected hypothesis: long underperforming pairs and short "
+                "outperforming pairs versus basket residual."
             ),
             evaluator=_usd_dispersion,
+            lifecycle="archived",
         ),
     )
 
 
 def default_cross_algorithm_ids() -> tuple[str, ...]:
-    return tuple(algorithm.algorithm_id for algorithm in available_cross_algorithms())
+    return tuple(
+        algorithm.algorithm_id
+        for algorithm in available_cross_algorithms()
+        if algorithm.lifecycle == "active"
+    )
 
 
 def get_cross_algorithm(algorithm_id: str) -> CrossAlgorithm:

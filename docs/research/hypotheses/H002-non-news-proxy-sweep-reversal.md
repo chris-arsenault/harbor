@@ -1,6 +1,6 @@
 # H002 — Non-news-proxy sweep reversal
 
-- Status: proposed
+- Status: rejected / archived with sweep-reversal family
 - Edge algorithm: `non_news_proxy_sweep_reversal`
 
 ## Hypothesis
@@ -23,3 +23,11 @@ America/New_York. This is a proxy, not a real economic calendar.
 
 A corrected edge scan must show positive mean reversal, sufficient effective NY
 trading-day samples, corrected t >= 2, and multiple-test-adjusted p <= 0.025.
+
+## Decision
+
+H002 did not produce an independently actionable edge after the broader sweep-reversal family was falsified. It remains archived for reproducibility only.
+
+## Archive location
+
+The algorithm remains available through the Lab archived edge-scan panel and explicit API requests, but it is excluded from active research defaults.

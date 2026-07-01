@@ -1,6 +1,6 @@
 # H100 — Cross-sectional FX factors
 
-- Status: active / research engine implemented
+- Status: rejected / archived except as future reversal inspiration
 - Algorithms: `cs_momentum_20d_5d`, `cs_value_60d_5d`
 
 ## Hypothesis
@@ -37,3 +37,11 @@ universe (i.e. cross-sectional reversal). Momentum as implemented is rejected;
 value/reversion is weakly positive and kept as a lower-priority branch. A future
 `cs_reversal` algorithm (invert the momentum leg) is worth testing but is lower
 priority than H101.
+
+## Decision
+
+Archive H100 as implemented. Cross-sectional momentum was significantly negative and the value/reversion basket was weak; neither should remain in active Lab defaults. A future inverse-momentum/reversal hypothesis would need a new H-ID and explicit economic framing rather than continuing H100 as-is.
+
+## Archive location
+
+The H100 algorithms remain available through the Lab archived cross-instrument panel and explicit API requests, but they are excluded from active cross-instrument defaults.

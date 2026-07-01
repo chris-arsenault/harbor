@@ -1,6 +1,6 @@
 # H007 — EUR_USD sweep continuation
 
-- Status: active / cost-capture testing
+- Status: paused / archived; thin cost-capture signal
 - Edge algorithms: `generic_sweep_continuation`, `mss_confirmed_sweep_continuation`, `early_ny_sweep_continuation`
 
 ## Hypothesis
@@ -49,6 +49,7 @@ curl -X POST "http://192.168.66.3:30091/api/research/edge/scan" \
     "window_days": 730
   }'
 ```
+
 ## Latest evidence
 
 The larger-window H007 scan showed a coherent positive continuation signal but
@@ -61,8 +62,10 @@ with small EUR_USD mean moves:
 The signal is directionally coherent but cost-thin. The next gate is whether a
 simple event-capture model remains positive after spread/slippage assumptions.
 
-## Next gate
+## Decision
 
-Run a cost-aware event-capture test for EUR_USD H007 using event-close/next-open
-style continuation entries and fixed horizon exits. Only consider strategy work if
-net pips after costs remain positive with tolerable adverse excursion.
+Pause and archive H007. The continuation signal was directionally coherent but too cost-thin to justify more strategy work now. The cost-aware capture surface remains archived for reproducibility and future comparison, not active development.
+
+## Archive location
+
+The continuation algorithms remain available through the Lab archived edge-scan and archived event-capture panels and through explicit API requests.

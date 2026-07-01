@@ -26,59 +26,73 @@ import type {
   VariantDetail,
 } from "./types";
 import type { OptimizationPreflightResponse } from "./optimizerTypes";
-import { expireAuthSession, getAccessToken } from "../auth/cognito";
+import { expireAuthSession, getAccessToken, refreshAccessToken } from "../auth/cognito";
 
 const API_BASE_URL = "";
 
-async function apiHeaders(json = false): Promise<Record<string, string>> {
+type ApiRequest =
+  | { readonly json: false; readonly method: "GET"; readonly path: string }
+  | {
+      readonly body: string;
+      readonly json: true;
+      readonly method: "POST" | "PUT";
+      readonly path: string;
+    };
+
+async function apiHeaders(
+  json = false,
+  tokenOverride: string | null = null
+): Promise<Record<string, string>> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (json) headers["Content-Type"] = "application/json";
-  const token = await getAccessToken();
+  const token = tokenOverride ?? (await getAccessToken());
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
 }
 
 export async function apiGet<TResponse>(path: string): Promise<TResponse> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: await apiHeaders(),
-  });
-  handleAuthRejected(response);
-  if (!response.ok) {
-    throw new Error(await responseErrorMessage(response, "GET", path));
-  }
-  return (await response.json()) as TResponse;
+  return apiRequest<TResponse>({ json: false, method: "GET", path });
 }
 
 export async function apiPost<TResponse>(path: string, payload: unknown = {}): Promise<TResponse> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    headers: await apiHeaders(true),
-    body: JSON.stringify(payload),
-  });
-  handleAuthRejected(response);
-  if (!response.ok) {
-    throw new Error(await responseErrorMessage(response, "POST", path));
-  }
-  return (await response.json()) as TResponse;
+  return apiRequest<TResponse>({ body: JSON.stringify(payload), json: true, method: "POST", path });
 }
 
 export async function apiPut<TResponse>(path: string, payload: unknown): Promise<TResponse> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "PUT",
-    headers: await apiHeaders(true),
-    body: JSON.stringify(payload),
-  });
-  handleAuthRejected(response);
-  if (!response.ok) {
-    throw new Error(await responseErrorMessage(response, "PUT", path));
-  }
-  return (await response.json()) as TResponse;
+  return apiRequest<TResponse>({ body: JSON.stringify(payload), json: true, method: "PUT", path });
 }
 
-function handleAuthRejected(response: Response): void {
-  if (response.status === 401) {
+async function apiRequest<TResponse>(request: ApiRequest): Promise<TResponse> {
+  const response = await fetchApi(request);
+  const finalResponse =
+    response.status === 401 ? await retryAfterAuthRefresh(request, response) : response;
+  if (finalResponse.status === 401) {
     expireAuthSession();
   }
+  if (!finalResponse.ok) {
+    throw new Error(await responseErrorMessage(finalResponse, request.method, request.path));
+  }
+  return (await finalResponse.json()) as TResponse;
+}
+
+async function fetchApi(
+  request: ApiRequest,
+  tokenOverride: string | null = null
+): Promise<Response> {
+  const init: RequestInit = {
+    headers: await apiHeaders(request.json, tokenOverride),
+  };
+  if (request.method !== "GET") {
+    init.body = request.body;
+    init.method = request.method;
+  }
+  return fetch(`${API_BASE_URL}${request.path}`, init);
+}
+
+async function retryAfterAuthRefresh(request: ApiRequest, response: Response): Promise<Response> {
+  const refreshedToken = await refreshAccessToken();
+  if (!refreshedToken) return response;
+  return fetchApi(request, refreshedToken);
 }
 
 async function responseErrorMessage(response: Response, method: string, path: string) {

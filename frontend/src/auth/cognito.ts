@@ -27,6 +27,7 @@ const SESSION_EXPIRED_MESSAGE = "Session expired. Sign in again.";
 
 let cachedPool: CognitoUserPool | null = null;
 let cachedPoolKey: string | null = null;
+let refreshInFlight: Promise<string | null> | null = null;
 
 const ENROLL_VIA_AHARA_BUSINESS =
   "Multi-factor authentication is not set up for this account. Enroll an " +
@@ -79,6 +80,16 @@ export async function getAccessToken(): Promise<string | null> {
   }
 }
 
+export function refreshAccessToken(): Promise<string | null> {
+  if (!isAuthConfigured()) return Promise.resolve(null);
+  refreshInFlight ??= forceRefreshAccessToken()
+    .catch((): null => null)
+    .finally(() => {
+      refreshInFlight = null;
+    });
+  return refreshInFlight;
+}
+
 export async function getSessionSnapshot(): Promise<SessionSnapshot | null> {
   const session = await getCurrentSession();
   if (!session) return null;
@@ -106,6 +117,23 @@ export function signIn(username: string, password: string): Promise<SignInResult
 
 export function signOut(): void {
   getPool()?.getCurrentUser()?.signOut();
+}
+
+async function forceRefreshAccessToken(): Promise<string | null> {
+  const user = getPool()?.getCurrentUser();
+  if (!user) return null;
+  const session = await getCurrentSession().catch((): null => null);
+  const refreshToken = session?.getRefreshToken();
+  if (!refreshToken?.getToken()) return null;
+  return new Promise((resolve) => {
+    user.refreshSession(refreshToken, (err: unknown, refreshedSession?: CognitoUserSession) => {
+      if (err || !refreshedSession?.isValid()) {
+        resolve(null);
+        return;
+      }
+      resolve(refreshedSession.getAccessToken().getJwtToken());
+    });
+  });
 }
 
 export function expireAuthSession(message = SESSION_EXPIRED_MESSAGE): void {

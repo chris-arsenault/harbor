@@ -27,3 +27,7 @@ t=1.53, effective N=69, and Bonferroni-adjusted p=1.0000.
 Reject the broad generic sweep→reversal premise. Do not optimize or promote the
 current strategy as-is. Future work must test narrower economic claims before
 entry/exit optimization.
+
+## Archive location
+
+The algorithm remains available through the Lab archived edge-scan panel and explicit API requests, but it is excluded from active research defaults.

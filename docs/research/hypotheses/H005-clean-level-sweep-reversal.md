@@ -30,6 +30,7 @@ The latest broad scan showed a coherent GBP_JPY cluster:
 This is promising but underpowered. It does not yet pass the edge gate because
 effective sample size is too small and the multiple-test-adjusted p-values are
 not significant.
+
 ## Confirmatory result
 
 The larger-sample confirmatory scan did not preserve the exploratory signal:
@@ -45,3 +46,7 @@ The earlier high hit-rate / high mean result was not stable when the sample expa
 Reject H005 as a reversal basis. Do not build or optimize strategy variants around
 GBP_JPY clean-level first-touch reversal unless a materially different economic
 hypothesis is proposed.
+
+## Archive location
+
+The algorithm remains available through the Lab archived edge-scan panel and explicit API requests, but it is excluded from active research defaults.

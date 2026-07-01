@@ -12,6 +12,8 @@ from harbor_bot.research.edge import (
     EdgeStudyResult,
     _Observation,
     _observations_with_forward,
+    available_edge_algorithms,
+    default_edge_algorithm_ids,
     get_edge_algorithm,
     has_edge,
     run_edge_scan,
@@ -27,6 +29,14 @@ from harbor_bot.strategy.models import (
 )
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "backtester"
+
+
+def test_default_edge_scan_excludes_archived_sweep_family() -> None:
+    algorithms = {algorithm.algorithm_id: algorithm for algorithm in available_edge_algorithms()}
+
+    assert default_edge_algorithm_ids() == ()
+    assert algorithms
+    assert {algorithm.lifecycle for algorithm in algorithms.values()} == {"archived"}
 
 
 def test_summarize_reports_count_mean_and_hit_rate() -> None:

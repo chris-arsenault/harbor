@@ -1,6 +1,6 @@
 # H003 — MSS-confirmed sweep reversal
 
-- Status: proposed
+- Status: rejected / archived with sweep-reversal family
 - Edge algorithm: `mss_confirmed_sweep_reversal`
 
 ## Hypothesis
@@ -22,3 +22,11 @@ the existing MSS confirmation function is true after the sweep.
 
 The confirmed-event forward returns must survive the same corrected edge gate as
 other algorithms and beat the rejected generic sweep baseline.
+
+## Decision
+
+H003 did not rescue the sweep-reversal premise after corrected scans and broader family evidence. It remains archived for reproducibility only.
+
+## Archive location
+
+The algorithm remains available through the Lab archived edge-scan panel and explicit API requests, but it is excluded from active research defaults.

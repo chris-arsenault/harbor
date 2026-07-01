@@ -1,6 +1,6 @@
 # H004 — Compressed-range sweep reversal
 
-- Status: proposed
+- Status: rejected / archived with sweep-reversal family
 - Edge algorithm: `compressed_range_sweep_reversal`
 
 ## Hypothesis
@@ -23,3 +23,11 @@ range.
 
 The compressed-range subset must show statistically meaningful positive reversal
 after clustered and multiple-test corrections.
+
+## Decision
+
+H004 did not justify further strategy work after the sweep-reversal family failed to show a material corrected edge. It remains archived for reproducibility only.
+
+## Archive location
+
+The algorithm remains available through the Lab archived edge-scan panel and explicit API requests, but it is excluded from active research defaults.

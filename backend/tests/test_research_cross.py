@@ -3,7 +3,12 @@ from decimal import Decimal
 from math import exp
 
 from harbor_bot.feed.candles import ClosedCandle
-from harbor_bot.research.cross_instrument import daily_closes, run_cross_scan
+from harbor_bot.research.cross_instrument import (
+    available_cross_algorithms,
+    daily_closes,
+    default_cross_algorithm_ids,
+    run_cross_scan,
+)
 
 
 def test_daily_closes_uses_last_candle_per_utc_day() -> None:
@@ -40,6 +45,17 @@ def test_cross_scan_runs_factor_and_residual_algorithms() -> None:
     assert all(row.observation_count >= 0 for row in rows)
     triangle = next(row for row in rows if row.algorithm_id == "tri_eur_gbp_residual_5d")
     assert triangle.stats.count > 0
+
+
+def test_default_cross_scan_includes_only_active_h101() -> None:
+    default_ids = set(default_cross_algorithm_ids())
+    algorithms = {algorithm.algorithm_id: algorithm for algorithm in available_cross_algorithms()}
+
+    assert default_ids == {"tri_eur_gbp_residual_5d"}
+    assert algorithms["tri_eur_gbp_residual_5d"].lifecycle == "active"
+    assert algorithms["cs_momentum_20d_5d"].lifecycle == "archived"
+    assert algorithms["cs_value_60d_5d"].lifecycle == "archived"
+    assert algorithms["usd_dispersion_reversion_5d"].lifecycle == "archived"
 
 
 def test_cross_momentum_detects_persistent_relative_strength() -> None:

@@ -203,9 +203,9 @@ export function EdgeCapture() {
   const result = capture.data ?? null;
   return (
     <Panel
-      title="Event capture"
-      note="cost-aware fixed horizon"
-      label="Event capture"
+      title="Archived event capture"
+      note="paused H007 cost gate"
+      label="Archived event capture"
       actions={
         <div className="row">
           <button
@@ -214,7 +214,7 @@ export function EdgeCapture() {
             disabled={capture.isPending}
             onClick={() => setDraft(draftFromPreset(H007_CAPTURE_PRESET))}
           >
-            H007 EUR_USD capture
+            H007 archived capture
           </button>
           <button
             type="button"
@@ -228,8 +228,9 @@ export function EdgeCapture() {
       }
     >
       <p className="mute">
-        Tests whether edge-scan events are capturable after spread and slippage. Entry is next M1
-        open; exit is fixed-horizon close.
+        Archives the H007 cost-capture gate after the sweep-continuation branch was paused. Tests
+        whether edge-scan events are capturable after spread and slippage. Entry is next M1 open;
+        exit is fixed-horizon close.
       </p>
       <CaptureFields draft={draft} onChange={setDraft} />
       {capture.error ? <Notice tone="error">{capture.error.message}</Notice> : null}

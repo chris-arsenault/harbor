@@ -107,11 +107,11 @@ function IdlePrompt({ onRun }: { readonly onRun: () => void }) {
   return (
     <div className="stack">
       <p className="mute">
-        Runs a statistical edge study against persisted candles to check whether sweep-based entries
-        have a measurable base-rate advantage.
+        Archived one-off H001-family base-rate check against persisted candles for audit or
+        comparison.
       </p>
       <button type="button" className="btn btn--primary" onClick={onRun}>
-        Run edge study
+        Run archived edge study
       </button>
     </div>
   );
@@ -123,9 +123,9 @@ export function EdgeStudy({ instrument }: { readonly instrument: string }) {
   const verdict = query.data?.has_edge ?? false;
   return (
     <Panel
-      title="Base-rate edge"
+      title="Archived base-rate edge"
       note={instrument}
-      label="Base-rate edge"
+      label="Archived base-rate edge"
       actions={
         query.data ? (
           <Tag tone={verdict ? "up" : "warn"}>{verdict ? "edge present" : "no edge"}</Tag>

@@ -5,16 +5,28 @@ import type { CrossScanPayload, CrossScanResult, CrossScanRow } from "../../api/
 import { fmtNum, fmtPct, valueTone } from "../../ui/format";
 import { EmptyState, Field, Notice, Panel, Tag } from "../../ui/primitives";
 
-const CROSS_PRESET: CrossScanPayload = {
-  instruments: null,
-  algorithms: [
-    "cs_momentum_20d_5d",
-    "cs_value_60d_5d",
-    "tri_eur_gbp_residual_5d",
-    "usd_dispersion_reversion_5d",
-  ],
+const ACTIVE_CROSS_PRESET: CrossScanPayload = {
+  instruments: ["EUR_USD", "GBP_USD", "EUR_GBP"],
+  algorithms: ["tri_eur_gbp_residual_5d"],
   window_days: 730,
 };
+
+const ARCHIVED_CROSS_PRESET: CrossScanPayload = {
+  instruments: null,
+  algorithms: ["cs_momentum_20d_5d", "cs_value_60d_5d", "usd_dispersion_reversion_5d"],
+  window_days: 730,
+};
+
+interface CrossPanelCopy {
+  readonly title: string;
+  readonly note: string;
+  readonly label: string;
+  readonly presetLabel: string;
+  readonly runLabel: string;
+  readonly pendingLabel: string;
+  readonly intro: string;
+  readonly emptyTitle: string;
+}
 
 interface CrossDraft {
   readonly instruments: string;
@@ -68,9 +80,15 @@ function CrossWarnings({ result }: { readonly result: CrossScanResult }) {
   );
 }
 
-function CrossTable({ result }: { readonly result: CrossScanResult }) {
+function CrossTable({
+  result,
+  emptyTitle,
+}: {
+  readonly result: CrossScanResult;
+  readonly emptyTitle: string;
+}) {
   if (!result.results.length) {
-    return <EmptyState glyph="∅" title="No cross-instrument rows" />;
+    return <EmptyState glyph="∅" title={emptyTitle} />;
   }
   return (
     <div className="tbl-wrap">
@@ -154,24 +172,30 @@ function CrossFields({
   );
 }
 
-export function CrossInstrument() {
+function CrossInstrumentPanel({
+  preset,
+  copy,
+}: {
+  readonly preset: CrossScanPayload;
+  readonly copy: CrossPanelCopy;
+}) {
   const cross = useCrossScanMutation();
-  const [draft, setDraft] = useState<CrossDraft>(draftFromPreset(CROSS_PRESET));
+  const [draft, setDraft] = useState<CrossDraft>(draftFromPreset(preset));
   const result = cross.data ?? null;
   return (
     <Panel
-      title="Cross-instrument research"
-      note="factor and relative-value tests"
-      label="Cross-instrument research"
+      title={copy.title}
+      note={copy.note}
+      label={copy.label}
       actions={
         <div className="row">
           <button
             type="button"
             className="btn btn--ghost btn--sm"
             disabled={cross.isPending}
-            onClick={() => setDraft(draftFromPreset(CROSS_PRESET))}
+            onClick={() => setDraft(draftFromPreset(preset))}
           >
-            H100–H102 preset
+            {copy.presetLabel}
           </button>
           <button
             type="button"
@@ -179,23 +203,58 @@ export function CrossInstrument() {
             disabled={cross.isPending}
             onClick={() => cross.mutate(buildPayload(draft))}
           >
-            {cross.isPending ? "Scanning…" : "Run cross scan"}
+            {cross.isPending ? copy.pendingLabel : copy.runLabel}
           </button>
         </div>
       }
     >
-      <p className="mute">
-        Tests daily cross-sectional factor baskets and relative-value residuals. Returns are basket
-        basis points, not pips.
-      </p>
+      <p className="mute">{copy.intro}</p>
       <CrossFields draft={draft} onChange={setDraft} />
       {cross.error ? <Notice tone="error">{cross.error.message}</Notice> : null}
       {result ? (
         <>
           <CrossWarnings result={result} />
-          <CrossTable result={result} />
+          <CrossTable result={result} emptyTitle={copy.emptyTitle} />
         </>
       ) : null}
     </Panel>
+  );
+}
+
+export function CrossInstrument() {
+  return (
+    <CrossInstrumentPanel
+      preset={ACTIVE_CROSS_PRESET}
+      copy={{
+        title: "Cross-instrument research",
+        note: "active triangular relative-value test",
+        label: "Cross-instrument research",
+        presetLabel: "H101 active preset",
+        runLabel: "Run cross scan",
+        pendingLabel: "Scanning…",
+        intro:
+          "Tests the active EUR/GBP triangular residual hypothesis. Returns are basket basis points, not pips.",
+        emptyTitle: "No active cross-instrument rows",
+      }}
+    />
+  );
+}
+
+export function ArchivedCrossInstrument() {
+  return (
+    <CrossInstrumentPanel
+      preset={ARCHIVED_CROSS_PRESET}
+      copy={{
+        title: "Archived cross-instrument hypotheses",
+        note: "rejected; reproducibility only",
+        label: "Archived cross-instrument hypotheses",
+        presetLabel: "H100/H102 archived preset",
+        runLabel: "Re-run archived scan",
+        pendingLabel: "Scanning archive…",
+        intro:
+          "Keeps rejected cross-instrument scans out of the active Lab while preserving exact rerun paths for audit or future comparison.",
+        emptyTitle: "No archived cross-instrument rows",
+      }}
+    />
   );
 }

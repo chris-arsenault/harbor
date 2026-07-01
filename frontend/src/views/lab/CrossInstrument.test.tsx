@@ -2,14 +2,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { CrossInstrument } from "./CrossInstrument";
+import { ArchivedCrossInstrument, CrossInstrument } from "./CrossInstrument";
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
-test("submits cross-instrument preset and renders factor rows", async () => {
+test("submits active cross-instrument preset and renders factor rows", async () => {
   const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
     const url = requestUrl(input);
     if (url.startsWith("/api/research/cross/scan")) {
@@ -26,13 +26,8 @@ test("submits cross-instrument preset and renders factor rows", async () => {
       "/api/research/cross/scan",
       {
         body: JSON.stringify({
-          instruments: null,
-          algorithms: [
-            "cs_momentum_20d_5d",
-            "cs_value_60d_5d",
-            "tri_eur_gbp_residual_5d",
-            "usd_dispersion_reversion_5d",
-          ],
+          instruments: ["EUR_USD", "GBP_USD", "EUR_GBP"],
+          algorithms: ["tri_eur_gbp_residual_5d"],
           window_days: 730,
         }),
         headers: { Accept: "application/json", "Content-Type": "application/json" },
@@ -41,9 +36,42 @@ test("submits cross-instrument preset and renders factor rows", async () => {
     ])
   );
 
-  expect(await screen.findByText("Cross-sectional momentum 20d→5d")).toBeInTheDocument();
-  expect(screen.getByText("H100")).toBeInTheDocument();
+  expect(screen.getByLabelText("Instruments")).toHaveValue("EUR_USD, GBP_USD, EUR_GBP");
+  expect(screen.getByLabelText("Algorithms")).toHaveValue("tri_eur_gbp_residual_5d");
+  expect(await screen.findByText("EUR/GBP triangular residual convergence")).toBeInTheDocument();
+  expect(screen.getByText("H101")).toBeInTheDocument();
   expect(screen.getByText("12.50")).toBeInTheDocument();
+});
+
+test("submits archived H100 and H102 rerun from archive panel", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+    const url = requestUrl(input);
+    if (url.startsWith("/api/research/cross/scan")) {
+      return Promise.resolve(new Response(JSON.stringify(archivedCrossResult), { status: 200 }));
+    }
+    return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+  });
+
+  renderWithClient(<ArchivedCrossInstrument />);
+  fireEvent.click(screen.getByRole("button", { name: "Re-run archived scan" }));
+
+  await waitFor(() =>
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/research/cross/scan",
+      {
+        body: JSON.stringify({
+          instruments: null,
+          algorithms: ["cs_momentum_20d_5d", "cs_value_60d_5d", "usd_dispersion_reversion_5d"],
+          window_days: 730,
+        }),
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        method: "POST",
+      },
+    ])
+  );
+
+  expect(await screen.findByText("USD-factor dispersion reversion")).toBeInTheDocument();
+  expect(screen.getByText("H102")).toBeInTheDocument();
 });
 
 function renderWithClient(ui: React.ReactElement) {
@@ -65,17 +93,18 @@ const crossResult = {
   warnings: [],
   algorithms: [
     {
-      algorithm_id: "cs_momentum_20d_5d",
-      hypothesis_id: "H100",
-      label: "Cross-sectional momentum 20d→5d",
-      description: "momentum basket",
+      algorithm_id: "tri_eur_gbp_residual_5d",
+      hypothesis_id: "H101",
+      label: "EUR/GBP triangular residual convergence",
+      description: "triangular residual",
+      lifecycle: "active",
     },
   ],
   results: [
     {
-      algorithm_id: "cs_momentum_20d_5d",
-      hypothesis_id: "H100",
-      algorithm_label: "Cross-sectional momentum 20d→5d",
+      algorithm_id: "tri_eur_gbp_residual_5d",
+      hypothesis_id: "H101",
+      algorithm_label: "EUR/GBP triangular residual convergence",
       instruments: ["EUR_USD", "GBP_USD", "EUR_GBP"],
       observation_count: 90,
       stats: {
@@ -85,6 +114,39 @@ const crossResult = {
         median_return_bps: "8.00000000",
         total_return_bps: "1125.00000000",
         t_stat: "2.40000000",
+      },
+    },
+  ],
+};
+
+const archivedCrossResult = {
+  instruments: ["EUR_USD", "GBP_USD", "USD_JPY"],
+  requested_window_days: 730,
+  windows: [],
+  warnings: [],
+  algorithms: [
+    {
+      algorithm_id: "usd_dispersion_reversion_5d",
+      hypothesis_id: "H102",
+      label: "USD-factor dispersion reversion",
+      description: "archived",
+      lifecycle: "archived",
+    },
+  ],
+  results: [
+    {
+      algorithm_id: "usd_dispersion_reversion_5d",
+      hypothesis_id: "H102",
+      algorithm_label: "USD-factor dispersion reversion",
+      instruments: ["EUR_USD", "GBP_USD", "USD_JPY"],
+      observation_count: 538,
+      stats: {
+        count: 538,
+        hit_rate: "0.54100000",
+        mean_return_bps: "0.79000000",
+        median_return_bps: "10.10000000",
+        total_return_bps: "427.00000000",
+        t_stat: "0.14000000",
       },
     },
   ],

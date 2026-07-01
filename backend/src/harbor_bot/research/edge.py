@@ -162,6 +162,7 @@ class EdgeAlgorithm:
     label: str
     description: str
     event_builder: Callable[..., list[EdgeEvent]]
+    lifecycle: str = "archived"
 
     def to_jsonable(self) -> dict[str, str]:
         return {
@@ -169,6 +170,7 @@ class EdgeAlgorithm:
             "hypothesis_id": self.hypothesis_id,
             "label": self.label,
             "description": self.description,
+            "lifecycle": self.lifecycle,
         }
 
 
@@ -563,7 +565,11 @@ def available_edge_algorithms() -> tuple[EdgeAlgorithm, ...]:
 
 
 def default_edge_algorithm_ids() -> tuple[str, ...]:
-    return tuple(algorithm.algorithm_id for algorithm in available_edge_algorithms())
+    return tuple(
+        algorithm.algorithm_id
+        for algorithm in available_edge_algorithms()
+        if algorithm.lifecycle == "active"
+    )
 
 
 def get_edge_algorithm(algorithm_id: str) -> EdgeAlgorithm:

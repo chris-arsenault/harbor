@@ -127,6 +127,7 @@ export interface EdgeAlgorithm {
   hypothesis_id: string;
   label: string;
   description: string;
+  lifecycle: "active" | "archived";
 }
 
 export interface EdgeScanPayload {

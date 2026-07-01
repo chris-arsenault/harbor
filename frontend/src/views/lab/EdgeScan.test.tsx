@@ -20,7 +20,7 @@ test("applies edge scan presets, submits structured payloads, and renders result
 
   renderWithClient(<EdgeScan />);
 
-  fireEvent.click(screen.getByRole("button", { name: "H005 GBP_JPY confirmatory" }));
+  fireEvent.click(screen.getByRole("button", { name: "H005 GBP_JPY archived confirm" }));
   expect(screen.getByLabelText("Instruments")).toHaveValue("GBP_JPY");
   expect(screen.getByLabelText("Algorithms")).toHaveValue("clean_level_sweep_reversal");
   expect(screen.getByLabelText("Horizons")).toHaveValue("15, 30, 60");
@@ -55,7 +55,7 @@ test("applies edge scan presets, submits structured payloads, and renders result
     )
   ).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole("button", { name: "H007 EUR_USD continuation" }));
+  fireEvent.click(screen.getByRole("button", { name: "H007 continuation archive" }));
   expect(screen.getByLabelText("Instruments")).toHaveValue("EUR_USD");
   expect(screen.getByLabelText("Algorithms")).toHaveValue(
     "generic_sweep_continuation, mss_confirmed_sweep_continuation, early_ny_sweep_continuation"
@@ -63,7 +63,7 @@ test("applies edge scan presets, submits structured payloads, and renders result
   expect(screen.getByLabelText("Horizons")).toHaveValue("15, 30, 60, 120");
 });
 
-test("submits blank scan controls as backend defaults", async () => {
+test("defaults to the archived H001-H006 sweep reversal family", async () => {
   const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
     const url = requestUrl(input);
     if (url.startsWith("/api/research/edge/scan")) {
@@ -74,6 +74,12 @@ test("submits blank scan controls as backend defaults", async () => {
 
   renderWithClient(<EdgeScan />);
 
+  expect(screen.getByLabelText("Instruments")).toHaveValue("");
+  expect(screen.getByLabelText("Algorithms")).toHaveValue(
+    "generic_sweep_reversal, non_news_proxy_sweep_reversal, mss_confirmed_sweep_reversal, compressed_range_sweep_reversal, clean_level_sweep_reversal, early_ny_sweep_reversal"
+  );
+  expect(screen.getByLabelText("Horizons")).toHaveValue("15, 30, 60, 120");
+
   fireEvent.click(screen.getByRole("button", { name: "Run edge scan" }));
 
   await waitFor(() =>
@@ -83,8 +89,15 @@ test("submits blank scan controls as backend defaults", async () => {
         body: JSON.stringify({
           window_days: 730,
           instruments: null,
-          algorithms: null,
-          horizons: null,
+          algorithms: [
+            "generic_sweep_reversal",
+            "non_news_proxy_sweep_reversal",
+            "mss_confirmed_sweep_reversal",
+            "compressed_range_sweep_reversal",
+            "clean_level_sweep_reversal",
+            "early_ny_sweep_reversal",
+          ],
+          horizons: [15, 30, 60, 120],
         }),
         headers: { Accept: "application/json", "Content-Type": "application/json" },
         method: "POST",
@@ -112,7 +125,7 @@ const edgeScanResult = {
     {
       algorithm_id: "clean_level_sweep_reversal",
       hypothesis_id: "H005",
-      label: "H005 GBP_JPY confirmatory",
+      label: "H005 GBP_JPY archived confirm",
       description: "confirmatory edge scan",
     },
   ],

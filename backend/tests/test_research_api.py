@@ -151,11 +151,43 @@ def test_edge_study_with_no_window_returns_empty() -> None:
     assert result["warnings"][0]["type"] == "no_data"
 
 
-def test_edge_scan_reports_multiple_testing_notes() -> None:
+def test_edge_scan_defaults_to_no_active_archived_sweep_algorithms() -> None:
     service = ResearchService(candle_reader=_fixture_records, window_selector=_fixed_window)
 
     result = asyncio.run(
         service.edge_scan(instruments=("EUR_USD",), horizons=(3, 5), window_days=1)
+    )
+
+    assert result["statistical_notes"]["instrument_count"] == 1
+    assert result["statistical_notes"]["algorithm_count"] == 0
+    assert result["statistical_notes"]["horizon_count"] == 2
+    assert result["statistical_notes"]["planned_overall_test_count"] == 0
+    assert result["statistical_notes"]["overall_test_count"] == 0
+    assert result["algorithms"] == []
+    assert result["results"] == []
+
+
+def test_explicit_archived_edge_scan_reports_multiple_testing_notes() -> None:
+    service = ResearchService(candle_reader=_fixture_records, window_selector=_fixed_window)
+    archived_algorithm_ids = (
+        "generic_sweep_reversal",
+        "non_news_proxy_sweep_reversal",
+        "mss_confirmed_sweep_reversal",
+        "compressed_range_sweep_reversal",
+        "clean_level_sweep_reversal",
+        "early_ny_sweep_reversal",
+        "generic_sweep_continuation",
+        "mss_confirmed_sweep_continuation",
+        "early_ny_sweep_continuation",
+    )
+
+    result = asyncio.run(
+        service.edge_scan(
+            instruments=("EUR_USD",),
+            horizons=(3, 5),
+            algorithm_ids=archived_algorithm_ids,
+            window_days=1,
+        )
     )
 
     assert result["statistical_notes"]["instrument_count"] == 1

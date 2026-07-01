@@ -1,6 +1,6 @@
 # H006 — Early-NY sweep reversal
 
-- Status: proposed
+- Status: rejected / archived with sweep-reversal family
 - Edge algorithm: `early_ny_sweep_reversal`
 
 ## Hypothesis
@@ -22,3 +22,11 @@ America/New_York.
 
 The early-NY subset must beat the rejected generic baseline under corrected edge
 statistics.
+
+## Decision
+
+H006 did not beat the rejected generic sweep baseline enough to remain active. It remains archived for reproducibility only.
+
+## Archive location
+
+The algorithm remains available through the Lab archived edge-scan panel and explicit API requests, but it is excluded from active research defaults.
