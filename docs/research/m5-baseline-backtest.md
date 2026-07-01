@@ -36,14 +36,16 @@ Only local recorded fixtures were available for M5. The report should be replace
 
 | Fixture | Trade count | Net PnL | Max drawdown | Expectancy | Average R | Ending NAV |
 | ---- | ----: | ----: | ----: | ----: | ----: | ----: |
-| Clean signal day | 1 | 95.996160 | 0 | 95.996160 | 1.782857142857142857142857143 | 10095.996160 |
+| Clean signal day | 1 | 96.150000 | 0 | 96.150000 | 1.785714285714285714285714286 | 10096.150000 |
 | No-trade day | 0 | 0 | 0 | 0 | 0 | 10000 |
 
 ## Trade Snapshot
 
 | Fixture | Side | Entry UTC | Entry | Exit UTC | Exit | Exit reason | PnL | R |
 | ---- | ---- | ---- | ----: | ---- | ----: | ---- | ----: | ----: |
-| Clean signal day | long | 2026-01-15T14:34:00+00:00 | 1.09105 | 2026-01-15T14:40:00+00:00 | 1.097290 | take_profit | 95.996160 | 1.782857142857142857142857143 |
+| Clean signal day | long | 2026-01-15T14:34:00+00:00 | 1.09105 | 2026-01-15T14:40:00+00:00 | 1.097300 | take_profit | 96.150000 | 1.785714285714285714285714286 |
+
+Take-profit fills are modeled as limit orders (no adverse slippage); stop-side and forced exits keep slippage. Numbers above reflect that fill model.
 
 ## Lookahead Notes
 

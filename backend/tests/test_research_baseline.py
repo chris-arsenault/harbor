@@ -31,7 +31,7 @@ def test_expectancy_delta_against_self_is_zero() -> None:
 
     delta = expectancy_delta(recorded, recorded)
 
-    assert delta["clean_signal_day"]["before"] == "95.996160"
+    assert delta["clean_signal_day"]["before"] == "96.150000"
     assert Decimal(delta["clean_signal_day"]["delta"]) == Decimal("0")
 
 

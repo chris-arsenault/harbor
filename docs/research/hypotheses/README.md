@@ -20,13 +20,17 @@ an economic claim first, then an edge-search algorithm. Status values are
 | [H103](H103-oanda-positioning-orderbook.md) | proposed / data recorder needed | future OANDA positioning/order-book algorithms | Retail positioning and visible liquidity clusters. |
 | [H104](H104-rates-yield-conditioning.md) | proposed / external data layer needed | future rates conditioning | FX edge conditioned on yield differentials. |
 | [H105](H105-risk-commodity-conditioning.md) | proposed / external data layer needed | future risk/commodity conditioning | JPY/AUD pairs conditioned on risk and commodity state. |
-| [H106](H106-month-end-fix-flow.md) | proposed / calendar input needed | future month-end/fix algorithms | Forced hedge-rebalancing flow around month-end / London fix. |
+| [H106](H106-month-end-fix-flow.md) | active / exploratory | `month_end_fix_probe` | Forced hedge-rebalancing flow around month-end / London fix. |
 | [H107](H107-scheduled-event-surprise.md) | proposed / calendar + surprise data needed | future macro surprise algorithms | Scheduled event drift conditioned on surprise. |
-| [H108](H108-weekend-risk-gap.md) | active / data-gated | `weekend_risk_gap_probe` | Weekend 24/7 risk-asset information gap into Monday FX. |
+| [H108](H108-weekend-risk-gap.md) | active / data-gated | `weekend_risk_gap_probe` | Weekend 24/7 risk-asset information gap: reopen gap vs post-reopen drift legs. |
 | [H109](H109-regime-resurrection.md) | active / exploratory | `regime_resurrection_probe` | Regime-conditioned resurrection of dead/inverted signals. |
-| [H110](H110-volatility-target.md) | active / exploratory | `range_forecast_probe` | Predict volatility/range/no-trade state instead of direction. |
-| [H111](H111-book-conditioned-sweeps.md) | active / awaiting H103 data | `book_conditioner_readiness` | Use order/position book state as sweep conditioner. |
-| [H112](H112-lead-lag-network.md) | active / exploratory | `lead_lag_network_probe` | Currency-network lead/lag propagation timing. |
+| [H110](H110-volatility-target.md) | active / exploratory | `range_forecast_probe` | HAR-style next-day range forecast instead of direction. |
+| [H111](H111-book-conditioned-sweeps.md) | active / awaiting H103 data | `book_conditioner_readiness` | Book state as sweep conditioner: trapped crowd and underwater-long fade. |
+| [H112](H112-lead-lag-network.md) | active / exploratory | `lead_lag_network_probe` | Currency-network lead/lag propagation timing (family FDR-gated). |
+| [H113](H113-cross-sectional-reversal.md) | active / candidate | `cs_reversal_20d_5d_tranched` | Vol-scaled, tranched cross-sectional reversal (inverted H100 momentum). |
+| [H114](H114-cross-pair-sweep-divergence.md) | active / exploratory | `sweep_divergence_probe` | Sibling-confirmed sweeps continue; divergent sweeps revert. |
+| [H115](H115-multi-candle-sweep-reclaim.md) | active / exploratory | `multi_candle_sweep_reclaim_reversal` | Slow breach-then-reclaim sweeps the single-candle definition misses. |
+| [H116](H116-triple-barrier-sweep-outcomes.md) | active / exploratory | `run_barrier_scan` barrier scoring | First-touch ±k·ATR barrier outcomes; meta-label training target. |
 
 ## Research gate
 
@@ -34,3 +38,11 @@ Do not promote a strategy variant from a hypothesis unless its edge algorithm
 shows a statistically meaningful base-rate skew after clustered standard errors,
 multiple-test adjustment, cost sanity checks, walk-forward validation, and
 paper-forward evidence.
+
+Multiple-test control is two-tier: exploratory scans use Benjamini-Hochberg FDR
+across the scan family (Bonferroni across a whole universe scan demands
+per-event effects larger than any realistic FX edge), and any FDR survivor must
+then pass a single pre-registered confirmatory rerun under the Bonferroni gate.
+For power, prefer ATR-normalized outcomes, the pooled multi-instrument panel
+scan (`POST /api/research/edge/pooled`), and barrier first-touch scoring
+(`POST /api/research/edge/barriers`) over raw fixed-horizon pip means.

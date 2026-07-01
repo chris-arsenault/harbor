@@ -36,39 +36,47 @@ def detect_sweep(
     candle = require_closed_candle(candle)
     buffer = instrument_rules.pips_to_price(config.sweep_buffer_pips)
 
-    for level_name in _HIGH_LEVELS:
-        if config.one_trade_per_level and _level_already_actionable(day_state, level_name):
-            continue
-        level_price = levels.price_for(level_name)
-        if level_price is None:
-            continue
-        if candle.h > level_price + buffer and candle.c < level_price:
-            return SweepState(
-                level_name=level_name,
-                level_price=level_price,
-                bias=Bias.BEARISH,
-                sweep_extreme=candle.h,
-                swept_ts=candle.ts,
-                candle_index=candle_index,
-                fvg_deadline_index=candle_index + config.fvg_window,
-            )
+    swept_highs = [
+        (level_name, level_price)
+        for level_name in _HIGH_LEVELS
+        if not (config.one_trade_per_level and _level_already_actionable(day_state, level_name))
+        and (level_price := levels.price_for(level_name)) is not None
+        and candle.h > level_price + buffer
+        and candle.c < level_price
+    ]
+    if swept_highs:
+        # One candle can clear several stacked levels; the outermost one is the
+        # deepest liquidity taken and the economically meaningful sweep.
+        level_name, level_price = max(swept_highs, key=lambda item: item[1])
+        return SweepState(
+            level_name=level_name,
+            level_price=level_price,
+            bias=Bias.BEARISH,
+            sweep_extreme=candle.h,
+            swept_ts=candle.ts,
+            candle_index=candle_index,
+            fvg_deadline_index=candle_index + config.fvg_window,
+        )
 
-    for level_name in _LOW_LEVELS:
-        if config.one_trade_per_level and _level_already_actionable(day_state, level_name):
-            continue
-        level_price = levels.price_for(level_name)
-        if level_price is None:
-            continue
-        if candle.low < level_price - buffer and candle.c > level_price:
-            return SweepState(
-                level_name=level_name,
-                level_price=level_price,
-                bias=Bias.BULLISH,
-                sweep_extreme=candle.low,
-                swept_ts=candle.ts,
-                candle_index=candle_index,
-                fvg_deadline_index=candle_index + config.fvg_window,
-            )
+    swept_lows = [
+        (level_name, level_price)
+        for level_name in _LOW_LEVELS
+        if not (config.one_trade_per_level and _level_already_actionable(day_state, level_name))
+        and (level_price := levels.price_for(level_name)) is not None
+        and candle.low < level_price - buffer
+        and candle.c > level_price
+    ]
+    if swept_lows:
+        level_name, level_price = min(swept_lows, key=lambda item: item[1])
+        return SweepState(
+            level_name=level_name,
+            level_price=level_price,
+            bias=Bias.BULLISH,
+            sweep_extreme=candle.low,
+            swept_ts=candle.ts,
+            candle_index=candle_index,
+            fvg_deadline_index=candle_index + config.fvg_window,
+        )
     return None
 
 

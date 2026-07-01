@@ -69,7 +69,7 @@ def test_shadow_engine_runs_active_variants_independently_on_same_closed_stream(
     assert {trade.variant_id for trade in trades} == {1, 2}
     assert {trade.exit_reason for trade in trades} == {"take_profit"}
     assert all(trade.entry_price == Decimal("1.10005") for trade in trades)
-    assert all(trade.pnl == Decimal("19.40000") for trade in trades)
+    assert all(trade.pnl == Decimal("19.50000") for trade in trades)
     assert 7 in seen_fvg_windows
     assert 11 in seen_fvg_windows
 

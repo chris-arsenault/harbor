@@ -17,10 +17,13 @@ has enough trapped flow to matter.
 
 ## Initial test
 
-The current probe reports both readiness and a first interaction diagnostic.
-Readiness uses paired order/position snapshot counts. The interaction row tests
+The current probe reports readiness and two interaction diagnostics. Readiness
+uses paired order/position snapshot counts. The first interaction row tests
 generic sweep reversals conditioned on latest position-book crowding being
-trapped against the reversal direction by at least 10 percentage points.
+trapped against the reversal direction by at least 10 percentage points. The
+second (`underwater_long_fade_60m_reversal`) conditions bearish sweeps on at
+least 60% of position-book long mass sitting above the sweep price — underwater
+longs are trapped supply whose break-even selling should cap rallies.
 
 ## Gate
 

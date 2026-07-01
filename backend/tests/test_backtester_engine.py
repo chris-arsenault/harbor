@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -6,8 +6,16 @@ from harbor_bot.backtester.data import load_candle_fixture
 from harbor_bot.backtester.engine import run_backtest
 from harbor_bot.backtester.models import BacktestConfig, BacktestInput, BacktestStatus
 from harbor_bot.config.defaults import load_default_config
+from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.strategy.core import StrategyResult
-from harbor_bot.strategy.models import DayState, InstrumentRules, strategy_config_from_defaults
+from harbor_bot.strategy.models import (
+    DayState,
+    InstrumentRules,
+    LevelName,
+    MarketEntrySetup,
+    StrategyDecision,
+    strategy_config_from_defaults,
+)
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "backtester"
 
@@ -69,6 +77,69 @@ def test_engine_computes_session_levels_at_each_day_ny_boundary() -> None:
         date(2026, 1, 16),
     ]
     assert all(levels is not None for _, levels in seen_boundaries)
+
+
+def test_engine_books_open_position_at_day_rollover_instead_of_dropping_it() -> None:
+    # A position still open when the trading date changes must be force-closed
+    # at the outgoing day's last candle, never silently discarded.
+    day_one = datetime(2026, 1, 15, 13, 30, tzinfo=UTC)
+    day_two = datetime(2026, 1, 16, 13, 30, tzinfo=UTC)
+    candles = (
+        _flat_candle(day_one),
+        _flat_candle(day_one + timedelta(minutes=1)),
+        _flat_candle(day_two),
+        _flat_candle(day_two + timedelta(minutes=1)),
+    )
+    entered = []
+
+    def evaluator(day_state: DayState, candle, **kwargs) -> StrategyResult:
+        if not entered:
+            entered.append(candle.ts)
+            return StrategyResult(
+                state=day_state,
+                decisions=[
+                    StrategyDecision(
+                        kind="market_entry",
+                        ts=candle.ts,
+                        payload={"setup": _far_bracket_setup(candle.ts)},
+                    )
+                ],
+            )
+        return StrategyResult(state=day_state, decisions=[])
+
+    result = run_backtest(_input_from_candles(candles), strategy_evaluator=evaluator)
+
+    assert len(result.trades) == 1
+    trade = result.trades[0]
+    assert trade.exit_reason == "day_rollover"
+    assert trade.exit_ts == day_one + timedelta(minutes=1)
+    assert result.equity_curve[-1].nav == BacktestConfig().initial_nav + trade.pnl
+
+
+def _flat_candle(ts: datetime) -> ClosedCandle:
+    return ClosedCandle(
+        instrument="EUR_USD",
+        ts=ts,
+        o=Decimal("1.1000"),
+        h=Decimal("1.1002"),
+        low=Decimal("1.0998"),
+        c=Decimal("1.1000"),
+        volume=50,
+    )
+
+
+def _far_bracket_setup(ts: datetime) -> MarketEntrySetup:
+    return MarketEntrySetup(
+        ts=ts,
+        instrument="EUR_USD",
+        side="long",
+        level_name=LevelName.ASIA_LOW,
+        entry_reference=Decimal("1.1000"),
+        stop=Decimal("1.0500"),
+        target=Decimal("1.1500"),
+        risk=Decimal("0.0500"),
+        units=Decimal("10000"),
+    )
 
 
 def _input(name: str) -> BacktestInput:

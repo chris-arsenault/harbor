@@ -6,13 +6,29 @@ Returns are reported in basis points of basket/log-return, not pips.
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from math import log, sqrt
 from statistics import median
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.strategy.models import require_closed_candle
+
+_NY_ZONE = ZoneInfo("America/New_York")
+_NY_ROLLOVER = time(17, 0)
+
+
+def ny_trading_day(ts: datetime) -> date:
+    """FX trading-day label under the New York 17:00 rollover convention.
+
+    Grouping candles by raw UTC calendar date creates bogus Sunday part-days
+    (FX reopens ~17:00 ET Sunday); those hours belong to Monday's trading day.
+    """
+    local = ts.astimezone(_NY_ZONE)
+    if local.timetz().replace(tzinfo=None) >= _NY_ROLLOVER:
+        return local.date() + timedelta(days=1)
+    return local.date()
 
 
 @dataclass(frozen=True)
@@ -111,6 +127,19 @@ def available_cross_algorithms() -> tuple[CrossAlgorithm, ...]:
             lifecycle="archived",
         ),
         CrossAlgorithm(
+            algorithm_id="cs_reversal_20d_5d_tranched",
+            hypothesis_id="H113",
+            label="Cross-sectional reversal 20d→5d, vol-scaled, 5 tranches",
+            description=(
+                "Long recent 20-day losers, short winners (the inverse of the "
+                "significantly negative H100 momentum), inverse-vol weighted legs, "
+                "risk split across 5 staggered daily tranches so observations are "
+                "non-overlapping daily portfolio returns."
+            ),
+            evaluator=_cs_reversal_tranched,
+            lifecycle="active",
+        ),
+        CrossAlgorithm(
             algorithm_id="tri_eur_gbp_residual_5d",
             hypothesis_id="H101",
             label="EUR/GBP triangular residual convergence",
@@ -183,7 +212,7 @@ def daily_closes(candles: list[ClosedCandle]) -> list[DailyClose]:
     by_day: dict[date, ClosedCandle] = {}
     for candle in sorted(candles, key=lambda item: item.ts):
         require_closed_candle(candle)
-        by_day[candle.ts.date()] = candle
+        by_day[ny_trading_day(candle.ts)] = candle
     return [DailyClose(day=day, close=float(candle.c)) for day, candle in sorted(by_day.items())]
 
 
@@ -210,6 +239,73 @@ def _cs_momentum(closes: dict[str, list[DailyClose]]) -> list[CrossObservation]:
 
 def _cs_value(closes: dict[str, list[DailyClose]]) -> list[CrossObservation]:
     return _cross_section_rank(closes, lookback=60, horizon=5, reverse=True)
+
+
+def _cs_reversal_tranched(closes: dict[str, list[DailyClose]]) -> list[CrossObservation]:
+    """H113: cross-sectional reversal as a daily tranched portfolio.
+
+    H100 measured 20d cross-sectional momentum at t=-2.14 — a reversal signal.
+    This promotes the inverse with three structural upgrades: inverse-vol
+    weighted legs (equal risk, so JPY crosses do not dominate), long losers /
+    short winners, and one-fifth of risk rebalanced each day on a 5-day hold.
+    Observations are non-overlapping one-day portfolio returns, so the t-stat
+    needs no overlap correction. Weights at day t use data through t only; the
+    return is measured t→t+1.
+    """
+    lookback, horizon, vol_window = 20, 5, 20
+    maps = _aligned_maps(closes)
+    instruments = sorted(maps)
+    days = _common_days(maps, instruments)
+    start = lookback + vol_window
+    if len(instruments) < 4 or len(days) <= start + 1:
+        return []
+    leg_count = max(1, len(instruments) // 4)
+    daily_returns: dict[str, dict[date, float]] = {instrument: {} for instrument in instruments}
+    for idx in range(1, len(days)):
+        for instrument in instruments:
+            daily_returns[instrument][days[idx]] = log(
+                maps[instrument][days[idx]] / maps[instrument][days[idx - 1]]
+            )
+
+    def rebalance_weights(idx: int) -> dict[str, float]:
+        scores: list[tuple[str, float]] = []
+        inverse_vol: dict[str, float] = {}
+        for instrument in instruments:
+            momentum = log(maps[instrument][days[idx]] / maps[instrument][days[idx - lookback]])
+            recent = [
+                daily_returns[instrument][days[position]]
+                for position in range(idx - vol_window + 1, idx + 1)
+            ]
+            sigma = max(_stddev(recent), 1e-6)
+            scores.append((instrument, momentum))
+            inverse_vol[instrument] = 1.0 / sigma
+        ranked = sorted(scores, key=lambda item: item[1], reverse=True)
+        winners = [instrument for instrument, _ in ranked[:leg_count]]
+        losers = [instrument for instrument, _ in ranked[-leg_count:]]
+        long_mass = sum(inverse_vol[instrument] for instrument in losers)
+        short_mass = sum(inverse_vol[instrument] for instrument in winners)
+        weights = {instrument: inverse_vol[instrument] / long_mass for instrument in losers}
+        weights.update(
+            {instrument: -inverse_vol[instrument] / short_mass for instrument in winners}
+        )
+        return weights
+
+    tranches: dict[int, dict[str, float]] = {}
+    observations: list[CrossObservation] = []
+    for idx in range(start, len(days) - 1):
+        tranches[(idx - start) % horizon] = rebalance_weights(idx)
+        tranche_returns = [
+            sum(
+                weight * daily_returns[instrument][days[idx + 1]]
+                for instrument, weight in weights.items()
+            )
+            for weights in tranches.values()
+        ]
+        portfolio_return = sum(tranche_returns) / len(tranche_returns)
+        observations.append(
+            CrossObservation(day=days[idx + 1], return_bps=portfolio_return * 10_000)
+        )
+    return observations
 
 
 def _cross_section_rank(

@@ -175,7 +175,7 @@ def test_edge_study_with_no_window_returns_empty() -> None:
     assert result["warnings"][0]["type"] == "no_data"
 
 
-def test_edge_scan_defaults_to_no_active_archived_sweep_algorithms() -> None:
+def test_edge_scan_defaults_to_active_reclaim_algorithm_only() -> None:
     service = ResearchService(candle_reader=_fixture_records, window_selector=_fixed_window)
 
     result = asyncio.run(
@@ -183,12 +183,16 @@ def test_edge_scan_defaults_to_no_active_archived_sweep_algorithms() -> None:
     )
 
     assert result["statistical_notes"]["instrument_count"] == 1
-    assert result["statistical_notes"]["algorithm_count"] == 0
+    assert result["statistical_notes"]["algorithm_count"] == 1
     assert result["statistical_notes"]["horizon_count"] == 2
-    assert result["statistical_notes"]["planned_overall_test_count"] == 0
-    assert result["statistical_notes"]["overall_test_count"] == 0
-    assert result["algorithms"] == []
-    assert result["results"] == []
+    assert result["statistical_notes"]["planned_overall_test_count"] == 2
+    assert result["statistical_notes"]["overall_test_count"] == 2
+    assert [algorithm["algorithm_id"] for algorithm in result["algorithms"]] == [
+        "multi_candle_sweep_reclaim_reversal"
+    ]
+    assert {row["algorithm_id"] for row in result["results"]} == {
+        "multi_candle_sweep_reclaim_reversal"
+    }
 
 
 def test_explicit_archived_edge_scan_reports_multiple_testing_notes() -> None:
@@ -219,7 +223,7 @@ def test_explicit_archived_edge_scan_reports_multiple_testing_notes() -> None:
     assert result["statistical_notes"]["horizon_count"] == 2
     assert result["statistical_notes"]["planned_overall_test_count"] == 18
     assert result["statistical_notes"]["overall_test_count"] == 18
-    assert result["statistical_notes"]["overall_multiple_test_method"] == "bonferroni"
+    assert result["statistical_notes"]["overall_multiple_test_method"] == "benjamini_hochberg"
     assert len(result["algorithms"]) == 9
     assert {row["algorithm_id"] for row in result["results"]} >= {
         "generic_sweep_reversal",

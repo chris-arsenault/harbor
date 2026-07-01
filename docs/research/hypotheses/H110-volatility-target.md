@@ -17,9 +17,19 @@ standalone directional alpha.
 
 ## Initial test
 
-The probe now uses true daily high-low range from persisted candles and measures
-correlation between previous daily range and next daily range by instrument. The
-secondary metric is top-tercile range hit rate among predicted high-range days.
+The probe fits a HAR-style model per instrument: next daily high-low range
+regressed on the 1-day, 5-day, and 22-day average ranges, refit on an expanding
+window so every prediction is out-of-sample. The effect is the correlation of
+prediction versus realized range; the secondary metric is top-tercile range hit
+rate among predicted high-range days. Daily bars use the New York 17:00
+trading-day convention (no Sunday part-days).
+
+## Monetization paths
+
+A validated range forecast feeds three products, none of which needs
+directional alpha: a no-trade/size-down filter for directional strategies,
+inverse-range position sizing, and a direction-agnostic session straddle on
+predicted high-range days.
 
 ## Gate
 

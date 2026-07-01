@@ -20,7 +20,10 @@ regime-stable.
 
 The probe inverts the H100 20d→5d momentum leg and splits observations into
 low/mid/high realized-volatility terciles. Each tercile reports mean reversal bps
-and t-stat.
+and t-stat. Records stride by the 5-day holding horizon so forward windows do
+not overlap; the t-stats are honest but the probe needs a correspondingly longer
+history (~1.5 years) before terciles fill. The unconditional version of this
+effect is promoted separately as H113.
 
 ## Gate
 

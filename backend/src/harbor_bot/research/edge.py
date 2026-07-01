@@ -62,6 +62,7 @@ class ForwardSummary:
     effective_sample_size: int = 0
     p_value: Decimal = Decimal("1")
     bonferroni_p_value: Decimal = Decimal("1")
+    bh_q_value: Decimal = Decimal("1")
     correction: str = "iid"
 
     def to_jsonable(self) -> dict[str, Any]:
@@ -77,6 +78,7 @@ class ForwardSummary:
             "effective_sample_size": self.effective_sample_size,
             "p_value": str(self.p_value),
             "bonferroni_p_value": str(self.bonferroni_p_value),
+            "bh_q_value": str(self.bh_q_value),
             "correction": self.correction,
         }
 
@@ -206,19 +208,34 @@ def summarize(values: list[Decimal]) -> ForwardSummary:
         effective_sample_size=count,
         p_value=p_value,
         bonferroni_p_value=p_value,
+        bh_q_value=p_value,
     )
 
 
 def has_edge(summary: ForwardSummary) -> bool:
-    """An edge requires a statistically significant positive reversal, not just
-    a favourable hit-rate: enough samples, a positive mean, and a t-statistic
-    against the chance null (mean = 0) past ``T_THRESHOLD``."""
+    """Confirmatory gate: a statistically significant positive reversal, not
+    just a favourable hit-rate — enough samples, a positive mean, and a
+    t-statistic against the chance null (mean = 0) past ``T_THRESHOLD``, with
+    Bonferroni family control. Use for the single pre-registered test."""
+    return _edge_criteria(summary) and summary.bonferroni_p_value <= ALPHA
+
+
+def has_edge_fdr(summary: ForwardSummary) -> bool:
+    """Exploratory gate: identical criteria but Benjamini-Hochberg FDR control.
+
+    Bonferroni across a whole scan family (instruments x horizons x algorithms)
+    demands per-event effects far larger than any realistic FX microstructure
+    edge; for exploration, FDR keeps false positives bounded without making the
+    scan blind. Survivors still need the confirmatory ``has_edge`` rerun."""
+    return _edge_criteria(summary) and summary.bh_q_value <= ALPHA
+
+
+def _edge_criteria(summary: ForwardSummary) -> bool:
     return (
         summary.count >= MIN_SAMPLES
         and summary.effective_sample_size >= MIN_EFFECTIVE_SAMPLES
         and summary.mean_pips > 0
         and summary.t_stat >= T_THRESHOLD
-        and summary.bonferroni_p_value <= ALPHA
     )
 
 
@@ -261,6 +278,21 @@ def _bonferroni(p_value: Decimal, test_count: int) -> Decimal:
     if test_count <= 1:
         return p_value
     return min(Decimal("1"), p_value * Decimal(test_count))
+
+
+def _bh_q_values(p_values: list[Decimal]) -> list[Decimal]:
+    """Benjamini-Hochberg step-up q-values in the input order."""
+    count = len(p_values)
+    if count == 0:
+        return []
+    order = sorted(range(count), key=lambda idx: p_values[idx])
+    q_values = [Decimal("1")] * count
+    running = Decimal("1")
+    for reverse_rank, idx in enumerate(reversed(order)):
+        rank = count - reverse_rank
+        running = min(running, p_values[idx] * Decimal(count) / Decimal(rank))
+        q_values[idx] = min(Decimal("1"), running)
+    return q_values
 
 
 def _empty_summary() -> ForwardSummary:
@@ -328,6 +360,7 @@ def summarize_observations(observations: list["_Observation"]) -> ForwardSummary
         effective_sample_size=cluster_count,
         p_value=p_value,
         bonferroni_p_value=p_value,
+        bh_q_value=p_value,
         correction="cluster_by_trading_day",
     )
 
@@ -429,9 +462,11 @@ def run_edge_scan(
     horizons: tuple[int, ...] = (15, 30, 60),
     atr_window: int = DEFAULT_ATR_WINDOW,
     algorithm_ids: tuple[str, ...] = (BASELINE_ALGORITHM_ID,),
+    outcome_unit: str = "pips",
 ) -> list[EdgeScanRow]:
     """Run the edge study at multiple horizons and hypothesis algorithms."""
     _validate_horizons(horizons)
+    _validate_outcome_unit(outcome_unit)
     ordered = tuple(
         sorted((require_closed_candle(candle) for candle in candles), key=lambda c: c.ts)
     )
@@ -450,6 +485,7 @@ def run_edge_scan(
                 events,
                 candles=ordered,
                 horizon=horizon,
+                outcome_unit=outcome_unit,
             )
             overall = summarize_observations(observations)
             conditionals = _adjust_conditionals_for_family(_all_conditionals(observations))
@@ -462,15 +498,286 @@ def run_edge_scan(
                     horizon=horizon,
                     total_sweeps=len(events),
                     overall=overall,
-                    has_edge=has_edge(overall),
+                    has_edge=has_edge_fdr(overall),
                     best_conditional=_best_conditional(conditionals),
                     statistical_notes=_statistical_notes(
                         conditional_test_count=len(conditionals),
                         overall_test_count=len(horizons) * len(algorithm_ids),
+                        outcome_unit=outcome_unit,
                     ),
                 )
             )
     return _adjust_scan_rows_for_family(rows)
+
+
+def run_pooled_edge_scan(
+    candles_by_instrument: dict[str, list[ClosedCandle]],
+    *,
+    configs_by_instrument: dict[str, StrategyConfig],
+    rules_by_instrument: dict[str, InstrumentRules],
+    horizons: tuple[int, ...] = (15, 30, 60, 120),
+    atr_window: int = DEFAULT_ATR_WINDOW,
+    algorithm_ids: tuple[str, ...] = (BASELINE_ALGORITHM_ID,),
+) -> list[EdgeScanRow]:
+    """Pool ATR-normalized sweep observations across instruments per
+    (algorithm, horizon).
+
+    Per-instrument samples (~100 sweeps) cannot resolve realistic 1-4 pip
+    effects against a 30-pip outcome stddev. Pooling the panel multiplies the
+    sample while ATR units keep instruments comparable; clustering stays on the
+    NY trading day, which also absorbs same-day cross-pair correlation.
+    """
+    _validate_horizons(horizons)
+    ordered_by_instrument = {
+        instrument: tuple(
+            sorted((require_closed_candle(candle) for candle in candles), key=lambda c: c.ts)
+        )
+        for instrument, candles in candles_by_instrument.items()
+        if candles
+    }
+    pooled_label = f"POOLED[{','.join(sorted(ordered_by_instrument))}]"
+    rows: list[EdgeScanRow] = []
+    for algorithm_id in algorithm_ids:
+        algorithm = get_edge_algorithm(algorithm_id)
+        events_by_instrument = {
+            instrument: algorithm.event_builder(
+                ordered,
+                instrument=instrument,
+                config=configs_by_instrument[instrument],
+                instrument_rules=rules_by_instrument[instrument],
+                atr_window=atr_window,
+            )
+            for instrument, ordered in ordered_by_instrument.items()
+        }
+        for horizon in horizons:
+            observations: list[_Observation] = []
+            total_events = 0
+            for instrument, ordered in ordered_by_instrument.items():
+                events = events_by_instrument[instrument]
+                total_events += len(events)
+                observations.extend(
+                    _observations_with_forward(
+                        events,
+                        candles=ordered,
+                        horizon=horizon,
+                        outcome_unit="atr",
+                    )
+                )
+            overall = summarize_observations(observations)
+            conditionals = _adjust_conditionals_for_family(_all_conditionals(observations))
+            rows.append(
+                EdgeScanRow(
+                    algorithm_id=algorithm.algorithm_id,
+                    hypothesis_id=algorithm.hypothesis_id,
+                    algorithm_label=algorithm.label,
+                    instrument=pooled_label,
+                    horizon=horizon,
+                    total_sweeps=total_events,
+                    overall=overall,
+                    has_edge=has_edge_fdr(overall),
+                    best_conditional=_best_conditional(conditionals),
+                    statistical_notes={
+                        **_statistical_notes(
+                            conditional_test_count=len(conditionals),
+                            overall_test_count=len(horizons) * len(algorithm_ids),
+                            outcome_unit="atr",
+                        ),
+                        "pooled_instruments": sorted(ordered_by_instrument),
+                    },
+                )
+            )
+    return _adjust_scan_rows_for_family(rows)
+
+
+@dataclass(frozen=True)
+class BarrierScanRow:
+    algorithm_id: str
+    hypothesis_id: str
+    algorithm_label: str
+    instrument: str
+    horizon: int
+    barrier_r: Decimal
+    total_events: int
+    resolved: int
+    timeouts: int
+    reversal_first: int
+    adverse_first: int
+    overall: ForwardSummary
+    has_edge: bool
+    statistical_notes: dict[str, Any]
+
+    def to_jsonable(self) -> dict[str, Any]:
+        return {
+            "algorithm_id": self.algorithm_id,
+            "hypothesis_id": self.hypothesis_id,
+            "algorithm_label": self.algorithm_label,
+            "instrument": self.instrument,
+            "horizon": self.horizon,
+            "barrier_r": str(self.barrier_r),
+            "total_events": self.total_events,
+            "resolved": self.resolved,
+            "timeouts": self.timeouts,
+            "reversal_first": self.reversal_first,
+            "adverse_first": self.adverse_first,
+            "overall": self.overall.to_jsonable(),
+            "has_edge": self.has_edge,
+            "statistical_notes": self.statistical_notes,
+        }
+
+
+def run_barrier_scan(
+    candles: list[ClosedCandle],
+    *,
+    instrument: str,
+    config: StrategyConfig,
+    instrument_rules: InstrumentRules,
+    horizons: tuple[int, ...] = (30, 60, 120),
+    barrier_r: Decimal = Decimal("1.0"),
+    atr_window: int = DEFAULT_ATR_WINDOW,
+    algorithm_ids: tuple[str, ...] = (BASELINE_ALGORITHM_ID,),
+) -> list[BarrierScanRow]:
+    """H116: score events by the first touch of symmetric ±barrier_r·ATR
+    barriers instead of fixed-horizon means.
+
+    The outcome is +1 when the reversal-side barrier is touched first and -1
+    when the adverse barrier is; both-in-one-candle resolves adverse
+    (pessimistic) and timeouts are excluded but counted. This matches the
+    bracket-trade payoff shape and, as a bounded variable, carries far less
+    variance than raw forward pips — the mean of ±1 is 2·hit_rate−1 tested
+    against the coin-flip null with day-clustered errors.
+    """
+    _validate_horizons(horizons)
+    if barrier_r <= 0:
+        msg = "barrier_r must be positive"
+        raise ValueError(msg)
+    ordered = tuple(
+        sorted((require_closed_candle(candle) for candle in candles), key=lambda c: c.ts)
+    )
+    rows: list[BarrierScanRow] = []
+    for algorithm_id in algorithm_ids:
+        algorithm = get_edge_algorithm(algorithm_id)
+        events = algorithm.event_builder(
+            ordered,
+            instrument=instrument,
+            config=config,
+            instrument_rules=instrument_rules,
+            atr_window=atr_window,
+        )
+        for horizon in horizons:
+            observations: list[_Observation] = []
+            timeouts = 0
+            for event in events:
+                outcome = _first_barrier_outcome(
+                    event, candles=ordered, horizon=horizon, barrier_r=barrier_r
+                )
+                if outcome is None:
+                    timeouts += 1
+                    continue
+                observations.append(
+                    _Observation(
+                        index=event.index,
+                        trading_date=event.trading_date,
+                        level_name=event.level_name,
+                        bias=event.bias,
+                        reversal_pips=outcome,
+                        atr_pips=event.atr_pips,
+                    )
+                )
+            overall = summarize_observations(observations)
+            wins = sum(1 for obs in observations if obs.reversal_pips > 0)
+            rows.append(
+                BarrierScanRow(
+                    algorithm_id=algorithm.algorithm_id,
+                    hypothesis_id=algorithm.hypothesis_id,
+                    algorithm_label=algorithm.label,
+                    instrument=instrument,
+                    horizon=horizon,
+                    barrier_r=barrier_r,
+                    total_events=len(events),
+                    resolved=len(observations),
+                    timeouts=timeouts,
+                    reversal_first=wins,
+                    adverse_first=len(observations) - wins,
+                    overall=overall,
+                    has_edge=has_edge_fdr(overall),
+                    statistical_notes={
+                        "outcome": "first_touch_of_symmetric_atr_barriers",
+                        "hypothesis_frame": "H116",
+                        "barrier_r": str(barrier_r),
+                        "ambiguous_candle_policy": "adverse_first",
+                        "timeout_policy": "excluded_from_summary",
+                        "null_hypothesis": "first-touch skew = coin flip",
+                        "standard_error_correction": "max(iid, cluster_by_trading_day)",
+                    },
+                )
+            )
+    return _adjust_barrier_rows_for_family(rows)
+
+
+def _first_barrier_outcome(
+    event: EdgeEvent,
+    *,
+    candles: tuple[ClosedCandle, ...],
+    horizon: int,
+    barrier_r: Decimal,
+) -> Decimal | None:
+    if event.atr_pips <= 0:
+        return None
+    entry = candles[event.index].c
+    distance = barrier_r * event.atr_pips * event.pip_size
+    deadline = candles[event.index].ts + timedelta(minutes=horizon)
+    if event.bias == Bias.BULLISH:
+        reversal_level, adverse_level = entry + distance, entry - distance
+    else:
+        reversal_level, adverse_level = entry - distance, entry + distance
+    for position in range(event.index + 1, len(candles)):
+        candle = candles[position]
+        if candle.ts > deadline:
+            break
+        touched_adverse = (
+            candle.low <= adverse_level if event.bias == Bias.BULLISH else candle.h >= adverse_level
+        )
+        touched_reversal = (
+            candle.h >= reversal_level
+            if event.bias == Bias.BULLISH
+            else candle.low <= reversal_level
+        )
+        if touched_adverse:
+            return Decimal("-1")
+        if touched_reversal:
+            return Decimal("1")
+    return None
+
+
+def _adjust_barrier_rows_for_family(rows: list[BarrierScanRow]) -> list[BarrierScanRow]:
+    test_count = len(rows)
+    q_values = _bh_q_values([row.overall.p_value for row in rows])
+    adjusted: list[BarrierScanRow] = []
+    for row, q_value in zip(rows, q_values, strict=True):
+        overall = _with_family_adjustments(row.overall, test_count, q_value)
+        adjusted.append(
+            BarrierScanRow(
+                algorithm_id=row.algorithm_id,
+                hypothesis_id=row.hypothesis_id,
+                algorithm_label=row.algorithm_label,
+                instrument=row.instrument,
+                horizon=row.horizon,
+                barrier_r=row.barrier_r,
+                total_events=row.total_events,
+                resolved=row.resolved,
+                timeouts=row.timeouts,
+                reversal_first=row.reversal_first,
+                adverse_first=row.adverse_first,
+                overall=overall,
+                has_edge=has_edge_fdr(overall),
+                statistical_notes={
+                    **row.statistical_notes,
+                    "overall_test_count": test_count,
+                    "overall_multiple_test_method": "benjamini_hochberg",
+                },
+            )
+        )
+    return adjusted
 
 
 def adjust_edge_scan_rows_for_universe(rows: list[EdgeScanRow]) -> list[EdgeScanRow]:
@@ -536,6 +843,19 @@ def available_edge_algorithms() -> tuple[EdgeAlgorithm, ...]:
                 "differently from late-window sweeps."
             ),
             event_builder=_early_ny_events,
+        ),
+        EdgeAlgorithm(
+            algorithm_id="multi_candle_sweep_reclaim_reversal",
+            hypothesis_id="H115",
+            label="Multi-candle sweep reclaim reversal",
+            description=(
+                "A level breach that closes beyond the level and is reclaimed by a "
+                "close back inside within the FVG window. The single-candle sweep "
+                "definition cannot see these slower stop-runs; this is the "
+                "complementary event population."
+            ),
+            event_builder=_multi_candle_reclaim_events,
+            lifecycle="active",
         ),
         EdgeAlgorithm(
             algorithm_id="generic_sweep_continuation",
@@ -771,9 +1091,11 @@ def _compressed_range_events(
     ranges_so_far: list[Decimal] = []
     for candidate in candidates:
         range_pips = _session_range_pips(candidate, instrument_rules)
-        ranges_so_far.append(range_pips)
-        if range_pips <= _median(ranges_so_far):
+        # Compare against the median of *prior* sessions only; including the
+        # current value leaks the observation into its own baseline.
+        if ranges_so_far and range_pips <= _median(ranges_so_far):
             filtered.append(candidate)
+        ranges_so_far.append(range_pips)
     return _events_from_candidates(
         filtered, candles=candles, atr_window=atr_window, instrument_rules=instrument_rules
     )
@@ -817,6 +1139,101 @@ def _early_ny_events(
     return _events_from_candidates(
         candidates, candles=candles, atr_window=atr_window, instrument_rules=instrument_rules
     )
+
+
+_RECLAIM_HIGH_LEVELS = (
+    LevelName.ASIA_HIGH,
+    LevelName.LONDON_HIGH,
+    LevelName.PREV_DAY_HIGH,
+)
+_RECLAIM_LOW_LEVELS = (
+    LevelName.ASIA_LOW,
+    LevelName.LONDON_LOW,
+    LevelName.PREV_DAY_LOW,
+)
+
+
+def _multi_candle_reclaim_events(
+    candles: tuple[ClosedCandle, ...],
+    *,
+    instrument: str,
+    config: StrategyConfig,
+    instrument_rules: InstrumentRules,
+    atr_window: int,
+) -> list[EdgeEvent]:
+    """H115: breach candle closes beyond the level; a later candle closes back
+    inside within ``fvg_window`` candles. Single-candle wick-and-reclaim sweeps
+    are excluded (they are the H001 population); the level retires after its
+    first resolution either way."""
+    buffer = instrument_rules.pips_to_price(config.sweep_buffer_pips)
+    events: list[EdgeEvent] = []
+    for trading_date, day_start_index, day_candles in _day_groups(candles, config):
+        day_history: list[ClosedCandle] = []
+        session_levels = None
+        pending: dict[LevelName, int] = {}
+        done: set[LevelName] = set()
+        for day_index, candle in enumerate(day_candles):
+            day_history.append(candle)
+            if session_levels is None and candle.ts.astimezone(UTC) >= _ny_start(
+                trading_date, config
+            ):
+                session_levels = _try_levels(
+                    day_history, trading_date=trading_date, instrument=instrument, config=config
+                )
+            if session_levels is None or not is_in_ny_trade_window(
+                candle, trading_date=trading_date, config=config
+            ):
+                continue
+            for level_name, bias, is_high in (
+                *((name, Bias.BEARISH, True) for name in _RECLAIM_HIGH_LEVELS),
+                *((name, Bias.BULLISH, False) for name in _RECLAIM_LOW_LEVELS),
+            ):
+                if level_name in done:
+                    continue
+                level_price = session_levels.price_for(level_name)
+                if level_price is None:
+                    continue
+                if level_name in pending:
+                    if day_index - pending[level_name] > config.fvg_window:
+                        del pending[level_name]
+                    elif _closed_back_inside(candle, level_price, is_high=is_high):
+                        events.append(
+                            EdgeEvent(
+                                index=day_start_index + day_index,
+                                trading_date=trading_date,
+                                level_name=level_name,
+                                bias=bias,
+                                atr_pips=_atr_pips(
+                                    candles,
+                                    day_start_index + day_index,
+                                    atr_window,
+                                    instrument_rules,
+                                ),
+                                pip_size=instrument_rules.pip_size,
+                            )
+                        )
+                        done.add(level_name)
+                        del pending[level_name]
+                    continue
+                if _breached_beyond(candle, level_price, buffer, is_high=is_high):
+                    if _closed_back_inside(candle, level_price, is_high=is_high):
+                        # Single-candle wick-and-reclaim: the H001 event, not ours.
+                        done.add(level_name)
+                    else:
+                        pending[level_name] = day_index
+    return events
+
+
+def _breached_beyond(
+    candle: ClosedCandle, level_price: Decimal, buffer: Decimal, *, is_high: bool
+) -> bool:
+    if is_high:
+        return candle.h > level_price + buffer
+    return candle.low < level_price - buffer
+
+
+def _closed_back_inside(candle: ClosedCandle, level_price: Decimal, *, is_high: bool) -> bool:
+    return candle.c < level_price if is_high else candle.c > level_price
 
 
 def _generic_sweep_continuation_events(
@@ -980,7 +1397,13 @@ def _observations_with_forward(
     *,
     candles: tuple[ClosedCandle, ...],
     horizon: int,
+    outcome_unit: str = "pips",
 ) -> list[_Observation]:
+    """Forward outcomes per event. ``outcome_unit="atr"`` divides the pip move
+    by the event-time ATR: normalized outcomes have far lower cross-sectional
+    variance, which directly raises test power and makes instruments poolable.
+    """
+    _validate_outcome_unit(outcome_unit)
     observations: list[_Observation] = []
     by_ts = {candle.ts: index for index, candle in enumerate(candles)}
     for event in events:
@@ -989,17 +1412,28 @@ def _observations_with_forward(
             continue
         signed = candles[forward_index].c - candles[event.index].c
         reversal = signed if event.bias == Bias.BULLISH else -signed
+        value = reversal / event.pip_size
+        if outcome_unit == "atr":
+            if event.atr_pips <= 0:
+                continue
+            value = value / event.atr_pips
         observations.append(
             _Observation(
                 index=event.index,
                 trading_date=event.trading_date,
                 level_name=event.level_name,
                 bias=event.bias,
-                reversal_pips=reversal / event.pip_size,
+                reversal_pips=value,
                 atr_pips=event.atr_pips,
             )
         )
     return observations
+
+
+def _validate_outcome_unit(outcome_unit: str) -> None:
+    if outcome_unit not in ("pips", "atr"):
+        msg = f"unsupported outcome_unit {outcome_unit!r}"
+        raise ValueError(msg)
 
 
 def _conditional(
@@ -1040,15 +1474,16 @@ def _best_conditional(edges: list[ConditionalEdge]) -> ConditionalEdge | None:
 
 def _adjust_conditionals_for_family(edges: list[ConditionalEdge]) -> tuple[ConditionalEdge, ...]:
     test_count = len(edges)
+    q_values = _bh_q_values([edge.summary.p_value for edge in edges])
     adjusted: list[ConditionalEdge] = []
-    for edge in edges:
-        summary = _with_bonferroni(edge.summary, test_count)
+    for edge, q_value in zip(edges, q_values, strict=True):
+        summary = _with_family_adjustments(edge.summary, test_count, q_value)
         adjusted.append(
             ConditionalEdge(
                 dimension=edge.dimension,
                 value=edge.value,
                 summary=summary,
-                has_edge=has_edge(summary),
+                has_edge=has_edge_fdr(summary),
                 family_test_count=test_count,
             )
         )
@@ -1057,13 +1492,14 @@ def _adjust_conditionals_for_family(edges: list[ConditionalEdge]) -> tuple[Condi
 
 def _adjust_scan_rows_for_family(rows: list[EdgeScanRow]) -> list[EdgeScanRow]:
     test_count = len(rows)
+    q_values = _bh_q_values([row.overall.p_value for row in rows])
     adjusted: list[EdgeScanRow] = []
-    for row in rows:
-        overall = _with_bonferroni(row.overall, test_count)
+    for row, q_value in zip(rows, q_values, strict=True):
+        overall = _with_family_adjustments(row.overall, test_count, q_value)
         notes = {
             **row.statistical_notes,
             "overall_test_count": test_count,
-            "overall_multiple_test_method": "bonferroni",
+            "overall_multiple_test_method": "benjamini_hochberg",
         }
         adjusted.append(
             EdgeScanRow(
@@ -1074,7 +1510,7 @@ def _adjust_scan_rows_for_family(rows: list[EdgeScanRow]) -> list[EdgeScanRow]:
                 horizon=row.horizon,
                 total_sweeps=row.total_sweeps,
                 overall=overall,
-                has_edge=has_edge(overall),
+                has_edge=has_edge_fdr(overall),
                 best_conditional=row.best_conditional,
                 statistical_notes=notes,
             )
@@ -1082,7 +1518,9 @@ def _adjust_scan_rows_for_family(rows: list[EdgeScanRow]) -> list[EdgeScanRow]:
     return adjusted
 
 
-def _with_bonferroni(summary: ForwardSummary, test_count: int) -> ForwardSummary:
+def _with_family_adjustments(
+    summary: ForwardSummary, test_count: int, bh_q_value: Decimal
+) -> ForwardSummary:
     return ForwardSummary(
         count=summary.count,
         mean_pips=summary.mean_pips,
@@ -1095,31 +1533,47 @@ def _with_bonferroni(summary: ForwardSummary, test_count: int) -> ForwardSummary
         effective_sample_size=summary.effective_sample_size,
         p_value=summary.p_value,
         bonferroni_p_value=_bonferroni(summary.p_value, test_count),
+        bh_q_value=bh_q_value,
         correction=summary.correction,
     )
 
 
-def _statistical_notes(*, conditional_test_count: int, overall_test_count: int) -> dict[str, Any]:
+def _statistical_notes(
+    *,
+    conditional_test_count: int,
+    overall_test_count: int,
+    outcome_unit: str = "pips",
+) -> dict[str, Any]:
     return {
-        "mean_null_hypothesis": "mean reversal pips <= 0",
+        "mean_null_hypothesis": f"mean reversal {outcome_unit} <= 0",
         "tail": "one_sided_positive_reversal",
         "alpha": str(ALPHA),
+        "outcome_unit": outcome_unit,
         "minimum_observations": MIN_SAMPLES,
         "minimum_effective_samples": MIN_EFFECTIVE_SAMPLES,
         "t_threshold": str(T_THRESHOLD),
         "standard_error_correction": "max(iid, cluster_by_trading_day)",
         "effective_sample_unit": "NY trading day",
         "conditional_test_count": conditional_test_count,
-        "conditional_multiple_test_method": "bonferroni",
+        "conditional_multiple_test_method": "benjamini_hochberg",
         "overall_test_count": overall_test_count,
-        "overall_multiple_test_method": "bonferroni",
+        "overall_multiple_test_method": "benjamini_hochberg",
     }
 
 
 def _volatility_bucket(observations: list[_Observation]) -> Any:
-    atrs = sorted(obs.atr_pips for obs in observations)
-    median = _median(atrs) if atrs else Decimal("0")
-    return lambda obs: "low" if obs.atr_pips < median else "high"
+    """Bucket by the expanding median of *prior* observations' ATR.
+
+    A full-sample median conditions each observation on the future. The first
+    observation has no baseline and is bucketed "high" by the >= comparison.
+    """
+    buckets: dict[int, str] = {}
+    prior: list[Decimal] = []
+    for obs in observations:
+        median = _median(prior) if prior else Decimal("0")
+        buckets[id(obs)] = "low" if obs.atr_pips < median else "high"
+        prior.append(obs.atr_pips)
+    return lambda obs: buckets[id(obs)]
 
 
 def _baseline_abs_pips(

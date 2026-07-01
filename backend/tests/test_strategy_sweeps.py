@@ -105,6 +105,40 @@ def test_one_trade_per_level_skips_already_swept_levels() -> None:
     )
 
 
+def test_multi_level_high_sweep_prefers_outermost_level() -> None:
+    # One candle clears both the Asia high (1.1000) and the London high (1.1050);
+    # the outermost level is the deepest liquidity taken.
+    sweep = detect_sweep(
+        _candle(high="1.10530", close="1.09980"),
+        levels=_levels(),
+        config=_config(),
+        instrument_rules=_rules(),
+        day_state=DayState(trading_date=date(2026, 1, 15)),
+        candle_index=10,
+    )
+
+    assert sweep is not None
+    assert sweep.level_name == LevelName.LONDON_HIGH
+    assert sweep.level_price == Decimal("1.1050")
+    assert sweep.bias == Bias.BEARISH
+
+
+def test_multi_level_low_sweep_prefers_outermost_level() -> None:
+    sweep = detect_sweep(
+        _candle(low="1.08970", close="1.09520"),
+        levels=_levels(),
+        config=_config(),
+        instrument_rules=_rules(),
+        day_state=DayState(trading_date=date(2026, 1, 15)),
+        candle_index=10,
+    )
+
+    assert sweep is not None
+    assert sweep.level_name == LevelName.ASIA_LOW
+    assert sweep.level_price == Decimal("1.0900")
+    assert sweep.bias == Bias.BULLISH
+
+
 def test_day_state_helpers_return_new_instances() -> None:
     day_state = DayState(trading_date=date(2026, 1, 15))
     sweep = detect_sweep(

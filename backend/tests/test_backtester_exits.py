@@ -87,6 +87,25 @@ def test_atr_trailing_stop_locks_in_profit_above_original_stop() -> None:
     assert trade.pnl > 0  # locked-in profit
 
 
+def test_atr_trailing_stop_ignores_current_candle_extreme() -> None:
+    # The trail must advance from candles closed before the current one: a
+    # spike-and-collapse candle must not raise the trail with its own high and
+    # then get stopped against its own low.
+    config = replace(_strategy(), exit_mode="atr_trail", atr_trail_mult=Decimal("1.5"))
+    position = _long(stop="1.09000", target="1.20000")
+    sequence = [
+        _candle(0, high="1.10100", low="1.09950", close="1.10050"),
+        _candle(1, high="1.10150", low="1.10000", close="1.10100"),
+        # Spike to 1.10800 then collapse to 1.10000: the prior-candle trail
+        # (1.09925) is untouched, while a same-candle trail (~1.10162) would be.
+        _candle(2, high="1.10800", low="1.10000", close="1.10400"),
+    ]
+
+    trade = _run_sequence(position, sequence, config)
+
+    assert trade is None
+
+
 def test_bracket_mode_matches_plain_bracket_exit() -> None:
     config = replace(_strategy(), exit_mode="bracket")
     position = _long(stop="1.09800", target="1.10400")

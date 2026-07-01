@@ -18,9 +18,19 @@ for continuously traded risk proxies.
 
 ## Initial test
 
-The first probe looks for correlation between Friday→Sunday risk-proxy returns
-and Monday FX daily returns. It reports data-required when no risk proxy candles
-exist.
+The probe splits the weekend effect into two labeled legs against the
+Friday→Sunday risk-proxy return:
+
+- **Gap leg** (`corr(weekend_proxy,reopen_gap)`): Friday close → first
+  Monday-session price. High correlation here means weekend information is
+  repriced instantly at the reopen and is not tradable by itself.
+- **Drift leg** (`corr(weekend_proxy,post_reopen_drift)`): first Monday-session
+  price → Monday close. Correlation here is the tradable underreaction
+  component.
+
+It reports data-required when no risk proxy candles exist. Daily grouping uses
+the New York 17:00 trading-day convention, so Sunday reopen candles belong to
+Monday.
 
 ## Gate
 

@@ -16,8 +16,10 @@ from harbor_bot.research.edge import (
     default_edge_algorithm_ids,
     get_edge_algorithm,
     has_edge,
+    run_barrier_scan,
     run_edge_scan,
     run_edge_study,
+    run_pooled_edge_scan,
     summarize,
     summarize_observations,
 )
@@ -34,9 +36,15 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures" / "backtester"
 def test_default_edge_scan_excludes_archived_sweep_family() -> None:
     algorithms = {algorithm.algorithm_id: algorithm for algorithm in available_edge_algorithms()}
 
-    assert default_edge_algorithm_ids() == ()
-    assert algorithms
-    assert {algorithm.lifecycle for algorithm in algorithms.values()} == {"archived"}
+    # Only the H115 reclaim population is active; the rejected H001-H007 family
+    # stays archived and out of the defaults.
+    assert default_edge_algorithm_ids() == ("multi_candle_sweep_reclaim_reversal",)
+    assert algorithms["multi_candle_sweep_reclaim_reversal"].hypothesis_id == "H115"
+    assert all(
+        algorithm.lifecycle == "archived"
+        for algorithm_id, algorithm in algorithms.items()
+        if algorithm_id != "multi_candle_sweep_reclaim_reversal"
+    )
 
 
 def test_summarize_reports_count_mean_and_hit_rate() -> None:
@@ -99,7 +107,7 @@ def test_clean_signal_day_records_one_sweep_with_positive_reversal() -> None:
     assert result.overall.hit_rate == Decimal("1")
     assert result.has_edge is False  # one observation is far under MIN_SAMPLES
     assert result.overall.correction == "cluster_by_trading_day"
-    assert result.statistical_notes["conditional_multiple_test_method"] == "bonferroni"
+    assert result.statistical_notes["conditional_multiple_test_method"] == "benjamini_hochberg"
     assert any(edge.value == "asia_low" for edge in result.by_level)
 
 
@@ -174,12 +182,14 @@ def test_clean_level_algorithm_excludes_pre_tapped_level() -> None:
     assert _sweeps(rows, "clean_level_sweep_reversal") == 1
 
 
-def test_compressed_range_algorithm_keeps_below_median_session_ranges() -> None:
+def test_compressed_range_algorithm_keeps_below_prior_median_session_ranges() -> None:
+    # The baseline is the median of *prior* session ranges only: day 0 has no
+    # baseline and is excluded; day 1's narrower range qualifies against day 0.
     rows = _scan_algorithm_fixture(
         _algorithm_fixture_candles(
             [
-                _sweep_spec(day=0, asia_high="1.1000", london_high="1.1050"),
-                _sweep_spec(day=1, asia_high="1.1300", london_high="1.1350"),
+                _sweep_spec(day=0, asia_high="1.1300", london_high="1.1350"),
+                _sweep_spec(day=1, asia_high="1.1000", london_high="1.1050"),
             ]
         ),
         algorithms=("generic_sweep_reversal", "compressed_range_sweep_reversal"),
@@ -361,6 +371,125 @@ def _scan_algorithm_fixture(candles, *, algorithms: tuple[str, ...]):
 
 def _sweeps(rows, algorithm_id: str) -> int:
     return next(row.total_sweeps for row in rows if row.algorithm_id == algorithm_id)
+
+
+def test_multi_candle_reclaim_detects_slow_sweep() -> None:
+    # Breach candle closes below asia_low (1.0800); a later candle closes back
+    # inside within the window → one bullish reclaim event.
+    base = date(2026, 1, 15)
+    sweep_dt = _utc(base, 10, 0)
+    candles = sorted(
+        [
+            _candle(_utc(base, 20, 0, previous=True), high="1.1000", low="1.0800", close="1.0900"),
+            _candle(_utc(base, 23, 59, previous=True), high="1.1000", low="1.0800", close="1.0900"),
+            _candle(_utc(base, 2, 0), high="1.1050", low="1.0700", close="1.0850"),
+            _candle(_utc(base, 4, 59), high="1.1050", low="1.0700", close="1.0850"),
+            _candle(_utc(base, 9, 29), high="1.0920", low="1.0860", close="1.0900"),
+            _candle(_utc(base, 9, 30), high="1.0915", low="1.0865", close="1.0890"),
+            _candle(sweep_dt, high="1.0850", low="1.0790", close="1.0795"),  # breach, no reclaim
+            _candle(sweep_dt + timedelta(minutes=1), high="1.0805", low="1.0792", close="1.0798"),
+            _candle(sweep_dt + timedelta(minutes=2), high="1.0830", low="1.0795", close="1.0815"),
+            _candle(sweep_dt + timedelta(minutes=3), high="1.0840", low="1.0810", close="1.0830"),
+        ],
+        key=lambda candle: candle.ts,
+    )
+    algorithm = get_edge_algorithm("multi_candle_sweep_reclaim_reversal")
+
+    events = algorithm.event_builder(
+        tuple(candles),
+        instrument="EUR_USD",
+        config=strategy_config_from_defaults(load_default_config()),
+        instrument_rules=_rules(),
+        atr_window=14,
+    )
+
+    assert len(events) == 1
+    assert events[0].bias == Bias.BULLISH
+    assert events[0].level_name == LevelName.ASIA_LOW
+    assert candles[events[0].index].ts == sweep_dt + timedelta(minutes=2)
+
+
+def test_multi_candle_reclaim_excludes_single_candle_sweeps() -> None:
+    candles = _algorithm_fixture_candles([_sweep_spec(day=0)])
+    algorithm = get_edge_algorithm("multi_candle_sweep_reclaim_reversal")
+
+    events = algorithm.event_builder(
+        tuple(candles),
+        instrument="EUR_USD",
+        config=strategy_config_from_defaults(load_default_config()),
+        instrument_rules=_rules(),
+        atr_window=14,
+    )
+
+    assert events == []
+
+
+def test_barrier_scan_scores_first_touch_and_counts_timeouts() -> None:
+    rows = run_barrier_scan(
+        list(load_candle_fixture(FIXTURE_DIR / "clean_signal_day.json")),
+        instrument="EUR_USD",
+        config=strategy_config_from_defaults(load_default_config()),
+        instrument_rules=_rules(),
+        horizons=(10,),
+        barrier_r=Decimal("1.0"),
+        algorithm_ids=("generic_sweep_reversal",),
+    )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.total_events == row.resolved + row.timeouts
+    assert row.reversal_first + row.adverse_first == row.resolved
+    assert all(abs(value) <= 1 for value in (row.overall.mean_pips,))
+    assert row.statistical_notes["ambiguous_candle_policy"] == "adverse_first"
+    assert row.statistical_notes["overall_multiple_test_method"] == "benjamini_hochberg"
+
+
+def test_pooled_edge_scan_pools_atr_normalized_observations_across_instruments() -> None:
+    from dataclasses import replace as dc_replace
+
+    config = strategy_config_from_defaults(load_default_config())
+    eur_candles = list(load_candle_fixture(FIXTURE_DIR / "clean_signal_day.json"))
+    gbp_candles = [dc_replace(candle, instrument="GBP_USD") for candle in eur_candles]
+
+    single = run_edge_scan(
+        eur_candles,
+        instrument="EUR_USD",
+        config=config,
+        instrument_rules=_rules(),
+        horizons=(3,),
+        algorithm_ids=("generic_sweep_reversal",),
+        outcome_unit="atr",
+    )
+    pooled = run_pooled_edge_scan(
+        {"EUR_USD": eur_candles, "GBP_USD": gbp_candles},
+        configs_by_instrument={"EUR_USD": config, "GBP_USD": config},
+        rules_by_instrument={"EUR_USD": _rules(), "GBP_USD": _rules()},
+        horizons=(3,),
+        algorithm_ids=("generic_sweep_reversal",),
+    )
+
+    assert len(pooled) == 1
+    row = pooled[0]
+    assert row.instrument == "POOLED[EUR_USD,GBP_USD]"
+    assert row.total_sweeps == 2 * single[0].total_sweeps
+    assert row.overall.count == 2 * single[0].overall.count
+    assert row.statistical_notes["outcome_unit"] == "atr"
+    assert row.statistical_notes["pooled_instruments"] == ["EUR_USD", "GBP_USD"]
+
+
+def test_barrier_scan_rejects_nonpositive_barrier() -> None:
+    try:
+        run_barrier_scan(
+            [],
+            instrument="EUR_USD",
+            config=strategy_config_from_defaults(load_default_config()),
+            instrument_rules=_rules(),
+            barrier_r=Decimal("0"),
+        )
+    except ValueError as exc:
+        assert "barrier_r must be positive" in str(exc)
+    else:  # pragma: no cover - failure path
+        raise AssertionError("nonpositive barrier_r was accepted")
 
 
 def _sweep_spec(

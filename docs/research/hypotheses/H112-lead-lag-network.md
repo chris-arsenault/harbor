@@ -18,7 +18,12 @@ Stable propagation can create timing signal even when single-pair patterns fail.
 ## Initial test
 
 The probe computes daily return correlations for leader at t versus lagger at
-+t+1, +t+2, and +t+5 days, reporting the strongest pair/lag relationships.
++t+1, +t+2, and +t+5 days, reporting the strongest pair/lag relationships. The
+family is ~168 tests, so candidate status requires a Benjamini-Hochberg q-value
+≤ 0.10 across the whole family (reported as the row's secondary metric); a raw
+correlation threshold alone is guaranteed to fire on noise at this family size.
+Shared USD/EUR/JPY legs still induce mechanical correlation and must be argued
+away before promotion.
 
 ## Gate
 

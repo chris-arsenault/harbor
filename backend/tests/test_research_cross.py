@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from math import exp
+from math import exp, pi, sin
 
 from harbor_bot.feed.candles import ClosedCandle
 from harbor_bot.research.cross_instrument import (
@@ -11,7 +11,10 @@ from harbor_bot.research.cross_instrument import (
 )
 
 
-def test_daily_closes_uses_last_candle_per_utc_day() -> None:
+def test_daily_closes_uses_last_candle_per_ny_trading_day() -> None:
+    # 2026-01-01 01:00 UTC is 20:00 ET on 2025-12-31 (past the 17:00 rollover),
+    # so it belongs to the Jan 1 trading day; 23:00 UTC is 18:00 ET and rolls
+    # into the Jan 2 trading day together with Jan 2 01:00 UTC.
     candles = [
         _candle("EUR_USD", 0, "1.1000", hour=1),
         _candle("EUR_USD", 0, "1.1200", hour=23),
@@ -20,7 +23,20 @@ def test_daily_closes_uses_last_candle_per_utc_day() -> None:
 
     closes = daily_closes(candles)
 
-    assert [close.close for close in closes] == [1.12, 1.13]
+    assert [close.close for close in closes] == [1.10, 1.13]
+
+
+def test_daily_closes_folds_sunday_reopen_into_monday_trading_day() -> None:
+    # 2026-01-04 is a Sunday; the 22:15 UTC reopen candle (17:15 ET) must not
+    # create a standalone Sunday part-day.
+    sunday_reopen = _candle("EUR_USD", 3, "1.2000", hour=22)
+    monday = _candle("EUR_USD", 4, "1.2100", hour=15)
+
+    closes = daily_closes([sunday_reopen, monday])
+
+    assert len(closes) == 1
+    assert closes[0].day.weekday() == 0
+    assert closes[0].close == 1.21
 
 
 def test_cross_scan_runs_factor_and_residual_algorithms() -> None:
@@ -47,15 +63,41 @@ def test_cross_scan_runs_factor_and_residual_algorithms() -> None:
     assert triangle.stats.count > 0
 
 
-def test_default_cross_scan_has_no_active_archived_cross_hypotheses() -> None:
+def test_default_cross_scan_activates_h113_reversal_only() -> None:
     default_ids = set(default_cross_algorithm_ids())
     algorithms = {algorithm.algorithm_id: algorithm for algorithm in available_cross_algorithms()}
 
-    assert default_ids == set()
+    assert default_ids == {"cs_reversal_20d_5d_tranched"}
+    assert algorithms["cs_reversal_20d_5d_tranched"].hypothesis_id == "H113"
     assert algorithms["tri_eur_gbp_residual_5d"].lifecycle == "archived"
     assert algorithms["cs_momentum_20d_5d"].lifecycle == "archived"
     assert algorithms["cs_value_60d_5d"].lifecycle == "archived"
     assert algorithms["usd_dispersion_reversion_5d"].lifecycle == "archived"
+
+
+def test_cs_reversal_tranched_profits_when_recent_losers_bounce() -> None:
+    # Two movers oscillate in opposite phase with a 25-day period: the 20-day
+    # momentum is then negatively correlated with the forward move, so longing
+    # losers / shorting winners must earn a positive mean.
+    days = 120
+    data = {
+        name: [
+            _candle(name, day, f"{1.0 + sign * 0.05 * sin(2 * pi * day / 25):.6f}")
+            for day in range(days)
+        ]
+        for name, sign in (("AAA_USD", 1.0), ("DDD_USD", -1.0))
+    }
+    data["BBB_USD"] = _pct_trend("BBB_USD", 1.0, 0.0001, days=days)
+    data["CCC_USD"] = _pct_trend("CCC_USD", 1.0, -0.0001, days=days)
+
+    rows = run_cross_scan(data, algorithm_ids=("cs_reversal_20d_5d_tranched",))
+
+    row = rows[0]
+    assert row.algorithm_id == "cs_reversal_20d_5d_tranched"
+    assert row.hypothesis_id == "H113"
+    assert row.stats.count > 50  # non-overlapping daily portfolio returns
+    assert row.stats.mean_return_bps > 0
+    assert row.stats.t_stat > 0
 
 
 def test_cross_momentum_detects_persistent_relative_strength() -> None:

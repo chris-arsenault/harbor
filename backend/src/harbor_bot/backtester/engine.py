@@ -60,12 +60,26 @@ def run_backtest(
     current_day_high: Decimal | None = None
     current_day_low: Decimal | None = None
 
+    previous_candle: ClosedCandle | None = None
     for candle in candles:
         if not candle.complete:
             msg = "backtest engine accepts closed candles only"
             raise ValueError(msg)
         next_trading_date = trading_date_for_candle(candle, backtest_input.strategy_config)
         if next_trading_date != trading_date:
+            if position is not None and previous_candle is not None:
+                # A position carried into the day rollover must be booked, not
+                # silently dropped: close it at the outgoing day's last close.
+                trade = force_close_position(
+                    position,
+                    candle=previous_candle,
+                    config=backtest_input.backtest_config,
+                    instrument_rules=backtest_input.instrument_rules,
+                    reason="day_rollover",
+                )
+                trades.append(trade)
+                nav += trade.pnl
+                equity_curve.append(EquityPoint(ts=trade.exit_ts, nav=nav))
             trading_date = next_trading_date
             candle_index = -1
             day_start_nav = nav
@@ -79,6 +93,7 @@ def run_backtest(
             current_day_low = None
 
         candle_index += 1
+        previous_candle = candle
         day_history.append(candle)
         current_day_high = candle.h if current_day_high is None else max(current_day_high, candle.h)
         current_day_low = (

@@ -136,9 +136,12 @@ def simulate_exit(
             instrument_rules=instrument_rules,
         )
     if strategy_config.exit_mode == "atr_trail":
+        # Advance the trail from candles closed *before* the current one: using
+        # the current candle's extreme and then testing its own low/high against
+        # the advanced trail assumes an intrabar ordering the data cannot prove.
         position = _advance_trailing(
             position,
-            recent_candles=recent_candles,
+            recent_candles=recent_candles[:-1],
             mult=strategy_config.atr_trail_mult,
             instrument_rules=instrument_rules,
         )
@@ -241,8 +244,9 @@ def _bank_partial(
     rules: InstrumentRules,
 ) -> OpenBacktestPosition:
     partial_units = position.setup.units * fraction
-    exit_price = _slip_adjust(one_r, position.side, config, rules)
-    banked = _leg_pnl(position.side, partial_units, position.entry_price, exit_price)
+    # The scale-out at +partial_at_r is a resting limit order: it fills at its
+    # level or not at all, so no adverse slippage applies.
+    banked = _leg_pnl(position.side, partial_units, position.entry_price, one_r)
     return replace(
         position,
         partial_realized=banked,
@@ -262,7 +266,13 @@ def _runner_close(
     config: BacktestConfig,
     instrument_rules: InstrumentRules,
 ) -> BacktestTrade:
-    exit_price = _slip_adjust(level, position.side, config, instrument_rules)
+    # The runner target is a limit order (fills at its level); stop-side exits
+    # take adverse slippage.
+    exit_price = (
+        level
+        if reason == "runner_target"
+        else _slip_adjust(level, position.side, config, instrument_rules)
+    )
     leg = _leg_pnl(position.side, units, position.entry_price, exit_price)
     commission = position.setup.units * config.commission_per_unit * Decimal("2")
     total = banked + leg - commission
@@ -312,6 +322,8 @@ def _advance_trailing(
     mult: Decimal,
     instrument_rules: InstrumentRules,
 ) -> OpenBacktestPosition:
+    if not recent_candles:
+        return position
     atr = _average_true_range(recent_candles)
     if atr <= 0 or mult <= 0:
         return position
@@ -372,6 +384,7 @@ def force_close_position(
     candle: ClosedCandle,
     config: BacktestConfig,
     instrument_rules: InstrumentRules,
+    reason: str = "ny_close",
 ) -> BacktestTrade:
     adjustment = instrument_rules.pips_to_price(config.slippage_pips)
     exit_price = candle.c - adjustment if position.side == "long" else candle.c + adjustment
@@ -379,7 +392,7 @@ def force_close_position(
         position,
         exit_price=exit_price,
         exit_ts=candle.ts,
-        exit_reason="ny_close",
+        exit_reason=reason,
         config=config,
     )
 
@@ -407,6 +420,8 @@ def _bracket_exit_price(
     config: BacktestConfig,
     instrument_rules: InstrumentRules,
 ) -> Decimal:
+    if reason == "take_profit":
+        return level
     adjustment = instrument_rules.pips_to_price(config.slippage_pips)
     return level - adjustment if side == "long" else level + adjustment
 

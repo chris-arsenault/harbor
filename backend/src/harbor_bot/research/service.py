@@ -37,8 +37,10 @@ from harbor_bot.research.edge import (
     available_edge_algorithms,
     default_edge_algorithm_ids,
     get_edge_algorithm,
+    run_barrier_scan,
     run_edge_scan,
     run_edge_study,
+    run_pooled_edge_scan,
 )
 from harbor_bot.research.triangular_capture import run_triangular_capture
 from harbor_bot.strategy.models import strategy_config_from_defaults
@@ -293,9 +295,159 @@ class ResearchService:
                     len(resolved) * len(resolved_algorithms) * len(horizons)
                 ),
                 "overall_test_count": len(adjusted_rows),
-                "overall_multiple_test_method": "bonferroni",
-                "conditional_multiple_test_method": "bonferroni_per_row",
+                "overall_multiple_test_method": "benjamini_hochberg",
+                "conditional_multiple_test_method": "benjamini_hochberg_per_row",
             },
+        }
+
+    async def pooled_edge_scan(
+        self,
+        *,
+        instruments: tuple[str, ...] | None = None,
+        horizons: tuple[int, ...] = (15, 30, 60, 120),
+        algorithm_ids: tuple[str, ...] | None = None,
+        window_days: int = DEFAULT_RESEARCH_WINDOW_DAYS,
+    ) -> dict[str, Any]:
+        """Panel scan: pool ATR-normalized sweep observations across the
+        instrument universe so realistic (1-4 pip scale) effects become
+        statistically resolvable at all."""
+        resolved = instruments or RESEARCH_INSTRUMENTS
+        resolved_algorithms = algorithm_ids or ("generic_sweep_reversal",)
+        selector = self.window_selector or select_latest_research_candle_window
+        reader = self.candle_reader or read_persisted_candle_records
+        candles_by_instrument: dict[str, list[Any]] = {}
+        configs_by_instrument: dict[str, Any] = {}
+        rules_by_instrument: dict[str, Any] = {}
+        windows: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
+
+        for instrument in resolved:
+            window = await selector(
+                self.persistence_engine,
+                instrument=instrument,
+                required_days=window_days,
+            )
+            warnings.extend(
+                _window_warnings(window, instrument=instrument, requested_days=window_days)
+            )
+            if window is None:
+                continue
+            windows.append(_window_jsonable(window))
+            records = await reader(
+                self.persistence_engine,
+                instrument=instrument,
+                start=window["from"],
+                end=window["to"],
+            )
+            candles = candles_from_records(records, default_instrument=instrument)
+            if not candles:
+                warnings.append(
+                    {
+                        "instrument": instrument,
+                        "type": "empty_window",
+                        "message": "selected research window returned no candle rows",
+                        "requested_days": window_days,
+                    }
+                )
+                continue
+            candles_by_instrument[instrument] = list(candles)
+            configs_by_instrument[instrument] = replace(
+                strategy_config_from_defaults(load_default_config()),
+                instrument=instrument,
+            )
+            rules_by_instrument[instrument] = default_instrument_rules(instrument)
+
+        rows = run_pooled_edge_scan(
+            candles_by_instrument,
+            configs_by_instrument=configs_by_instrument,
+            rules_by_instrument=rules_by_instrument,
+            horizons=horizons,
+            algorithm_ids=resolved_algorithms,
+        )
+        rows.sort(key=lambda r: float(r.overall.t_stat), reverse=True)
+        return {
+            "instruments": list(resolved),
+            "pooled_instruments": sorted(candles_by_instrument),
+            "horizons": list(horizons),
+            "requested_window_days": window_days,
+            "windows": windows,
+            "warnings": warnings,
+            "algorithms": [
+                algorithm.to_jsonable()
+                for algorithm in available_edge_algorithms()
+                if algorithm.algorithm_id in resolved_algorithms
+            ],
+            "results": [row.to_jsonable() for row in rows],
+            "statistical_notes": {
+                "outcome_unit": "atr",
+                "overall_test_count": len(rows),
+                "overall_multiple_test_method": "benjamini_hochberg",
+                "cluster_unit": "NY trading day across the pooled panel",
+            },
+        }
+
+    async def barrier_scan(
+        self,
+        *,
+        instrument: str,
+        horizons: tuple[int, ...] = (30, 60, 120),
+        barrier_r: Any = "1.0",
+        algorithm_ids: tuple[str, ...] | None = None,
+        window_days: int = DEFAULT_RESEARCH_WINDOW_DAYS,
+    ) -> dict[str, Any]:
+        """H116 triple-barrier scoring of event algorithms for one instrument."""
+        config = replace(
+            strategy_config_from_defaults(load_default_config()), instrument=instrument
+        )
+        rules = default_instrument_rules(instrument)
+        selector = self.window_selector or select_latest_research_candle_window
+        reader = self.candle_reader or read_persisted_candle_records
+        window = await selector(
+            self.persistence_engine, instrument=instrument, required_days=window_days
+        )
+        warnings = _window_warnings(window, instrument=instrument, requested_days=window_days)
+        candles: list[Any] = []
+        if window is not None:
+            records = await reader(
+                self.persistence_engine,
+                instrument=instrument,
+                start=window["from"],
+                end=window["to"],
+            )
+            candles = candles_from_records(records, default_instrument=instrument)
+            if not candles:
+                warnings.append(
+                    {
+                        "instrument": instrument,
+                        "type": "empty_window",
+                        "message": "selected research window returned no candle rows",
+                        "requested_days": window_days,
+                    }
+                )
+        resolved_algorithms = algorithm_ids or ("generic_sweep_reversal",)
+        rows = run_barrier_scan(
+            candles,
+            instrument=instrument,
+            config=config,
+            instrument_rules=rules,
+            horizons=horizons,
+            barrier_r=Decimal(str(barrier_r)),
+            algorithm_ids=resolved_algorithms,
+        )
+        rows.sort(key=lambda row: float(row.overall.t_stat), reverse=True)
+        return {
+            "instrument": instrument,
+            "horizons": list(horizons),
+            "barrier_r": str(Decimal(str(barrier_r))),
+            "requested_window_days": window_days,
+            "window": _window_jsonable(window),
+            "warnings": warnings,
+            "algorithms": [
+                algorithm.to_jsonable()
+                for algorithm in available_edge_algorithms()
+                if algorithm.algorithm_id in resolved_algorithms
+            ],
+            "results": [row.to_jsonable() for row in rows],
         }
 
     async def capture_scan(

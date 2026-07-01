@@ -456,6 +456,59 @@ def create_app(
             window_days=window_days,
         )
 
+    @app.post("/api/research/edge/pooled")
+    async def scan_pooled_edge(
+        payload: dict[str, Any],
+        service: ResearchService = RESEARCH_SERVICE_DEPENDENCY,
+    ) -> dict[str, Any]:
+        raw_instruments = payload.get("instruments")
+        instruments = (
+            tuple(str(i).strip().upper() for i in raw_instruments)
+            if isinstance(raw_instruments, list)
+            else None
+        )
+        raw_horizons = payload.get("horizons")
+        horizons = (
+            tuple(int(h) for h in raw_horizons)
+            if isinstance(raw_horizons, list)
+            else (15, 30, 60, 120)
+        )
+        raw_algorithms = payload.get("algorithms")
+        algorithms = (
+            tuple(str(value).strip() for value in raw_algorithms)
+            if isinstance(raw_algorithms, list)
+            else None
+        )
+        return await service.pooled_edge_scan(
+            instruments=instruments,
+            horizons=horizons,
+            algorithm_ids=algorithms,
+            window_days=int(payload.get("window_days") or DEFAULT_RESEARCH_WINDOW_DAYS),
+        )
+
+    @app.post("/api/research/edge/barriers")
+    async def scan_barrier_edge(
+        payload: dict[str, Any],
+        service: ResearchService = RESEARCH_SERVICE_DEPENDENCY,
+    ) -> dict[str, Any]:
+        raw_horizons = payload.get("horizons")
+        horizons = (
+            tuple(int(h) for h in raw_horizons) if isinstance(raw_horizons, list) else (30, 60, 120)
+        )
+        raw_algorithms = payload.get("algorithms")
+        algorithms = (
+            tuple(str(value).strip() for value in raw_algorithms)
+            if isinstance(raw_algorithms, list)
+            else None
+        )
+        return await service.barrier_scan(
+            instrument=str(payload.get("instrument") or "EUR_USD").strip().upper(),
+            horizons=horizons,
+            barrier_r=payload.get("barrier_r", "1.0"),
+            algorithm_ids=algorithms,
+            window_days=int(payload.get("window_days") or DEFAULT_RESEARCH_WINDOW_DAYS),
+        )
+
     @app.post("/api/research/capture")
     async def capture_edge(
         payload: dict[str, Any],
