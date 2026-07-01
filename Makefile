@@ -84,6 +84,7 @@ compose-config:
 
 shell-check:
 	bash -n scripts/build-lambda.sh scripts/deploy.sh scripts/smoke.sh
+	sh -n frontend/docker-entrypoint.d/40-harbor-config.sh
 
 verify-docs:
 	test -f README.md
