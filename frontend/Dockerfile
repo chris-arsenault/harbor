@@ -14,3 +14,4 @@ ENV HARBOR_GIT_SHA="${HARBOR_GIT_SHA}" \
 COPY dist/ /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY docker-entrypoint.d/ /docker-entrypoint.d/
+RUN chmod +x /docker-entrypoint.d/40-harbor-config.sh
