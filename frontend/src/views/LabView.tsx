@@ -11,7 +11,7 @@ import { EmptyState, Notice, Panel, ViewHead } from "../ui/primitives";
 import { BarrierScan } from "./lab/BarrierScan";
 import { BookRecorder } from "./lab/BookRecorder";
 import { CandleSource } from "./lab/CandleSource";
-import { ArchivedCrossInstrument } from "./lab/CrossInstrument";
+import { ArchivedCrossInstrument, CrossInstrument } from "./lab/CrossInstrument";
 import { PooledEdgeScan } from "./lab/PooledEdgeScan";
 import { EdgeCapture } from "./lab/EdgeCapture";
 import { EdgeScan } from "./lab/EdgeScan";
@@ -63,6 +63,7 @@ export function LabView({ model }: { readonly model: LabViewModel }) {
       />
       <BookRecorder />
       <ResearchDirections />
+      <CrossInstrument />
       <PooledEdgeScan />
       <BarrierScan />
       <Workbench

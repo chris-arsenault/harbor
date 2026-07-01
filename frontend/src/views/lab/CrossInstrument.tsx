@@ -7,7 +7,7 @@ import { EmptyState, Field, Notice, Panel, Tag } from "../../ui/primitives";
 
 const ACTIVE_CROSS_PRESET: CrossScanPayload = {
   instruments: null,
-  algorithms: [],
+  algorithms: ["cs_reversal_20d_5d_tranched"],
   window_days: 730,
 };
 
@@ -232,13 +232,16 @@ export function CrossInstrument() {
       preset={ACTIVE_CROSS_PRESET}
       copy={{
         title: "Cross-instrument research",
-        note: "no active cross-instrument hypotheses",
+        note: "H113 tranched cross-sectional reversal",
         label: "Cross-instrument research",
-        presetLabel: "No active preset",
+        presetLabel: "H113 reversal preset",
         runLabel: "Run cross scan",
         pendingLabel: "Scanning…",
         intro:
-          "No cross-instrument hypothesis is active. Archived H100/H101/H102 reruns live under Archived hypotheses.",
+          "H113: long recent 20-day losers, short winners, inverse-vol weighted, one fifth of " +
+          "risk rebalanced daily on a 5-day hold. Observations are non-overlapping daily " +
+          "portfolio returns, so judge the t-stat directly. Archived H100/H101/H102 reruns " +
+          "live under Archived hypotheses.",
         emptyTitle: "No active cross-instrument rows",
       }}
     />

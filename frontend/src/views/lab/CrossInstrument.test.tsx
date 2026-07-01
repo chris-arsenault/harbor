@@ -9,7 +9,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test("submits active cross-instrument preset and renders factor rows", async () => {
+test("submits the active H113 reversal preset and renders its row", async () => {
   const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
     const url = requestUrl(input);
     if (url.startsWith("/api/research/cross/scan")) {
@@ -27,7 +27,7 @@ test("submits active cross-instrument preset and renders factor rows", async () 
       {
         body: JSON.stringify({
           instruments: null,
-          algorithms: null,
+          algorithms: ["cs_reversal_20d_5d_tranched"],
           window_days: 730,
         }),
         headers: { Accept: "application/json", "Content-Type": "application/json" },
@@ -37,8 +37,11 @@ test("submits active cross-instrument preset and renders factor rows", async () 
   );
 
   expect(screen.getByLabelText("Instruments")).toHaveValue("");
-  expect(screen.getByLabelText("Algorithms")).toHaveValue("");
-  expect(await screen.findByText("No active cross-instrument rows")).toBeInTheDocument();
+  expect(screen.getByLabelText("Algorithms")).toHaveValue("cs_reversal_20d_5d_tranched");
+  expect(await screen.findByText("H113")).toBeInTheDocument();
+  expect(
+    screen.getByText("Cross-sectional reversal 20d→5d, vol-scaled, 5 tranches")
+  ).toBeInTheDocument();
 });
 
 test("submits archived H100-H102 rerun from archive panel", async () => {
@@ -94,8 +97,32 @@ const crossResult = {
   requested_window_days: 730,
   windows: [],
   warnings: [],
-  algorithms: [],
-  results: [],
+  algorithms: [
+    {
+      algorithm_id: "cs_reversal_20d_5d_tranched",
+      hypothesis_id: "H113",
+      label: "Cross-sectional reversal 20d→5d, vol-scaled, 5 tranches",
+      description: "active candidate",
+      lifecycle: "active",
+    },
+  ],
+  results: [
+    {
+      algorithm_id: "cs_reversal_20d_5d_tranched",
+      hypothesis_id: "H113",
+      algorithm_label: "Cross-sectional reversal 20d→5d, vol-scaled, 5 tranches",
+      instruments: ["EUR_USD", "GBP_USD", "EUR_GBP"],
+      observation_count: 480,
+      stats: {
+        count: 480,
+        hit_rate: "0.53500000",
+        mean_return_bps: "1.42000000",
+        median_return_bps: "1.05000000",
+        total_return_bps: "681.60000000",
+        t_stat: "2.31000000",
+      },
+    },
+  ],
 };
 
 const archivedCrossResult = {
