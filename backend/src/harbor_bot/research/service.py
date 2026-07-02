@@ -68,6 +68,7 @@ class ResearchService:
         candles_by_instrument: dict[str, list[Any]] = {}
         sweep_events_by_instrument: dict[str, list[SweepProbeEvent]] = {}
         windows: list[dict[str, Any]] = []
+        window_bounds: list[tuple[datetime, datetime]] = []
         warnings: list[dict[str, Any]] = []
 
         for instrument in resolved:
@@ -82,6 +83,7 @@ class ResearchService:
             if window is None:
                 continue
             windows.append(_window_jsonable(window))
+            window_bounds.append((window["from"], window["to"]))
             records = await reader(
                 self.persistence_engine,
                 instrument=instrument,
@@ -131,14 +133,14 @@ class ResearchService:
         if self.persistence_engine is not None and book_instruments:
             async with self.persistence_engine.connect() as connection:
                 book_coverage = await get_book_coverage(connection, instruments=book_instruments)
-                if windows:
-                    starts = [window["from"] for window in windows]
-                    ends = [window["to"] for window in windows]
+                # The jsonable window dicts hold isoformat strings; the range
+                # query needs the raw aware datetimes tracked in window_bounds.
+                if window_bounds:
                     book_snapshots = await list_book_snapshots_range(
                         connection,
                         instruments=book_instruments,
-                        start=min(starts),
-                        end=max(ends),
+                        start=min(start for start, _ in window_bounds),
+                        end=max(end for _, end in window_bounds),
                     )
 
         rows = run_direction_scan(

@@ -372,6 +372,55 @@ async def _fixture_records(
     ]
 
 
+class _FakeEngine:
+    def connect(self) -> "_FakeConnection":
+        return _FakeConnection()
+
+
+class _FakeConnection:
+    async def __aenter__(self) -> "_FakeConnection":
+        return self
+
+    async def __aexit__(self, *args: object) -> bool:
+        return False
+
+
+def test_direction_scan_passes_datetime_bounds_to_book_snapshot_query(monkeypatch) -> None:
+    # Regression: the snapshot range query was fed the jsonable window dicts,
+    # whose from/to are isoformat strings, and 500ed after minutes of candle
+    # loading. The repository requires aware datetimes.
+    captured: dict[str, Any] = {}
+
+    async def fake_coverage(connection: Any, *, instruments: tuple[str, ...]) -> list[Any]:
+        return [
+            {"instrument": "EUR_USD", "book_type": "order", "snapshot_count": 1},
+            {"instrument": "EUR_USD", "book_type": "position", "snapshot_count": 1},
+        ]
+
+    async def fake_snapshots(
+        connection: Any, *, instruments: tuple[str, ...], start: Any, end: Any
+    ) -> list[Any]:
+        assert isinstance(start, datetime) and start.tzinfo is not None
+        assert isinstance(end, datetime) and end.tzinfo is not None
+        captured["start"] = start
+        captured["end"] = end
+        return []
+
+    monkeypatch.setattr("harbor_bot.research.service.get_book_coverage", fake_coverage)
+    monkeypatch.setattr("harbor_bot.research.service.list_book_snapshots_range", fake_snapshots)
+    service = ResearchService(
+        persistence_engine=_FakeEngine(),
+        candle_reader=_fixture_records,
+        window_selector=_fixed_window,
+    )
+
+    result = asyncio.run(service.direction_scan(instruments=("EUR_USD",), window_days=1))
+
+    assert captured["start"] == datetime(2026, 1, 15, tzinfo=UTC)
+    assert captured["end"] == datetime(2026, 1, 16, tzinfo=UTC)
+    assert result["windows"]
+
+
 async def _fixed_window(engine: Any, *, instrument: str, required_days: int) -> dict[str, Any]:
     return {"from": datetime(2026, 1, 15, tzinfo=UTC), "to": datetime(2026, 1, 16, tzinfo=UTC)}
 
