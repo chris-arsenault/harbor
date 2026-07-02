@@ -427,7 +427,7 @@ class ResearchService:
         *,
         instrument: str,
         horizons: tuple[int, ...] = (30, 60, 120),
-        barrier_r: Any = "1.0",
+        barrier_r: Any = "5.0",
         algorithm_ids: tuple[str, ...] | None = None,
         window_days: int = DEFAULT_RESEARCH_WINDOW_DAYS,
     ) -> dict[str, Any]:

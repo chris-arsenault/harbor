@@ -600,6 +600,7 @@ class BarrierScanRow:
     total_events: int
     resolved: int
     timeouts: int
+    ambiguous: int
     reversal_first: int
     adverse_first: int
     overall: ForwardSummary
@@ -617,6 +618,7 @@ class BarrierScanRow:
             "total_events": self.total_events,
             "resolved": self.resolved,
             "timeouts": self.timeouts,
+            "ambiguous": self.ambiguous,
             "reversal_first": self.reversal_first,
             "adverse_first": self.adverse_first,
             "overall": self.overall.to_jsonable(),
@@ -632,7 +634,7 @@ def run_barrier_scan(
     config: StrategyConfig,
     instrument_rules: InstrumentRules,
     horizons: tuple[int, ...] = (30, 60, 120),
-    barrier_r: Decimal = Decimal("1.0"),
+    barrier_r: Decimal = Decimal("5.0"),
     atr_window: int = DEFAULT_ATR_WINDOW,
     algorithm_ids: tuple[str, ...] = (BASELINE_ALGORITHM_ID,),
 ) -> list[BarrierScanRow]:
@@ -640,11 +642,15 @@ def run_barrier_scan(
     barriers instead of fixed-horizon means.
 
     The outcome is +1 when the reversal-side barrier is touched first and -1
-    when the adverse barrier is; both-in-one-candle resolves adverse
-    (pessimistic) and timeouts are excluded but counted. This matches the
-    bracket-trade payoff shape and, as a bounded variable, carries far less
-    variance than raw forward pips — the mean of ±1 is 2·hit_rate−1 tested
-    against the coin-flip null with day-clustered errors.
+    when the adverse barrier is. Candles that span both barriers are
+    *ambiguous*: intrabar ordering is unknowable, so they are excluded from
+    the summary and counted, like timeouts — folding them into either side
+    would bias the hit rate mechanically. ATR here is candle-timeframe ATR
+    (~1-2 pips on M1), so ``barrier_r`` should be a trade-scale multiple
+    (default 5): at ~1R the barriers resolve within a candle or two, horizons
+    stop mattering, and most events land in the ambiguous bucket. The mean of
+    ±1 outcomes is 2·hit_rate−1 tested against the coin-flip null with
+    day-clustered errors.
     """
     _validate_horizons(horizons)
     if barrier_r <= 0:
@@ -666,12 +672,16 @@ def run_barrier_scan(
         for horizon in horizons:
             observations: list[_Observation] = []
             timeouts = 0
+            ambiguous = 0
             for event in events:
                 outcome = _first_barrier_outcome(
                     event, candles=ordered, horizon=horizon, barrier_r=barrier_r
                 )
-                if outcome is None:
+                if outcome == "timeout":
                     timeouts += 1
+                    continue
+                if outcome == "ambiguous":
+                    ambiguous += 1
                     continue
                 observations.append(
                     _Observation(
@@ -679,7 +689,7 @@ def run_barrier_scan(
                         trading_date=event.trading_date,
                         level_name=event.level_name,
                         bias=event.bias,
-                        reversal_pips=outcome,
+                        reversal_pips=Decimal("1") if outcome == "reversal" else Decimal("-1"),
                         atr_pips=event.atr_pips,
                     )
                 )
@@ -696,6 +706,7 @@ def run_barrier_scan(
                     total_events=len(events),
                     resolved=len(observations),
                     timeouts=timeouts,
+                    ambiguous=ambiguous,
                     reversal_first=wins,
                     adverse_first=len(observations) - wins,
                     overall=overall,
@@ -704,7 +715,7 @@ def run_barrier_scan(
                         "outcome": "first_touch_of_symmetric_atr_barriers",
                         "hypothesis_frame": "H116",
                         "barrier_r": str(barrier_r),
-                        "ambiguous_candle_policy": "adverse_first",
+                        "ambiguous_candle_policy": "excluded_from_summary",
                         "timeout_policy": "excluded_from_summary",
                         "null_hypothesis": "first-touch skew = coin flip",
                         "standard_error_correction": "max(iid, cluster_by_trading_day)",
@@ -720,9 +731,9 @@ def _first_barrier_outcome(
     candles: tuple[ClosedCandle, ...],
     horizon: int,
     barrier_r: Decimal,
-) -> Decimal | None:
+) -> str:
     if event.atr_pips <= 0:
-        return None
+        return "timeout"
     entry = candles[event.index].c
     distance = barrier_r * event.atr_pips * event.pip_size
     deadline = candles[event.index].ts + timedelta(minutes=horizon)
@@ -742,11 +753,13 @@ def _first_barrier_outcome(
             if event.bias == Bias.BULLISH
             else candle.low <= reversal_level
         )
+        if touched_adverse and touched_reversal:
+            return "ambiguous"
         if touched_adverse:
-            return Decimal("-1")
+            return "adverse"
         if touched_reversal:
-            return Decimal("1")
-    return None
+            return "reversal"
+    return "timeout"
 
 
 def _adjust_barrier_rows_for_family(rows: list[BarrierScanRow]) -> list[BarrierScanRow]:
@@ -766,6 +779,7 @@ def _adjust_barrier_rows_for_family(rows: list[BarrierScanRow]) -> list[BarrierS
                 total_events=row.total_events,
                 resolved=row.resolved,
                 timeouts=row.timeouts,
+                ambiguous=row.ambiguous,
                 reversal_first=row.reversal_first,
                 adverse_first=row.adverse_first,
                 overall=overall,

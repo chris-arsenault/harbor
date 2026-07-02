@@ -21,7 +21,7 @@ test("submits the barrier scan payload and renders first-touch outcomes", async 
   renderWithClient(<BarrierScan />);
 
   expect(screen.getByLabelText("Instrument")).toHaveValue("EUR_USD");
-  expect(screen.getByLabelText("Barrier (R × ATR)")).toHaveValue("1.0");
+  expect(screen.getByLabelText("Barrier (R × ATR)")).toHaveValue("5.0");
   expect(screen.getByLabelText("Window (days)")).toHaveValue(730);
 
   fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "gbp_jpy" } });
@@ -34,7 +34,7 @@ test("submits the barrier scan payload and renders first-touch outcomes", async 
         body: JSON.stringify({
           instrument: "GBP_JPY",
           horizons: [30, 60, 120],
-          barrier_r: "1.0",
+          barrier_r: "5.0",
           algorithms: ["generic_sweep_reversal", "multi_candle_sweep_reclaim_reversal"],
           window_days: 730,
         }),
@@ -46,10 +46,11 @@ test("submits the barrier scan payload and renders first-touch outcomes", async 
 
   expect(await screen.findByText("Generic session sweep reversal")).toBeInTheDocument();
   expect(screen.getByText("60m")).toBeInTheDocument();
-  expect(screen.getByText("1.0R")).toBeInTheDocument();
+  expect(screen.getByText("5.0R")).toBeInTheDocument();
   expect(screen.getByText("102")).toBeInTheDocument();
+  expect(screen.getByText("7")).toBeInTheDocument(); // ambiguous count column
   expect(screen.getByText("edge")).toBeInTheDocument();
-  expect(screen.getByText(/Ambiguous candles resolve adverse/)).toBeInTheDocument();
+  expect(screen.getByText(/spanning both barriers are ambiguous/)).toBeInTheDocument();
 });
 
 function renderWithClient(ui: React.ReactElement) {
@@ -67,7 +68,7 @@ function requestUrl(input: string | URL | Request): string {
 const barrierResult = {
   instrument: "GBP_JPY",
   horizons: [60],
-  barrier_r: "1.0",
+  barrier_r: "5.0",
   requested_window_days: 730,
   window: null,
   warnings: [],
@@ -86,10 +87,11 @@ const barrierResult = {
       algorithm_label: "Generic session sweep reversal",
       instrument: "GBP_JPY",
       horizon: 60,
-      barrier_r: "1.0",
-      total_events: 120,
+      barrier_r: "5.0",
+      total_events: 127,
       resolved: 102,
       timeouts: 18,
+      ambiguous: 7,
       reversal_first: 61,
       adverse_first: 41,
       overall: {

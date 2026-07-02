@@ -21,9 +21,20 @@ was rejected on the wrong metric.
 
 `POST /api/research/edge/barriers` scores any event algorithm's events by first
 touch of entry ± barrier_r·ATR within the horizon. Ambiguous candles (both
-barriers inside one candle) resolve adverse; timeouts are counted but excluded.
-The mean of ±1 outcomes is 2·hit_rate−1, tested against the coin-flip null with
-day-clustered standard errors and BH-FDR across the scan family.
+barriers inside one candle) are excluded and counted, like timeouts — folding
+them into either side biases the hit rate mechanically. The mean of ±1 outcomes
+is 2·hit_rate−1, tested against the coin-flip null with day-clustered standard
+errors and BH-FDR across the scan family.
+
+## Barrier scale
+
+ATR is candle-timeframe ATR (~1-2 pips on M1), so `barrier_r` must be a
+trade-scale multiple — the default is 5. The 2026-07-02 run at 1R demonstrated
+the failure mode: barriers resolved within a candle or two, so results were
+identical across 30/60/120m horizons with zero timeouts, and the sub-50% hit
+rate was dominated by the (then adverse-folded) ambiguous-candle artifact
+rather than by information. Identical rows across horizons are the tell that
+the barrier is too tight.
 
 ## Meta-labeling roadmap
 

@@ -10,6 +10,7 @@ from harbor_bot.research.edge import (
     MIN_SAMPLES,
     EdgeEvent,
     EdgeStudyResult,
+    _first_barrier_outcome,
     _Observation,
     _observations_with_forward,
     available_edge_algorithms,
@@ -424,7 +425,7 @@ def test_multi_candle_reclaim_excludes_single_candle_sweeps() -> None:
     assert events == []
 
 
-def test_barrier_scan_scores_first_touch_and_counts_timeouts() -> None:
+def test_barrier_scan_scores_first_touch_and_counts_timeouts_and_ambiguous() -> None:
     rows = run_barrier_scan(
         list(load_candle_fixture(FIXTURE_DIR / "clean_signal_day.json")),
         instrument="EUR_USD",
@@ -437,11 +438,42 @@ def test_barrier_scan_scores_first_touch_and_counts_timeouts() -> None:
 
     assert len(rows) == 1
     row = rows[0]
-    assert row.total_events == row.resolved + row.timeouts
+    assert row.total_events == row.resolved + row.timeouts + row.ambiguous
     assert row.reversal_first + row.adverse_first == row.resolved
     assert all(abs(value) <= 1 for value in (row.overall.mean_pips,))
-    assert row.statistical_notes["ambiguous_candle_policy"] == "adverse_first"
+    assert row.statistical_notes["ambiguous_candle_policy"] == "excluded_from_summary"
     assert row.statistical_notes["overall_multiple_test_method"] == "benjamini_hochberg"
+
+
+def test_barrier_scan_excludes_both_barrier_candles_from_outcomes() -> None:
+    # One post-event candle spans both ±1 ATR barriers: intrabar ordering is
+    # unknowable, so the event must land in the ambiguous bucket, not adverse.
+    candles = [
+        _simple_candle("2026-01-15T14:30:00+00:00", "1.1000"),
+        ClosedCandle(
+            instrument="EUR_USD",
+            ts=datetime.fromisoformat("2026-01-15T14:31:00+00:00"),
+            o=Decimal("1.1000"),
+            h=Decimal("1.2000"),
+            low=Decimal("1.0000"),
+            c=Decimal("1.1000"),
+            volume=1,
+        ),
+    ]
+    event = EdgeEvent(
+        index=0,
+        trading_date=date(2026, 1, 15),
+        level_name=LevelName.ASIA_LOW,
+        bias=Bias.BULLISH,
+        atr_pips=Decimal("10"),
+        pip_size=Decimal("0.0001"),
+    )
+
+    outcome = _first_barrier_outcome(
+        event, candles=tuple(candles), horizon=10, barrier_r=Decimal("1.0")
+    )
+
+    assert outcome == "ambiguous"
 
 
 def test_pooled_edge_scan_pools_atr_normalized_observations_across_instruments() -> None:

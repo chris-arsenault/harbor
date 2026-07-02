@@ -504,7 +504,7 @@ def create_app(
         return await service.barrier_scan(
             instrument=str(payload.get("instrument") or "EUR_USD").strip().upper(),
             horizons=horizons,
-            barrier_r=payload.get("barrier_r", "1.0"),
+            barrier_r=payload.get("barrier_r", "5.0"),
             algorithm_ids=algorithms,
             window_days=int(payload.get("window_days") or DEFAULT_RESEARCH_WINDOW_DAYS),
         )

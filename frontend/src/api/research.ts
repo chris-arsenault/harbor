@@ -168,6 +168,7 @@ export interface BarrierScanRow {
   total_events: number;
   resolved: number;
   timeouts: number;
+  ambiguous: number;
   reversal_first: number;
   adverse_first: number;
   overall: ForwardSummary;

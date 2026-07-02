@@ -17,7 +17,7 @@ const DEFAULT_DRAFT: BarrierDraft = {
   instrument: "EUR_USD",
   algorithms: "generic_sweep_reversal, multi_candle_sweep_reclaim_reversal",
   horizons: "30, 60, 120",
-  barrierR: "1.0",
+  barrierR: "5.0",
   windowDays: 730,
 };
 
@@ -67,6 +67,7 @@ function BarrierRow({ row }: { readonly row: BarrierScanRow }) {
       <td className="num">{row.total_events}</td>
       <td className="num">{row.resolved}</td>
       <td className="num">{row.timeouts}</td>
+      <td className="num">{row.ambiguous}</td>
       <td className="num">{row.reversal_first}</td>
       <td className="num">{row.adverse_first}</td>
       <td className="num">{fmtPct(row.overall.hit_rate)}</td>
@@ -99,6 +100,7 @@ function BarrierTable({ result }: { readonly result: BarrierScanResult }) {
             <th className="num">Events</th>
             <th className="num">Resolved</th>
             <th className="num">Timeouts</th>
+            <th className="num">Ambig</th>
             <th className="num">Rev first</th>
             <th className="num">Adv first</th>
             <th className="num">Hit</th>
@@ -222,8 +224,10 @@ function BarrierResultView({
           <BarrierWarnings result={result} />
           <p className="mute">
             First touch of entry ± barrier·ATR within the horizon, reversal side versus adverse
-            side. Ambiguous candles resolve adverse; timeouts are excluded from the summary. Hit is
-            tested against the coin-flip null with day-clustered errors.
+            side. Candles spanning both barriers are ambiguous and excluded, like timeouts. ATR is
+            candle-timeframe (M1) ATR, so use trade-scale multiples: a high ambiguous count or
+            identical rows across horizons means the barrier is too tight. Hit is tested against the
+            coin-flip null with day-clustered errors.
           </p>
           <BarrierTable result={result} />
         </>
