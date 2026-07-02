@@ -21,8 +21,8 @@ from harbor_bot.feed.backfill import (
 )
 from harbor_bot.feed.historical import ingest_historical_candles
 from harbor_bot.feed.ingest import SyncReport, sync_universe
-from harbor_bot.instruments import RESEARCH_INSTRUMENTS
-from harbor_bot.oanda.client import OandaClient
+from harbor_bot.instruments import RESEARCH_INSTRUMENTS, RISK_PROXY_INSTRUMENTS
+from harbor_bot.oanda.client import OandaApiError, OandaClient
 from harbor_bot.persistence.market_repository import (
     get_bid_ask_candle_count,
     get_bulk_candle_coverage,
@@ -55,8 +55,9 @@ class CandleSourceService:
     async def get_status(self, *, instrument: str | None = None) -> dict[str, Any]:
         resolved_instrument = instrument or _default_instrument()
         research_instruments = _research_instruments(self.settings)
+        import_instruments = _import_instruments(self.settings)
         async with self.engine.connect() as connection:
-            instrument_coverages = await _bulk_coverage(connection, research_instruments)
+            instrument_coverages = await _bulk_coverage(connection, import_instruments)
             coverage = _find_coverage(instrument_coverages, resolved_instrument)
             if coverage is None:
                 coverage = await _coverage_with_quality(connection, resolved_instrument)
@@ -69,6 +70,7 @@ class CandleSourceService:
             "instrument_coverages": instrument_coverages,
             "source_methods": ["oanda_historical_import", "oanda_pricing_stream"],
             "research_instruments": list(research_instruments),
+            "import_instruments": list(import_instruments),
             "historical_import": {
                 "page_size": self.settings.oanda_historical_candle_page_size,
                 "default_count": self.settings.oanda_historical_import_count,
@@ -101,18 +103,34 @@ class CandleSourceService:
         results = []
         async with self.client_factory(self.settings) as client:
             for instrument in instruments:
-                imported_count = await self.historical_ingestor(
-                    client=client,
-                    engine=self.engine,
-                    instrument=instrument,
-                    from_time=from_time,
-                    count=count,
-                    page_size=self.settings.oanda_historical_candle_page_size,
-                    request_interval_seconds=(
-                        self.settings.oanda_historical_request_interval_seconds
-                    ),
-                    include_first=from_time is None,
-                )
+                # One unsupported symbol (e.g. an account without a risk-proxy
+                # CFD enabled) must not abort the rest of a universe fill.
+                try:
+                    imported_count = await self.historical_ingestor(
+                        client=client,
+                        engine=self.engine,
+                        instrument=instrument,
+                        from_time=from_time,
+                        count=count,
+                        page_size=self.settings.oanda_historical_candle_page_size,
+                        request_interval_seconds=(
+                            self.settings.oanda_historical_request_interval_seconds
+                        ),
+                        include_first=from_time is None,
+                    )
+                except OandaApiError as exc:
+                    if len(instruments) == 1:
+                        raise
+                    results.append(
+                        {
+                            "instrument": instrument,
+                            "requested_count": count,
+                            "imported_count": 0,
+                            "coverage": None,
+                            "error": str(exc),
+                        }
+                    )
+                    continue
                 status = await self.get_status(instrument=instrument)
                 results.append(
                     {
@@ -305,6 +323,11 @@ def _payload_instruments(payload: Mapping[str, Any], settings: Settings) -> tupl
 
 def _research_instruments(settings: Settings) -> tuple[str, ...]:
     return settings.research_instruments or RESEARCH_INSTRUMENTS
+
+
+def _import_instruments(settings: Settings) -> tuple[str, ...]:
+    """The importer universe: research FX plus the H108 risk proxies."""
+    return tuple(dict.fromkeys((*_research_instruments(settings), *RISK_PROXY_INSTRUMENTS)))
 
 
 def _optional_utc_ts(raw: Any) -> datetime | None:

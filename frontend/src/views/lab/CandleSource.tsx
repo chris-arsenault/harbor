@@ -28,6 +28,10 @@ interface ImportPlan {
 }
 
 function universeFor(source: CandleSourceStatus | null, instrument: string): string[] {
+  // The import universe includes the H108 risk proxies on top of the research FX set.
+  if (source?.import_instruments?.length) {
+    return source.import_instruments;
+  }
   return source?.research_instruments?.length ? source.research_instruments : [instrument];
 }
 
@@ -102,7 +106,7 @@ function ImportActions({
         disabled={plan.disabled}
         onClick={() => void onImportCandles(plan.fillUniverse)}
       >
-        Fill research universe
+        Fill import universe
       </button>
     </div>
   );

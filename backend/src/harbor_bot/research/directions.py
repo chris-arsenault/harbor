@@ -9,20 +9,12 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from harbor_bot.feed.candles import ClosedCandle
+from harbor_bot.instruments import RESEARCH_INSTRUMENTS, RISK_PROXY_INSTRUMENTS
 from harbor_bot.research.cross_instrument import DailyClose, ny_trading_day
 from harbor_bot.strategy.models import Bias, require_closed_candle
 
-FX_MAJORS = {
-    "AUD_JPY",
-    "AUD_USD",
-    "EUR_GBP",
-    "EUR_JPY",
-    "EUR_USD",
-    "GBP_JPY",
-    "GBP_USD",
-    "USD_JPY",
-}
-RISK_PROXIES = ("BTC_USD", "ETH_USD", "SPX500_USD", "NAS100_USD")
+FX_MAJORS = set(RESEARCH_INSTRUMENTS)
+RISK_PROXIES = RISK_PROXY_INSTRUMENTS
 
 
 @dataclass(frozen=True)

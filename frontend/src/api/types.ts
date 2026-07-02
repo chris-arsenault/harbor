@@ -61,6 +61,7 @@ export interface CandleSourceStatus {
   instrument_coverages?: CandleCoverage[];
   source_methods: string[];
   research_instruments: string[];
+  import_instruments?: string[];
   historical_import: CandleHistoricalImportPolicy;
   oanda_historical_import_configured: boolean;
   live_stream?: CandleLiveStreamStatus;

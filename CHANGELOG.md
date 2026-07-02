@@ -7,6 +7,7 @@ All notable user-visible changes are recorded here.
 ### Changed
 
 - The research directions scan aggregates daily bars/closes/first-opens in SQL (NY 17:00 trading-day convention) and loads M1 candles only for instruments that need event extraction; risk proxies never materialize minute data, taking the scan from minutes to seconds.
+- The candle importer universe now includes the H108 risk proxies (BTC_USD, ETH_USD, SPX500_USD, NAS100_USD): they appear in the Lab instrument picker and the universe fill, coverage is reported for them, and a symbol unsupported by the account no longer aborts a multi-instrument import.
 
 ### Fixed
 
