@@ -9,7 +9,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from harbor_bot.feed.candles import ClosedCandle
-from harbor_bot.research.cross_instrument import DailyClose, daily_closes, ny_trading_day
+from harbor_bot.research.cross_instrument import DailyClose, ny_trading_day
 from harbor_bot.strategy.models import Bias, require_closed_candle
 
 FX_MAJORS = {
@@ -160,21 +160,32 @@ def run_direction_scan(
     book_coverage: list[dict[str, Any]] | None = None,
     book_snapshots: list[dict[str, Any]] | None = None,
     sweep_events_by_instrument: dict[str, list[SweepProbeEvent]] | None = None,
+    daily_bars_by_instrument: dict[str, list[DailyBar]] | None = None,
+    first_opens_by_instrument: dict[str, dict[date, float]] | None = None,
 ) -> list[DirectionRow]:
+    """Run the requested direction probes.
+
+    Daily-resolution probes read ``daily_bars_by_instrument`` /
+    ``first_opens_by_instrument`` when the caller provides them (the service
+    aggregates these in SQL so risk proxies never need M1 candles); both fall
+    back to deriving from ``candles_by_instrument`` for pure in-memory use.
+    """
     requested = set(algorithm_ids or default_direction_algorithm_ids())
+    if daily_bars_by_instrument is None:
+        bars = {
+            instrument: daily_bars(candles)
+            for instrument, candles in candles_by_instrument.items()
+            if candles
+        }
+    else:
+        bars = {instrument: rows for instrument, rows in daily_bars_by_instrument.items() if rows}
     closes = {
-        instrument: daily_closes(candles)
-        for instrument, candles in candles_by_instrument.items()
-        if candles
-    }
-    bars = {
-        instrument: daily_bars(candles)
-        for instrument, candles in candles_by_instrument.items()
-        if candles
+        instrument: [DailyClose(day=bar.day, close=bar.close) for bar in rows]
+        for instrument, rows in bars.items()
     }
     rows: list[DirectionRow] = []
     if "weekend_risk_gap_probe" in requested:
-        rows.extend(_weekend_gap(closes, candles_by_instrument))
+        rows.extend(_weekend_gap(closes, candles_by_instrument, first_opens_by_instrument or {}))
     if "regime_resurrection_probe" in requested:
         rows.extend(_regime_resurrection(closes))
     if "range_forecast_probe" in requested:
@@ -249,6 +260,7 @@ def _returns(series: list[DailyClose]) -> dict[date, float]:
 def _weekend_gap(
     closes: dict[str, list[DailyClose]],
     candles_by_instrument: dict[str, list[ClosedCandle]],
+    first_opens_by_instrument: dict[str, dict[date, float]],
 ) -> list[DirectionRow]:
     proxy = next((instrument for instrument in RISK_PROXIES if instrument in closes), None)
     if proxy is None:
@@ -277,7 +289,9 @@ def _weekend_gap(
     rows: list[DirectionRow] = []
     for instrument in sorted(FX_MAJORS & closes.keys()):
         fx = maps[instrument]
-        reopen_by_day = _first_open_by_trading_day(candles_by_instrument.get(instrument, []))
+        reopen_by_day = first_opens_by_instrument.get(instrument) or _first_open_by_trading_day(
+            candles_by_instrument.get(instrument, [])
+        )
         proxy_xs: list[float] = []
         gap_ys: list[float] = []
         drift_ys: list[float] = []

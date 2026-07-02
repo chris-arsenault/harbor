@@ -1,10 +1,10 @@
 from collections.abc import Mapping
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from datetime import date as Date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -113,6 +113,61 @@ async def list_candles_range(
             candles.c.complete.is_(True),
         )
         .order_by(candles.c.ts)
+    )
+    return [dict(row) for row in result.mappings()]
+
+
+_DAILY_AGGREGATE_SQL = text(
+    """
+    WITH local_candles AS (
+        SELECT
+            CASE
+                WHEN (timezone('America/New_York', ts))::time >= CAST(:rollover AS time)
+                THEN ((timezone('America/New_York', ts))::date + 1)
+                ELSE (timezone('America/New_York', ts))::date
+            END AS trading_day,
+            ts, o, h, l, c
+        FROM candles
+        WHERE instrument = :instrument
+          AND ts >= :start
+          AND ts <= :end
+          AND complete IS TRUE
+    )
+    SELECT
+        trading_day AS day,
+        max(h) AS high,
+        min(l) AS low,
+        (array_agg(o ORDER BY ts ASC))[1] AS first_open,
+        (array_agg(c ORDER BY ts DESC))[1] AS close
+    FROM local_candles
+    GROUP BY trading_day
+    ORDER BY trading_day
+    """
+)
+
+
+async def list_daily_candle_aggregates(
+    connection: AsyncConnection,
+    *,
+    instrument: str,
+    start: datetime,
+    end: datetime,
+) -> list[dict[str, Any]]:
+    """Daily bars aggregated in SQL under the New York 17:00 trading-day
+    convention (``timezone('America/New_York', ts)`` is DST-correct, not a
+    hardcoded offset).
+
+    Research probes that only need daily resolution read ~100-700 rows per
+    instrument this way instead of materializing 100k+ M1 candles in Python.
+    """
+    result = await connection.execute(
+        _DAILY_AGGREGATE_SQL,
+        {
+            "instrument": instrument,
+            "start": _require_aware_utc(start),
+            "end": _require_aware_utc(end),
+            "rollover": time(17, 0),
+        },
     )
     return [dict(row) for row in result.mappings()]
 

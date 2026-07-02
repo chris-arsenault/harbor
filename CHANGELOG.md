@@ -4,6 +4,10 @@ All notable user-visible changes are recorded here.
 
 ## Unreleased
 
+### Changed
+
+- The research directions scan aggregates daily bars/closes/first-opens in SQL (NY 17:00 trading-day convention) and loads M1 candles only for instruments that need event extraction; risk proxies never materialize minute data, taking the scan from minutes to seconds.
+
 ### Fixed
 
 - Backtester ATR-trailing stops now advance only from candles closed before the current one, removing an intrabar lookahead that inflated `atr_trail` results.

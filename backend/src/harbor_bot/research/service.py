@@ -17,7 +17,10 @@ from harbor_bot.backtester.service import read_persisted_candle_records
 from harbor_bot.config.defaults import load_default_config
 from harbor_bot.instruments import RESEARCH_INSTRUMENTS, default_instrument_rules
 from harbor_bot.persistence.book_repository import get_book_coverage, list_book_snapshots_range
-from harbor_bot.persistence.market_repository import get_candle_coverage
+from harbor_bot.persistence.market_repository import (
+    get_candle_coverage,
+    list_daily_candle_aggregates,
+)
 from harbor_bot.research.capture import run_capture_scan
 from harbor_bot.research.cross_instrument import (
     available_cross_algorithms,
@@ -26,6 +29,7 @@ from harbor_bot.research.cross_instrument import (
 )
 from harbor_bot.research.directions import (
     RISK_PROXIES,
+    DailyBar,
     SweepProbeEvent,
     available_direction_algorithms,
     default_direction_algorithm_ids,
@@ -53,6 +57,7 @@ class ResearchService:
     persistence_engine: AsyncEngine | None = None
     candle_reader: Any = None
     window_selector: Any = None
+    daily_reader: Any = None
 
     async def direction_scan(
         self,
@@ -65,8 +70,11 @@ class ResearchService:
         resolved_algorithms = algorithm_ids or default_direction_algorithm_ids()
         selector = self.window_selector or select_latest_research_candle_window
         reader = self.candle_reader or read_persisted_candle_records
+        daily_reader = self.daily_reader or read_daily_candle_aggregates
         candles_by_instrument: dict[str, list[Any]] = {}
         sweep_events_by_instrument: dict[str, list[SweepProbeEvent]] = {}
+        daily_bars_by_instrument: dict[str, list[DailyBar]] = {}
+        first_opens_by_instrument: dict[str, dict[Any, float]] = {}
         windows: list[dict[str, Any]] = []
         window_bounds: list[tuple[datetime, datetime]] = []
         warnings: list[dict[str, Any]] = []
@@ -84,39 +92,28 @@ class ResearchService:
                 continue
             windows.append(_window_jsonable(window))
             window_bounds.append((window["from"], window["to"]))
-            records = await reader(
+            # Daily-resolution probes read SQL aggregates (a few hundred rows);
+            # full M1 candles are loaded only for instruments that need event
+            # extraction, so risk proxies never materialize minute data.
+            daily_rows = await daily_reader(
                 self.persistence_engine,
                 instrument=instrument,
                 start=window["from"],
                 end=window["to"],
             )
-            candles = candles_from_records(records, default_instrument=instrument)
-            if candles:
-                candles_by_instrument[instrument] = list(candles)
-                if instrument in RESEARCH_INSTRUMENTS:
-                    config = replace(
-                        strategy_config_from_defaults(load_default_config()),
-                        instrument=instrument,
+            if daily_rows:
+                daily_bars_by_instrument[instrument] = [
+                    DailyBar(
+                        day=row["day"],
+                        high=float(row["high"]),
+                        low=float(row["low"]),
+                        close=float(row["close"]),
                     )
-                    rules = default_instrument_rules(instrument)
-                    ordered = tuple(sorted(candles, key=lambda candle: candle.ts))
-                    edge_algorithm = get_edge_algorithm("generic_sweep_reversal")
-                    sweep_events_by_instrument[instrument] = [
-                        SweepProbeEvent(
-                            instrument=instrument,
-                            index=event.index,
-                            ts=ordered[event.index].ts,
-                            bias=event.bias,
-                            pip_size=event.pip_size,
-                        )
-                        for event in edge_algorithm.event_builder(
-                            ordered,
-                            instrument=instrument,
-                            config=config,
-                            instrument_rules=rules,
-                            atr_window=14,
-                        )
-                    ]
+                    for row in daily_rows
+                ]
+                first_opens_by_instrument[instrument] = {
+                    row["day"]: float(row["first_open"]) for row in daily_rows
+                }
             else:
                 warnings.append(
                     {
@@ -126,6 +123,41 @@ class ResearchService:
                         "requested_days": window_days,
                     }
                 )
+                continue
+            if instrument not in RESEARCH_INSTRUMENTS:
+                continue
+            records = await reader(
+                self.persistence_engine,
+                instrument=instrument,
+                start=window["from"],
+                end=window["to"],
+            )
+            candles = candles_from_records(records, default_instrument=instrument)
+            if candles:
+                candles_by_instrument[instrument] = list(candles)
+                config = replace(
+                    strategy_config_from_defaults(load_default_config()),
+                    instrument=instrument,
+                )
+                rules = default_instrument_rules(instrument)
+                ordered = tuple(sorted(candles, key=lambda candle: candle.ts))
+                edge_algorithm = get_edge_algorithm("generic_sweep_reversal")
+                sweep_events_by_instrument[instrument] = [
+                    SweepProbeEvent(
+                        instrument=instrument,
+                        index=event.index,
+                        ts=ordered[event.index].ts,
+                        bias=event.bias,
+                        pip_size=event.pip_size,
+                    )
+                    for event in edge_algorithm.event_builder(
+                        ordered,
+                        instrument=instrument,
+                        config=config,
+                        instrument_rules=rules,
+                        atr_window=14,
+                    )
+                ]
 
         book_coverage: list[dict[str, Any]] = []
         book_snapshots: list[dict[str, Any]] = []
@@ -149,6 +181,8 @@ class ResearchService:
             book_coverage=book_coverage,
             book_snapshots=book_snapshots,
             sweep_events_by_instrument=sweep_events_by_instrument,
+            daily_bars_by_instrument=daily_bars_by_instrument,
+            first_opens_by_instrument=first_opens_by_instrument,
         )
         return {
             "instruments": list(resolved),
@@ -653,6 +687,25 @@ class ResearchService:
         return {
             "algorithms": [algorithm.to_jsonable() for algorithm in available_edge_algorithms()]
         }
+
+
+async def read_daily_candle_aggregates(
+    engine: AsyncEngine | None,
+    *,
+    instrument: str,
+    start: datetime,
+    end: datetime,
+) -> list[dict[str, Any]]:
+    if engine is None:
+        msg = "persisted candle range requests require a persistence engine"
+        raise ValueError(msg)
+    async with engine.connect() as connection:
+        return await list_daily_candle_aggregates(
+            connection,
+            instrument=instrument,
+            start=start,
+            end=end,
+        )
 
 
 async def select_latest_research_candle_window(

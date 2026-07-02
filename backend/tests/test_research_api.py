@@ -6,7 +6,9 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from harbor_bot.api import create_app
-from harbor_bot.backtester.data import load_candle_fixture
+from harbor_bot.backtester.data import candles_from_records, load_candle_fixture
+from harbor_bot.research.cross_instrument import ny_trading_day
+from harbor_bot.research.directions import daily_bars
 from harbor_bot.research.service import ResearchService, research_window_from_coverage
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "backtester"
@@ -412,6 +414,7 @@ def test_direction_scan_passes_datetime_bounds_to_book_snapshot_query(monkeypatc
         persistence_engine=_FakeEngine(),
         candle_reader=_fixture_records,
         window_selector=_fixed_window,
+        daily_reader=_fixture_daily_aggregates,
     )
 
     result = asyncio.run(service.direction_scan(instruments=("EUR_USD",), window_days=1))
@@ -419,6 +422,56 @@ def test_direction_scan_passes_datetime_bounds_to_book_snapshot_query(monkeypatc
     assert captured["start"] == datetime(2026, 1, 15, tzinfo=UTC)
     assert captured["end"] == datetime(2026, 1, 16, tzinfo=UTC)
     assert result["windows"]
+
+
+def test_direction_scan_loads_m1_candles_only_for_research_instruments() -> None:
+    m1_calls: list[str] = []
+    daily_calls: list[str] = []
+
+    async def spy_candle_reader(
+        engine: Any, *, instrument: str, start: datetime, end: datetime
+    ) -> list[dict[str, Any]]:
+        m1_calls.append(instrument)
+        return await _fixture_records(engine, instrument=instrument, start=start, end=end)
+
+    async def spy_daily_reader(
+        engine: Any, *, instrument: str, start: datetime, end: datetime
+    ) -> list[dict[str, Any]]:
+        daily_calls.append(instrument)
+        return await _fixture_daily_aggregates(engine, instrument=instrument, start=start, end=end)
+
+    service = ResearchService(
+        candle_reader=spy_candle_reader,
+        window_selector=_fixed_window,
+        daily_reader=spy_daily_reader,
+    )
+
+    result = asyncio.run(service.direction_scan(instruments=("EUR_USD", "BTC_USD"), window_days=1))
+
+    # The risk proxy contributes daily aggregates but never loads M1 candles.
+    assert m1_calls == ["EUR_USD"]
+    assert daily_calls == ["EUR_USD", "BTC_USD"]
+    assert any(row["metric"] == "corr(weekend_proxy,reopen_gap)" for row in result["results"])
+
+
+async def _fixture_daily_aggregates(
+    engine: Any, *, instrument: str, start: datetime, end: datetime
+) -> list[dict[str, Any]]:
+    records = await _fixture_records(engine, instrument=instrument, start=start, end=end)
+    candles = list(candles_from_records(records, default_instrument=instrument))
+    firsts: dict[Any, Any] = {}
+    for candle in sorted(candles, key=lambda item: item.ts):
+        firsts.setdefault(ny_trading_day(candle.ts), candle.o)
+    return [
+        {
+            "day": bar.day,
+            "high": bar.high,
+            "low": bar.low,
+            "close": bar.close,
+            "first_open": firsts[bar.day],
+        }
+        for bar in daily_bars(candles)
+    ]
 
 
 async def _fixed_window(engine: Any, *, instrument: str, required_days: int) -> dict[str, Any]:

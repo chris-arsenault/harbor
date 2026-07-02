@@ -13,6 +13,7 @@ from harbor_bot.persistence.market_repository import (
     get_session_levels,
     latest_complete_candle_window,
     list_candles,
+    list_daily_candle_aggregates,
     upsert_candle,
     upsert_session_levels,
 )
@@ -220,6 +221,59 @@ async def _assert_candle_coverage_and_window(postgres_url: str) -> None:
         assert latest_three_days is not None
         assert latest_three_days["from"] == datetime(2026, 1, 15, 0, 0, tzinfo=UTC)
         assert latest_three_days["to"] == datetime(2026, 1, 18, 23, 59, 59, 999999, tzinfo=UTC)
+    finally:
+        await engine.dispose()
+
+
+def test_daily_candle_aggregates_group_by_ny_trading_day(postgres_url: str) -> None:
+    command.upgrade(_alembic_config(postgres_url), "head")
+
+    asyncio.run(_assert_daily_candle_aggregates(postgres_url))
+
+
+async def _assert_daily_candle_aggregates(postgres_url: str) -> None:
+    engine = create_engine(Settings(DATABASE_URL=postgres_url))
+    # 2026-01-04 is a Sunday: the 22:15 UTC reopen candle (17:15 ET) must fold
+    # into Monday's trading day, contribute the first_open, and not create a
+    # standalone Sunday row.
+    sunday_reopen = datetime(2026, 1, 4, 22, 15, tzinfo=UTC)
+    monday_midday = datetime(2026, 1, 5, 15, 0, tzinfo=UTC)
+    monday_late = datetime(2026, 1, 5, 21, 0, tzinfo=UTC)
+    try:
+        async with transaction(engine) as connection:
+            for ts, o, h, low, c in (
+                (sunday_reopen, "1.2000", "1.2010", "1.1990", "1.2005"),
+                (monday_midday, "1.2005", "1.2100", "1.2000", "1.2050"),
+                (monday_late, "1.2050", "1.2060", "1.1950", "1.2040"),
+            ):
+                await upsert_candle(
+                    connection,
+                    instrument="EUR_USD",
+                    ts=ts,
+                    o=Decimal(o),
+                    h=Decimal(h),
+                    low=Decimal(low),
+                    c=Decimal(c),
+                    volume=100,
+                    complete=True,
+                )
+
+        async with engine.connect() as connection:
+            rows = await list_daily_candle_aggregates(
+                connection,
+                instrument="EUR_USD",
+                start=datetime(2026, 1, 1, tzinfo=UTC),
+                end=datetime(2026, 1, 10, tzinfo=UTC),
+            )
+
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["day"] == date(2026, 1, 5)
+        assert row["day"].weekday() == 0
+        assert row["first_open"] == Decimal("1.2000")
+        assert row["close"] == Decimal("1.2040")
+        assert row["high"] == Decimal("1.2100")
+        assert row["low"] == Decimal("1.1950")
     finally:
         await engine.dispose()
 
